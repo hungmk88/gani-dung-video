@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from gani_dung_video.domain.beats import SnappedSegment
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan
 
@@ -69,6 +70,16 @@ class AiResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     drafts: list[AiDraft]
+
+
+class SnappedDraft(BaseModel):
+    """A checked draft laid on the beat grid (edit/drafts.json, input of the render)."""
+
+    draft: str
+    label: str
+    segments: list[SnappedSegment]
+    missing_shots: list[str]
+    warnings: list[str]
 
 
 def _obj(props: dict[str, Any]) -> dict[str, Any]:

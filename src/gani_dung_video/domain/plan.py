@@ -35,6 +35,7 @@ class MusicInfo(BaseModel):
     first_beat_sec: float
     duration_sec: float
     source: str  # library | detected
+    path: str | None = None  # where the plan step found it (allow-listed)
 
 
 class PlanMusic(BaseModel):
@@ -50,6 +51,7 @@ class PlanMusic(BaseModel):
     source: str
     loop_sec: float | None = None  # X13: whole-bar loop when the track is shorter than the video
     repeats: int | None = None
+    path: str | None = None  # resolved, allow-listed file (set by the plan step, used by render)
 
 
 class PlanBlock(BaseModel):

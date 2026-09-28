@@ -101,6 +101,7 @@ def test_cuts_land_on_beats_and_are_contiguous() -> None:
     out = snap_to_beats(segs, beats, scenes)
     assert [(o.t_start, o.t_end) for o in out] == [(0.0, 1.0), (1.0, 3.0)]
     assert out[0].text == "a" and out[1].block == "x"
+    assert [o.clip for o in out] == ["a.mp4", "a.mp4"]  # the render needs the source file
 
 
 def test_durations_are_whole_frames_without_drift() -> None:

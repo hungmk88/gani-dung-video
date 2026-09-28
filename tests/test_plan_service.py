@@ -92,6 +92,7 @@ def test_plan_end_to_end_measures_the_track(folder: Path, tmp_path: Path) -> Non
     assert out == folder.resolve() / "edit" / "plan.json"
     assert plan.driver == "music" and plan.music is not None and plan.music.source == "detected"
     assert plan.music.bpm == pytest.approx(92.0, abs=0.3)
+    assert plan.music.path == str((folder / "t.wav").resolve())  # checked path, for the render
     assert plan.target_beats == 46 and plan.planned_beats == 46 and plan.warnings == []
     assert plan_json(folder)["blocks"][0]["role"] == "hook"
 

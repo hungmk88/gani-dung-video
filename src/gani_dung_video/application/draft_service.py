@@ -24,13 +24,13 @@ from gani_dung_video.domain.beats import (
     DraftSegment,
     SceneRef,
     SnapError,
-    SnappedSegment,
     snap_to_beats,
 )
 from gani_dung_video.domain.drafts import (
     SYSTEM_PROMPT,
     AiDraft,
     AiResponse,
+    SnappedDraft,
     build_user_prompt,
     cost_vnd,
     estimate_tokens,
@@ -70,14 +70,6 @@ class DraftError(RuntimeError):
 
 class CostCapReached(DraftError):
     """The next call could push the spend over the cap, so it was not sent."""
-
-
-class SnappedDraft(BaseModel):
-    draft: str
-    label: str
-    segments: list[SnappedSegment]
-    missing_shots: list[str]
-    warnings: list[str]
 
 
 class DraftsFile(BaseModel):

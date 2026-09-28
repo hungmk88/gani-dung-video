@@ -90,7 +90,8 @@ def _music(
     cfg = rules["music_analysis"]
     allowed = [options_file.parent, folder] + ([music_dir] if music_dir else [])
     path = resolve_music_path(o.nhac_file, allowed, cfg["extensions"])
-    return track_info(path, read_library(path.parent), cfg)
+    info = track_info(path, read_library(path.parent), cfg)
+    return info.model_copy(update={"path": str(path)}) if info else None
 
 
 def build_plan(
@@ -129,6 +130,8 @@ def build_plan(
     if not final["valid"]:
         raise PreflightBlocked(final)
     plan = compile_plan(o, rules, music=music, available_tags=_available_tags(scenes, o.phong_cach))
+    if plan.music is not None and music is not None and music.path:
+        plan = plan.model_copy(update={"music": plan.music.model_copy(update={"path": music.path})})
     plan = plan.model_copy(update={
         "warnings": _text(final["warnings"]) + plan.warnings,
         "adjustments": _text(final["adjustments"]),

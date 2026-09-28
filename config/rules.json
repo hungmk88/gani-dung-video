@@ -214,6 +214,52 @@
   },
   "chars_per_token": 3.0
  },
+ "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz, −14 LUFS. Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
+ "render": {
+  "fps": 30,
+  "final": {
+   "width": 1080,
+   "height": 1920,
+   "video_kbps": 9000
+  },
+  "preview": {
+   "width": 540,
+   "height": 960,
+   "video_kbps": 2500
+  },
+  "audio_rate": 48000,
+  "audio_kbps": 192,
+  "lufs": -14.0,
+  "true_peak_db": -1.5,
+  "end_card_sec": 2.0,
+  "music_fade_sec": 1.5,
+  "safe": {
+   "top": 250,
+   "bottom": 420,
+   "right": 140,
+   "left": 140
+  },
+  "fonts": {
+   "default": "Be Vietnam Pro ExtraBold",
+   "sang_trong": "Be Vietnam Pro Light"
+  },
+  "font_px": {
+   "caption": 72,
+   "cta": 80,
+   "logo": 64,
+   "end_card_logo": 160,
+   "end_card_text": 64
+  },
+  "brand": {
+   "logo_text": "GANI",
+   "logo_placeholder": true,
+   "logo_opacity": 0.8,
+   "zalo": "Zalo 0909.xxx.xxx",
+   "zalo_placeholder": true,
+   "footer": "GANI FOODY – Đạt chuẩn HACCP Codex 2022"
+  },
+  "ffmpeg_timeout_sec": 1800
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,

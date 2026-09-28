@@ -52,6 +52,7 @@ class SnappedSegment(DraftSegment):
     src_in: float
     src_out: float
     peak_ratio: float | None  # 0.35 normal, up to 0.50 = X18 back-off, None = clamped
+    clip: str = ""  # source file of the segment (from its SceneRef)
 
 
 def _deviation(bpm: float, lo: float, hi: float) -> float:
@@ -165,6 +166,7 @@ def snap_to_beats(
             )
         src_in, ratio = _place(ref, dur)
         out.append(SnappedSegment(**seg.model_dump(), t_start=t0, t_end=t1, src_in=src_in,
-                                  src_out=src_in + dur, peak_ratio=ratio))  # fmt: skip
+                                  src_out=src_in + dur, peak_ratio=ratio,
+                                  clip=ref.clip))  # fmt: skip
         i = j
     return out
