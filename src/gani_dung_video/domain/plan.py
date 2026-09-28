@@ -68,7 +68,7 @@ class Plan(BaseModel):
 
     rules_version: str
     options: dict[str, Any]  # Any: echo of the chosen options (str/int values)
-    driver: str  # music | grid  (speech comes with phase 5)
+    driver: str  # music | grid | speech (speech: cuts follow the voice, beats place B-roll)
     music: PlanMusic | None
     beat_sec: float
     target_beats: int
@@ -207,17 +207,18 @@ def compile_plan(
             it raises the X8 warning.
 
     Raises:
-        PlanError: speech-driven style (phase 5) or 3-minute video (phase 7).
+        PlanError: 3-minute video (chapters come with phase 7).
     """
     o = options
     style, purpose = rules["styles"][o.phong_cach], rules["purposes"][o.muc_dich]
     dur_cfg = rules["durations"][str(o.do_dai_giay)]
-    if style["driver"] == "speech":
-        raise PlanError("PLAN_SPEECH_DRIVER", rules["input_msgs"]["PLAN_SPEECH_DRIVER"])
     if dur_cfg.get("chapters"):
         raise PlanError("PLAN_CHAPTERS", rules["input_msgs"]["PLAN_CHAPTERS"])
-    allowed = [int(n) for n in style["beats_allowed"]]
+    speech = style["driver"] == "speech"  # 5c: speech cuts; beats only place B-roll
+    allowed = [int(n) for n in style["broll_beats" if speech else "beats_allowed"]]
     driver, beat_sec, pm, warnings = _music_setup(o, rules, style, music, allowed)
+    if speech:
+        driver, warnings = "speech", [w for w in warnings if not w.startswith("W_GRID_NO_MUSIC")]
     target = max(1, math.floor(o.do_dai_giay / beat_sec + 0.5))
 
     ratios, tags = _block_specs(purpose, dur_cfg)

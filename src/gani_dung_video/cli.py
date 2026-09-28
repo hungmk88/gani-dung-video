@@ -21,6 +21,8 @@ python -m gani_dung_video qc <thu_muc_footage> --ban A [--final]
     exit 0 = đạt, 1 = còn lỗi, 2 = chưa có video / lỗi file
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
+python -m gani_dung_video phrases <yeu-cau.md|options.json> <thu_muc_footage>
+    exit 0 = đã ghi edit/phrases.json, 2 = phong cách không dẫn nhịp theo lời / chưa transcribe
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.render_service import build_render, recheck
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
+from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
 from gani_dung_video.domain.plan import PlanError
 from gani_dung_video.infrastructure.claude_client import AiError
@@ -83,6 +86,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pk = sub.add_parser("pick", help="Ứng viên cảnh cho từng khối → edit/candidates.json")
     pk.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy plan)")
     pk.add_argument("folder", type=Path, help="Thư mục footage đã chạy plan")
+    ph = sub.add_parser("phrases", help="Câu nói dùng được cho AI chọn → edit/phrases.json")
+    ph.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (phong cách dẫn lời)")
+    ph.add_argument("folder", type=Path, help="Thư mục footage đã chạy transcribe")
     dr = sub.add_parser("draft", help="Gọi Claude chọn cảnh + viết chữ → edit/drafts.json")
     dr.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy pick)")
     dr.add_argument("folder", type=Path, help="Thư mục footage đã chạy pick")
@@ -182,6 +188,21 @@ def _run_pick(file: Path, folder: Path) -> int:
         ],
         f"  Cảnh còn thiếu: {', '.join(r.missing_shots) or 'không'}",
         f"  Cặp đoạn giống nhau cần tránh dùng cả hai: {len(r.similar_pairs)}",
+        f"Kết quả: {out}",
+    ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _run_phrases(file: Path, folder: Path) -> int:
+    r, out = build_phrases(file, folder)
+    by_reason: dict[str, int] = {}
+    for x in r.excluded:
+        by_reason[x.reason] = by_reason.get(x.reason, 0) + 1
+    reasons = ", ".join(f"{k}: {v}" for k, v in sorted(by_reason.items())) or "không có"
+    lines = [
+        f"Phong cách: {r.style} — {len(r.phrases)} câu dùng được, "
+        f"{len(r.excluded)} câu bị loại ({reasons})",
         f"Kết quả: {out}",
     ]
     sys.stdout.write("\n".join(lines) + "\n")
@@ -300,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_draft(args.file, args.folder, args.dry_run)
         if args.cmd == "pick":
             return _run_pick(args.file, args.folder)
+        if args.cmd == "phrases":
+            return _run_phrases(args.file, args.folder)
         if args.cmd == "plan":
             return _run_plan(args.file, args.folder, args.nhac_thu_muc)
         return _run_preflight(args.file)

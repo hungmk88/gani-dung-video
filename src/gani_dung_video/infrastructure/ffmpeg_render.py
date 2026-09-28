@@ -20,6 +20,7 @@ from pathlib import Path
 
 from gani_dung_video.domain.edl import Edl, Shot
 from gani_dung_video.domain.preflight import Rules
+from gani_dung_video.domain.speech_edit import duck_expression
 from gani_dung_video.infrastructure.config_files import CONFIG_DIR
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError, ProbeError, probe
 
@@ -103,6 +104,9 @@ def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
         if m.loop_sec:
             chain += [f"atrim=0:{_n(m.loop_sec)}", "asetpts=PTS-STARTPTS",
                       f"aloop=loop=-1:size={round(m.loop_sec * SAMPLE_RATE)}"]  # fmt: skip
+        if e.duck and e.duck_db is not None:  # speech: -18 dB under the voice, 150 ms ramps
+            expr = duck_expression(e.duck, e.duck_db, e.duck_fade_sec)
+            chain.append(f"volume='{expr}':eval=frame")
         chain += [f"atrim=0:{_n(e.duration)}", "asetpts=PTS-STARTPTS",
                   f"afade=t=out:st={_n(max(0.0, e.duration - m.fade_out_sec))}:"
                   f"d={_n(m.fade_out_sec)}"]  # fmt: skip
@@ -113,10 +117,33 @@ def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
     return out
 
 
+def _overlays(e: Edl) -> list[str]:
+    """Speech mode: B-roll pictures laid over the speaker at their slot (inputs after shots)."""
+    if not e.overlays:
+        return []
+    out, cur, base = [], "vjoin0", len(e.shots)
+    for j, o in enumerate(e.overlays):
+        k = base + j
+        out.append(_video_chain(k, o, e).replace(f"[v{k}]", f"[o{j}]"))
+        out.append(f"[o{j}]setpts=PTS-STARTPTS+{_n(o.t_start)}/TB[op{j}]")
+        nxt = "vjoin" if j == len(e.overlays) - 1 else f"ov{j}"
+        out.append(f"[{cur}][op{j}]overlay=eof_action=pass:"
+                   f"enable='between(t,{_n(o.t_start)},{_n(o.t_end)})'[{nxt}]")  # fmt: skip
+        cur = nxt
+    return out
+
+
 def audio_graph(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
                 measure_only: bool = False) -> str:  # fmt: skip
     """Audio part alone (loudness pass 1 prints its measurements as JSON)."""
     return ";\n".join(_audio(e, has_audio, music_idx, measure_only=measure_only))
+
+
+def _join_label(lines: list[str], e: Edl) -> list[str]:
+    """With overlays, the plain join feeds the overlay chain instead of the end card."""
+    if not e.overlays:
+        return lines
+    return [ln.replace("[vjoin]", "[vjoin0]") for ln in lines]
 
 
 def build_graph(
@@ -125,7 +152,8 @@ def build_graph(
 ) -> str:  # fmt: skip
     """The -filter_complex text (pure: testable without ffmpeg)."""
     lines = [_video_chain(i, s, e) for i, s in enumerate(e.shots)]
-    lines += _join_video(e)
+    lines += _join_label(_join_video(e), e)
+    lines += _overlays(e)
     lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(e.end_card_sec)},"
                  "format=yuv420p,setsar=1[vend]")  # fmt: skip
     subs = f",subtitles=filename={ass_name}:fontsdir=fonts" if ass_name else ""
@@ -176,9 +204,14 @@ def _inputs(
     args: list[str] = []
     for s, p in zip(e.shots, sources, strict=True):
         args += ["-ss", _n(s.src_in), "-t", _n(s.src_out - s.src_in), "-i", str(p)]
+    for o in e.overlays:  # B-roll pictures (speech mode); their sound is never used
+        p = footage_dir / o.source
+        if not p.is_file():
+            raise RenderError(f"Không tìm thấy {p.name} — ffmpeg không thể dựng.")
+        args += ["-ss", _n(o.src_in), "-t", _n(o.src_out - o.src_in), "-i", str(p)]
     music_idx = None
     if music is not None and e.music is not None:
-        music_idx = len(sources)
+        music_idx = len(sources) + len(e.overlays)
         args += ["-ss", _n(e.music.audio_in_sec), "-i", str(music)]
     return args, [_has_audio(p, 60.0) for p in sources], music_idx
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 
 from gani_dung_video.domain.edl import Caption, Edl, MusicTrack, Shot
+from gani_dung_video.domain.karaoke import ass_colour
+from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.subtitles import ass_document, ass_time, escape_ass, srt_document
 from gani_dung_video.infrastructure.config_files import load_rules
 
@@ -13,13 +15,15 @@ R = RULES["render"]
 
 
 def edl(font: str = "Be Vietnam Pro ExtraBold", captions: list[Caption] | None = None,
-        width: int = 1080) -> Edl:  # fmt: skip
+        width: int = 1080, mode: str = "music",
+        karaoke: list[list[SpokenWord]] | None = None) -> Edl:  # fmt: skip
     shot = Shot(source="a.mp4", src_in=0, src_out=3, t_start=0, t_end=3, block="hook",
                 hdr=False, dissolve_out_sec=0, pad_sec=0)  # fmt: skip
     return Edl(style="ke_chuyen_nghe", width=width, height=width * 16 // 9, fps=30,
                video_kbps=9000, shots=[shot], content_end=3.0, end_card_sec=2.0, duration=5.0,
                music=MusicTrack(track="t.m4a", audio_in_sec=0.5, loop_sec=None, fade_out_sec=1.5),
-               ambient_db=-20, lufs=-14.0, true_peak_db=-1.5, font=font,
+               ambient_db=-20, lufs=-14.0, true_peak_db=-1.5, font=font, mode=mode,
+               karaoke=karaoke or [],
                captions=captions if captions is not None else
                [Caption(start=0.0, end=3.0, text="Một ngày ở xưởng", kind="text")])  # fmt: skip
 
@@ -117,3 +121,43 @@ def test_srt_holds_the_captions_with_comma_milliseconds() -> None:
     assert srt.startswith("1\n00:00:00,000 --> 00:00:03,000\nMột ngày\n\n2\n")
     assert "00:00:03,033 --> 00:00:05,500\nNhắn tin" in srt
     assert re.search(r"\n\n$", srt)
+
+
+# ─────────────── karaoke (5c-1) ───────────────
+
+
+def words(spec: str, start: float = 0.0, step: float = 0.3) -> list[SpokenWord]:
+    out, t = [], start
+    for w in spec.split():
+        out.append(SpokenWord(text=w, start=round(t, 3), end=round(t + step, 3), prob=0.9))
+        t += step
+    return out
+
+
+def test_karaoke_style_exists_with_the_agreed_colours() -> None:
+    s = style_line(ass_document(edl(mode="speech"), RULES), "Karaoke")
+    kcfg = RULES["speech_edit"]["karaoke"]
+    assert s["PrimaryColour"] == ass_colour(str(kcfg["base"]))
+    assert s["SecondaryColour"] == ass_colour(str(kcfg["highlight"]))
+    assert int(s["Fontsize"]) >= 64 and s["Alignment"] == "2"
+
+
+def test_speech_mode_lifts_the_cta_above_the_karaoke_line() -> None:
+    speech_cta = int(style_line(ass_document(edl(mode="speech"), RULES), "CTA")["MarginV"])
+    music_cta = int(style_line(ass_document(edl(mode="music"), RULES), "CTA")["MarginV"])
+    assert speech_cta > music_cta >= R["safe"]["bottom"]
+
+
+def test_karaoke_groups_become_dialogue_lines_with_one_word_highlighted() -> None:
+    ws = words("Giò lụa GANI")
+    doc = ass_document(edl(mode="speech", karaoke=[ws]), RULES)
+    events = [ln for ln in doc.splitlines() if ln.startswith("Dialogue:") and ",Karaoke," in ln]
+    assert len(events) == 3
+    lit = ass_colour(str(RULES["speech_edit"]["karaoke"]["highlight"]))
+    assert all(rf"\c{lit}" in ln for ln in events)
+
+
+def test_no_karaoke_lines_outside_speech_mode() -> None:
+    ws = words("Giò lụa GANI")
+    doc = ass_document(edl(mode="music", karaoke=[ws]), RULES)
+    assert ",Karaoke," not in doc

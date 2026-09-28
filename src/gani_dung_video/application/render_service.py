@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.qc_service import QcReport, check_file, render_checked
-from gani_dung_video.domain.edl import Edl, build_edl
+from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
@@ -41,6 +41,18 @@ class RenderResult(BaseModel):
     qc_notes: list[str]  # fixes applied + findings left, Vietnamese
 
 
+class SpeechDraftsFile(BaseModel):
+    """Content of edit/speech_drafts.json (speech-driven styles, spec Insight 4 "LỜI").
+
+    5c-1: hand-assembled from phrases.json to test the render pipeline before Claude chooses
+    phrases; 5c-2 will have Claude write this file the way draft_service writes drafts.json.
+    """
+
+    model: str
+    cost_vnd: float = 0.0
+    drafts: list[SpeechDraft]
+
+
 def _read(path: Path, model: type[BaseModel], missing: str) -> Any:
     if not path.is_file():
         raise ConfigError(missing)
@@ -59,14 +71,14 @@ def _music_file(plan: Plan) -> Path | None:
     return Path(plan.music.path)
 
 
-def _log(e: Edl, plan: Plan, drafts: DraftsFile, letter: str, label: str, video: Path,
+def _log(e: Edl, plan: Plan, model: str, cost_vnd: float, letter: str, label: str, video: Path,
          rules: Rules) -> dict[str, Any]:  # fmt: skip
     brand = rules["render"]["brand"]
     return {
         "time": datetime.now(UTC).isoformat(timespec="seconds"), "draft": letter, "label": label,
         "video": video.name, "rules_version": plan.rules_version, "options": plan.options,
         "music": plan.music.model_dump(exclude={"path"}) if plan.music else None,
-        "ai_model": drafts.model, "ai_cost_vnd": drafts.cost_vnd,
+        "ai_model": model, "ai_cost_vnd": cost_vnd,
         "brand_placeholders": [k for k in ("logo", "zalo") if brand[f"{k}_placeholder"]],
         "shots": [s.model_dump() for s in e.shots],
         "captions": [c.model_dump() for c in e.captions],
@@ -77,14 +89,16 @@ def _video_name(letter: str, preview: bool) -> str:
     return f"nhap_{letter}_540p.mp4" if preview else f"video_{letter}_1080x1920.mp4"
 
 
-def _inputs(folder: Path, rules: Rules) -> tuple[DraftsFile, Plan, Inventory]:
+def _read_plan_and_inventory(folder: Path, rules: Rules) -> tuple[Plan, Inventory]:
     edit = folder / EDIT_DIR
-    drafts: DraftsFile = _read(edit / "drafts.json", DraftsFile,
-                               "Chưa có edit/drafts.json — chạy lệnh `draft` trước.")  # fmt: skip
     plan: Plan = _read(edit / "plan.json", Plan, "Chưa có edit/plan.json — chạy lệnh `plan`.")
     inv: Inventory = _read(edit / INVENTORY_FILE, Inventory,
                            "Chưa có edit/inventory.json — chạy lệnh `inventory`.")  # fmt: skip
-    return drafts, plan, inv
+    return plan, inv
+
+
+_NO_SPEECH_DRAFTS = ("Chưa có edit/speech_drafts.json — dựng ghép tay (5c-1) hoặc chờ Claude "
+                    "ở bước 5c-2.")  # fmt: skip
 
 
 def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None = None
@@ -96,14 +110,26 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     """
     rules = rules if rules is not None else load_rules()
     folder = folder.expanduser().resolve()
-    drafts, plan, inv = _inputs(folder, rules)
-    d = next((x for x in drafts.drafts if x.draft == draft), None)
-    if d is None:
-        raise ConfigError(f"Không có bản nháp '{draft}' trong drafts.json.")
+    plan, inv = _read_plan_and_inventory(folder, rules)
+    clips = {c.file: c for c in inv.clips}
+    edit = folder / EDIT_DIR
+    if plan.driver == "speech":
+        sd: SpeechDraftsFile = _read(edit / "speech_drafts.json", SpeechDraftsFile,
+                                     _NO_SPEECH_DRAFTS)  # fmt: skip
+        sdraft = next((x for x in sd.drafts if x.draft == draft), None)
+        if sdraft is None:
+            raise ConfigError(f"Không có bản nháp '{draft}' trong speech_drafts.json.")
+        e = build_speech_edl(sdraft.cuts, sdraft.broll, plan, clips, rules, preview=preview)
+    else:
+        no_drafts = "Chưa có edit/drafts.json — chạy lệnh `draft` trước."
+        drafts: DraftsFile = _read(edit / "drafts.json", DraftsFile, no_drafts)
+        d = next((x for x in drafts.drafts if x.draft == draft), None)
+        if d is None:
+            raise ConfigError(f"Không có bản nháp '{draft}' trong drafts.json.")
+        e = build_edl(d, plan, clips, rules, preview=preview)
     video = folder / EDIT_DIR / RENDER_DIR / draft / _video_name(draft, preview)
     if not video.is_file():
         raise ConfigError(f"Chưa có {video.name} — chạy lệnh `render` trước.")
-    e = build_edl(d, plan, {c.file: c for c in inv.clips}, rules, preview=preview)
     report = folder / EDIT_DIR / RENDER_DIR / draft / "qc_report.json"
     px = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in ("caption", "cta")}
     if report.is_file():  # sizes the render actually used (may be lowered by T7)
@@ -112,10 +138,57 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
 
 
+def _render_one(
+    e: Edl,
+    letter: str,
+    label: str,
+    model: str,
+    cost_vnd: float,
+    folder: Path,
+    edit: Path,
+    music: Path | None,
+    rules: Rules,
+    preview: bool,
+    metrics: FontMetrics,
+    plan: Plan,
+) -> RenderResult:
+    out = edit / RENDER_DIR / letter
+    out.mkdir(parents=True, exist_ok=True)
+    ass, video = out / "sub.ass", out / _video_name(letter, preview)
+    (out / "phude.srt").write_text(srt_document(e), encoding="utf-8")
+
+    def do_render(font_px: Mapping[str, int], loud: Mapping[str, float] | None,
+                  e: Edl = e, ass: Path = ass, video: Path = video) -> None:  # fmt: skip
+        ass.write_text(ass_document(e, rules, font_px), encoding="utf-8")
+        logger.info("Đang dựng bản %s (%s)…", video.parent.name, video.name)
+        render(e, folder, music, ass, video, rules, loud)
+
+    def pass1(e: Edl = e, out: Path = out) -> Mapping[str, float]:
+        return measure_loudnorm(e, folder, music, out, rules)
+
+    rep = render_checked(e, video, rules, do_render, pass1, metrics.width)
+    (out / "qc_report.json").write_text(rep.model_dump_json(indent=1), encoding="utf-8")
+    if rep.rounds:
+        cover_at = e.captions[0].start + 0.3 if e.captions else 0.5
+        extract_cover(video, min(cover_at, e.content_end), out / "cover.jpg")
+        log = _log(e, plan, model, cost_vnd, letter, label, video, rules)
+        log["qc"] = {"passed": rep.passed, "rounds": rep.rounds, "fixes": rep.fixes,
+                     "findings": [f.model_dump() for f in rep.findings]}  # fmt: skip
+        (out / "render_log.json").write_text(json.dumps(log, ensure_ascii=False, indent=1),
+                                             encoding="utf-8")  # fmt: skip
+    return RenderResult(draft=letter, video=video, duration_sec=e.duration, qc_passed=rep.passed,
+                        qc_notes=[*rep.fixes, *(f"{f.code}: {f.msg}"
+                                                for f in rep.findings)])  # fmt: skip
+
+
 def build_render(
     folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None
 ) -> list[RenderResult]:
-    """Render every draft (or only `draft`) of <folder>/edit/drafts.json.
+    """Render every draft (or only `draft`) of the style's drafts file.
+
+    Speech-driven styles (spec Insight 4 "LỜI") read edit/speech_drafts.json — the A-roll
+    follows the voice, B-roll overlays and ducking come from build_speech_edl; everything
+    else reads edit/drafts.json (beat-driven, build_edl).
 
     Raises:
         ConfigError: drafts/plan/inventory missing or corrupt, unknown draft, music gone.
@@ -124,43 +197,32 @@ def build_render(
     rules = rules if rules is not None else load_rules()
     folder = folder.expanduser().resolve()
     edit = folder / EDIT_DIR
-    drafts, plan, inv = _inputs(folder, rules)
-    chosen = [d for d in drafts.drafts if draft is None or d.draft == draft]
-    if not chosen:
-        have = ", ".join(d.draft for d in drafts.drafts)
-        raise ConfigError(f"Không có bản nháp '{draft}'; drafts.json có: {have}.")
+    plan, inv = _read_plan_and_inventory(folder, rules)
     music = _music_file(plan)
     clips = {c.file: c for c in inv.clips}
     metrics = FontMetrics()
-    results = []
-    for d in chosen:
-        e = build_edl(d, plan, clips, rules, preview=preview)
-        out = edit / RENDER_DIR / d.draft
-        out.mkdir(parents=True, exist_ok=True)
-        ass, video = out / "sub.ass", out / _video_name(d.draft, preview)
-        (out / "phude.srt").write_text(srt_document(e), encoding="utf-8")
-
-        def do_render(font_px: Mapping[str, int], loud: Mapping[str, float] | None,
-                      e: Edl = e, ass: Path = ass, video: Path = video) -> None:  # fmt: skip
-            ass.write_text(ass_document(e, rules, font_px), encoding="utf-8")
-            logger.info("Đang dựng bản %s (%s)…", video.parent.name, video.name)
-            render(e, folder, music, ass, video, rules, loud)
-
-        def pass1(e: Edl = e, out: Path = out) -> Mapping[str, float]:
-            return measure_loudnorm(e, folder, music, out, rules)
-
-        rep = render_checked(e, video, rules, do_render, pass1, metrics.width)
-        (out / "qc_report.json").write_text(rep.model_dump_json(indent=1), encoding="utf-8")
-        if rep.rounds:
-            cover_at = e.captions[0].start + 0.3 if e.captions else 0.5
-            extract_cover(video, min(cover_at, e.content_end), out / "cover.jpg")
-            log = _log(e, plan, drafts, d.draft, d.label, video, rules)
-            log["qc"] = {"passed": rep.passed, "rounds": rep.rounds, "fixes": rep.fixes,
-                         "findings": [f.model_dump() for f in rep.findings]}  # fmt: skip
-            (out / "render_log.json").write_text(json.dumps(log, ensure_ascii=False, indent=1),
-                                                 encoding="utf-8")  # fmt: skip
-        results.append(RenderResult(draft=d.draft, video=video, duration_sec=e.duration,
-                                    qc_passed=rep.passed,
-                                    qc_notes=[*rep.fixes, *(f"{f.code}: {f.msg}"
-                                                            for f in rep.findings)]))  # fmt: skip
-    return results
+    if plan.driver == "speech":
+        sd: SpeechDraftsFile = _read(edit / "speech_drafts.json", SpeechDraftsFile,
+                                     _NO_SPEECH_DRAFTS)  # fmt: skip
+        speech_chosen = [x for x in sd.drafts if draft is None or x.draft == draft]
+        if not speech_chosen:
+            have = ", ".join(x.draft for x in sd.drafts)
+            raise ConfigError(f"Không có bản nháp '{draft}'; speech_drafts.json có: {have}.")
+        return [
+            _render_one(build_speech_edl(x.cuts, x.broll, plan, clips, rules, preview=preview),
+                       x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
+                       preview, metrics, plan)
+            for x in speech_chosen
+        ]  # fmt: skip
+    no_drafts = "Chưa có edit/drafts.json — chạy lệnh `draft` trước."
+    drafts: DraftsFile = _read(edit / "drafts.json", DraftsFile, no_drafts)
+    chosen = [x for x in drafts.drafts if draft is None or x.draft == draft]
+    if not chosen:
+        have = ", ".join(x.draft for x in drafts.drafts)
+        raise ConfigError(f"Không có bản nháp '{draft}'; drafts.json có: {have}.")
+    return [
+        _render_one(build_edl(x, plan, clips, rules, preview=preview), x.draft, x.label,
+                   drafts.model, drafts.cost_vnd, folder, edit, music, rules, preview, metrics,
+                   plan)
+        for x in chosen
+    ]  # fmt: skip

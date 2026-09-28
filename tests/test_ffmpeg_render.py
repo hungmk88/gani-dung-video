@@ -129,6 +129,19 @@ def test_parse_loudnorm_json_from_the_ffmpeg_log() -> None:
         parse_loudnorm(silent)  # never hand -inf to loudnorm's linear pass
 
 
+def test_speech_mode_overlays_broll_and_ducks_the_music() -> None:
+    m = MusicTrack(track="t.m4a", audio_in_sec=0.0, loop_sec=None, fade_out_sec=0.5)
+    e = edl([shot("a.mp4", 0, 2), shot("a.mp4", 2, 4)], music=m, ambient=0.0)
+    e = e.model_copy(update={"mode": "speech", "duck": [(0.1, 1.8)], "duck_db": -18.0,
+                             "overlays": [shot("b.mp4", 2.4, 3.6)]})  # fmt: skip
+    g = build_graph(e, has_audio=[True, True], music_idx=3)
+    assert "[2:v]" in g  # the overlay is the input after the two A-roll shots
+    assert "setpts=PTS-STARTPTS+2.4/TB" in g
+    assert "overlay=eof_action=pass:enable='between(t,2.4,3.6)'" in g
+    assert "volume='1-0.87" in g and ":eval=frame" in g  # -18 dB duck curve on the music
+    assert "[2:a]" not in g  # B-roll sound is never mixed under the voice
+
+
 def test_muted_style_without_music_still_has_a_silent_track() -> None:
     g = build_graph(edl([shot("a.mp4", 0, 1)], ambient=None), has_audio=[True])
     assert "volume=" not in g and "anullsrc" in g
@@ -202,6 +215,26 @@ def test_real_render_has_the_planned_size_length_fps_and_audio(tmp_path: Path) -
     assert a["sample_rate"] == "48000"
     fmt = info["format"]
     assert isinstance(fmt, dict) and float(fmt["duration"]) == pytest.approx(3.0, abs=0.1)
+
+
+@needs_ffmpeg
+def test_real_speech_render_with_broll_overlay_and_ducked_music(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=360x640:r=30:d=5", 5.0)  # the "speaker"
+    ff(tmp_path / "b.mp4", "smptebars=s=640x360:r=30:d=5", 5.0, audio=False)  # B-roll
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=220:duration=8", "-c:a", "aac", str(tmp_path / "t.m4a")],
+                   check=True, timeout=60)  # fmt: skip
+    m = MusicTrack(track="t.m4a", audio_in_sec=0.0, loop_sec=None, fade_out_sec=0.5)
+    e = edl([shot("a.mp4", 0, 2.0), shot("a.mp4", 2.0, 4.0, src_in=2.5)], music=m, ambient=0.0)
+    e = e.model_copy(update={"mode": "speech", "duck": [(0.2, 1.8), (2.2, 3.8)],
+                             "duck_db": -18.0, "overlays": [shot("b.mp4", 2.4, 3.4)]})  # fmt: skip
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "speech.mp4"
+    render(e, tmp_path, tmp_path / "t.m4a", ass, out, RULES)
+    info = probe(out)
+    fmt = info["format"]
+    assert isinstance(fmt, dict) and float(fmt["duration"]) == pytest.approx(5.0, abs=0.1)
 
 
 @needs_ffmpeg

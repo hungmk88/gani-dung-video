@@ -163,12 +163,11 @@ def test_music_path_cannot_escape_the_allowed_folders(folder: Path, tmp_path: Pa
         build_plan(opt, folder, rules=RULES)
 
 
-def test_speech_style_is_reported_as_not_supported(folder: Path, tmp_path: Path) -> None:
+def test_speech_style_compiles_when_the_footage_has_speech(folder: Path, tmp_path: Path) -> None:
     opt = write_options(tmp_path / "o.json", phong_cach="ban_hang_co_loi", muc_dich="ban_hang")
     write_scenes(folder, speech=True)
-    with pytest.raises(PlanError) as e:
-        build_plan(opt, folder, rules=RULES)
-    assert e.value.code == "PLAN_SPEECH_DRIVER"
+    plan, _ = build_plan(opt, folder, rules=RULES)
+    assert plan.driver == "speech"
 
 
 def test_cli_plan_prints_a_summary(

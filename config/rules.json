@@ -214,7 +214,7 @@
   },
   "chars_per_token": 3.0
  },
- "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz 320 kbps, −14 LUFS, trần đỉnh −2,0 dBTP khi chuẩn hóa (29/09/2026: AAC 192 kbps làm đỉnh thật nhô thêm tới 1,2 dB, 320 kbps chỉ 0,1 dB; soát T3 yêu cầu ≤ −1,0 dBTP trên file xuất). Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
+ "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz 320 kbps, −14 LUFS, trần đỉnh −2,0 dBTP khi chuẩn hóa (29/09/2026: AAC 192 kbps làm đỉnh thật nhô thêm tới 1,2 dB, 320 kbps chỉ 0,1 dB; soát T3 yêu cầu ≤ −1,0 dBTP trên file xuất). speech_cta_extra_margin: ở chế độ lời (GĐ5c-1), CTA được đẩy lên thêm quãng này (px) so với lề an toàn dưới để không đè phụ đề karaoke. Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
  "render": {
   "fps": 30,
   "final": {
@@ -248,8 +248,10 @@
    "cta": 80,
    "logo": 64,
    "end_card_logo": 160,
-   "end_card_text": 64
+   "end_card_text": 64,
+   "karaoke": 68
   },
+  "speech_cta_extra_margin": 140,
   "brand": {
    "logo_text": "GANI",
    "logo_placeholder": true,
@@ -275,6 +277,24 @@
   "font_min_px": 64,
   "max_rounds": 3,
   "probe_timeout_sec": 900
+ },
+ "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
+ "speech_edit": {
+  "sentence_end": ".?!…",
+  "soft_break": ",;:",
+  "max_phrase_sec": 8.0,
+  "min_phrase_sec": 0.8,
+  "broll_max_shift_sec": 0.15,
+  "duck_fade_sec": 0.15,
+  "duck_merge_gap_sec": 0.4,
+  "karaoke": {
+   "min_words": 3,
+   "max_words": 5,
+   "highlight": "#FFCC00",
+   "base": "#FFFFFF",
+   "group_gap_sec": 0.3
+  },
+  "jump_cut_zoom_enabled": false
  },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
@@ -346,7 +366,6 @@
   "INVALID_FACT": "Trường '{field}' có giá trị không hợp lệ: '{value}'.",
   "INVALID_FIELD": "Trường '{field}' không có trong khối tùy chọn — kiểm tra lỗi chính tả (xem Phụ lục D).",
   "RULES_VERSION": "yeu-cau.md ghi rules_version {got}, app đang dùng bộ quy tắc {want}. Kiểm tra lại tùy chọn.",
-  "PLAN_SPEECH_DRIVER": "Phong cách dẫn nhịp theo lời nói chưa được hỗ trợ ở bước biên dịch (sẽ có ở giai đoạn dựng). Chọn phong cách dẫn nhịp theo nhạc.",
   "PLAN_CHAPTERS": "Video 3 phút cần chia chương, chưa được hỗ trợ (giai đoạn 7). Chọn độ dài 15–60 giây.",
   "PLAN_NO_TRACK": "Chế độ nhạc '{mode}' cần ghi tên file nhạc ở nhac_file (chọn bài tự động chưa có).",
   "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước.",
@@ -355,6 +374,8 @@
   "DRAFT_NO_PICK": "Chưa có edit/candidates.json — chạy lệnh `pick` trước.",
   "DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",
   "DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
-  "DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
+  "DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON.",
+  "PHRASES_NOT_SPEECH_STYLE": "Phong cách '{style}' không dẫn nhịp theo lời nói — chỉ 'Bán hàng có lời' dùng bước này. Chọn phong cách đó, hoặc dùng lệnh `plan`/`pick` cho phong cách hiện tại.",
+  "PHRASES_NO_TRANSCRIPTS": "Chưa có edit/transcripts/ — chạy lệnh `transcribe` trước."
  }
 }

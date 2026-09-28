@@ -14,8 +14,11 @@ from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.drafts import SnappedDraft
 from gani_dung_video.domain.footage import Clip
+from gani_dung_video.domain.karaoke import group_words
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
+from gani_dung_video.domain.speech import SpokenWord
+from gani_dung_video.domain.speech_edit import Overlay, SpeechCut, duck_intervals
 
 
 class EdlError(ValueError):
@@ -70,6 +73,39 @@ class Edl(BaseModel):
     true_peak_db: float
     font: str
     captions: list[Caption]
+    mode: str = "music"  # music | grid | speech
+    overlays: list[Shot] = []  # speech: B-roll pictures laid over the speaker (no sound)
+    duck: list[tuple[float, float]] = []  # speech: voiced spans where the music dips
+    duck_db: float | None = None
+    duck_fade_sec: float = 0.15
+    karaoke: list[list[SpokenWord]] = []  # speech: word groups on the timeline
+
+
+class BrollPlacement(BaseModel):
+    """Which candidate segment fills an overlay slot (5c-2: chosen by the AI)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    overlay: Overlay
+    clip: str
+    start: float
+    end: float
+    peak: float
+
+
+class SpeechDraft(BaseModel):
+    """One speech-mode draft: chosen A-roll phrases, in order, plus optional B-roll overlays.
+
+    5c-1: hand-assembled from phrases.json to test the render pipeline; 5c-2 will have
+    Claude produce this shape instead.
+    """
+
+    draft: str
+    label: str
+    cuts: list[SpeechCut]
+    broll: list[BrollPlacement] = []
+    missing_shots: list[str] = []
+    warnings: list[str] = []
 
 
 def _frame(t: float, fps: int) -> float:
@@ -157,3 +193,66 @@ def build_edl(
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
         captions=_captions(draft, plan, fps),
     )  # fmt: skip
+
+
+def _broll_shot(b: BrollPlacement, clips: Mapping[str, Clip], fps: int) -> Shot:
+    if b.clip not in clips:
+        raise EdlError(f"B-roll dùng clip '{b.clip}' không có trong inventory.json.")
+    d = b.overlay.t_end - b.overlay.t_start
+    src_in = min(max(b.peak - 0.35 * d, b.start), max(b.start, b.end - d))  # peak at 35 %
+    return Shot(source=b.clip, src_in=_frame(src_in, fps), src_out=_frame(src_in + d, fps),
+                t_start=_frame(b.overlay.t_start, fps), t_end=_frame(b.overlay.t_end, fps),
+                block="broll", hdr=clips[b.clip].is_hdr, dissolve_out_sec=0.0,
+                pad_sec=0.0)  # fmt: skip
+
+
+def build_speech_edl(
+    cuts: Sequence[SpeechCut], broll: Sequence[BrollPlacement], plan: Plan,
+    clips: Mapping[str, Clip], rules: Rules, preview: bool,
+) -> Edl:  # fmt: skip
+    """Speech-driven EDL (5c-1): the speaker's phrases carry picture and sound, B-roll covers
+    parts of them silently, music dips under the voice, words become karaoke subtitles.
+
+    Raises:
+        EdlError: a phrase or B-roll clip is not in the inventory.
+    """
+    r, fps = rules["render"], int(rules["render"]["fps"])
+    style_name = str(plan.options["style"])
+    style, se = rules["styles"][style_name], rules["speech_edit"]
+    size = r["preview"] if preview else r["final"]
+    shots = []
+    for c in cuts:
+        if c.clip not in clips:
+            raise EdlError(f"Câu '{c.phrase_id}' dùng clip '{c.clip}' không có trong inventory.")
+        shots.append(Shot(source=c.clip, src_in=c.src_in, src_out=c.src_out, t_start=c.t_start,
+                          t_end=c.t_end, block="speech", hdr=clips[c.clip].is_hdr,
+                          dissolve_out_sec=0.0, pad_sec=0.0))  # fmt: skip
+    end = shots[-1].t_end if shots else 0.0
+    m = plan.music
+    music = MusicTrack(track=m.track, audio_in_sec=m.audio_in_sec, loop_sec=m.loop_sec,
+                       fade_out_sec=float(r["music_fade_sec"])) if m else None  # fmt: skip
+    cta = plan.blocks[-1].text
+    words = [w for c in cuts for w in c.words]
+    return Edl(
+        style=style_name, width=int(size["width"]), height=int(size["height"]), fps=fps,
+        video_kbps=int(size["video_kbps"]), shots=shots, content_end=end,
+        end_card_sec=float(r["end_card_sec"]), duration=_frame(end + float(r["end_card_sec"]), fps),
+        music=music, ambient_db=0.0, lufs=float(r["lufs"]), true_peak_db=float(r["true_peak_db"]),
+        font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
+        captions=_cta(cuts, end, cta),
+        mode="speech", overlays=[_broll_shot(b, clips, fps) for b in broll],
+        duck=duck_intervals(cuts, float(se["duck_merge_gap_sec"])),
+        duck_db=float(style["duck_db"]), duck_fade_sec=float(se["duck_fade_sec"]),
+        karaoke=_karaoke_groups(words, se),
+    )  # fmt: skip
+
+
+def _cta(cuts: Sequence[SpeechCut], end: float, cta: str | None) -> list[Caption]:
+    """The purpose's CTA line over the last phrase (the speaker says it, the screen shows it)."""
+    if not cta or not cuts:
+        return []
+    return [Caption(start=cuts[-1].t_start, end=end, text=cta, kind="cta")]
+
+
+def _karaoke_groups(words: Sequence[SpokenWord], se: Mapping[str, Any]) -> list[list[SpokenWord]]:
+    return group_words(words, se["karaoke"])

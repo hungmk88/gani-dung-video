@@ -165,11 +165,20 @@ def test_promo_cta_text_gets_the_deadline() -> None:
     assert p.blocks[-1].text == "Ưu đãi đến 30/10"
 
 
-def test_speech_driven_style_is_not_supported_yet() -> None:
+def test_speech_style_compiles_with_the_speech_driver_and_broll_beats() -> None:
+    # Phase 5c-1: speech decides the cuts; the beat grid only places B-roll ({2, 4} beats).
     o = opts(phong_cach="ban_hang_co_loi", muc_dich="ban_hang")
-    with pytest.raises(PlanError) as e:
-        compile_plan(o, RULES, music=music(), available_tags=ALL_TAGS)
-    assert e.value.code == "PLAN_SPEECH_DRIVER"
+    p = compile_plan(o, RULES, music=music(bpm=100.0), available_tags=ALL_TAGS)
+    assert p.driver == "speech" and p.beats_per_scene_allowed == [2, 4]
+    assert p.beat_sec == pytest.approx(0.6) and p.music is not None
+    assert [b.role for b in p.blocks] == ["hook", "nhu_cau", "san_pham", "bang_chung", "cta"]
+    assert p.blocks[-1].text == "Nhắn tin đặt hàng"
+
+
+def test_speech_style_without_music_uses_a_grid_for_broll() -> None:
+    o = opts(phong_cach="ban_hang_co_loi", muc_dich="ban_hang", nhac="khong_nhac", nhac_file=None)
+    p = compile_plan(o, RULES, music=None, available_tags=ALL_TAGS)
+    assert p.driver == "speech" and p.music is None and p.beat_sec == pytest.approx(1.25)
 
 
 def test_three_minute_video_is_not_supported_yet() -> None:

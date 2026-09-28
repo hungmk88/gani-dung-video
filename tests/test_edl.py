@@ -177,3 +177,62 @@ def test_font_follows_the_style() -> None:
         "Be Vietnam Pro Light")  # fmt: skip
     assert build_edl(draft(SEGS), plan("review_mon_an"), CLIPS, RULES, False).font == (
         "Be Vietnam Pro ExtraBold")  # fmt: skip
+
+
+# ─────────────── speech mode (5c-1) ───────────────
+
+
+def speech_plan(music: PlanMusic | None = None) -> Plan:
+    p = plan("ban_hang_co_loi", music=music)
+    return p.model_copy(update={"driver": "speech", "beats_per_scene_allowed": [2, 4],
+                                "options": {**p.options, "style": "ban_hang_co_loi",
+                                            "purpose": "ban_hang"}})  # fmt: skip
+
+
+def speech_cuts() -> list[Any]:
+    from gani_dung_video.domain.speech import SpokenWord
+    from gani_dung_video.domain.speech_edit import SpeechCut
+
+    def w(text: str, a: float, b: float) -> SpokenWord:
+        return SpokenWord(text=text, start=a, end=b, prob=0.9)
+
+    return [
+        SpeechCut(phrase_id="s_p0", clip="a.mp4", src_in=10.0, src_out=12.0, t_start=0.0,
+                  t_end=2.0, words=[w("Giò", 0.1, 0.5), w("lụa", 0.5, 0.9), w("ngon.", 0.9, 1.8)]),
+        SpeechCut(phrase_id="s_p3", clip="a.mp4", src_in=30.0, src_out=33.0, t_start=2.0,
+                  t_end=5.0, words=[w("Nhắn", 2.1, 2.6), w("tin", 2.6, 3.0), w("ngay", 3.0, 4.8)]),
+    ]  # fmt: skip
+
+
+def test_speech_edl_keeps_the_voice_ducks_the_music_and_places_broll() -> None:
+    from gani_dung_video.domain.edl import BrollPlacement, build_speech_edl
+    from gani_dung_video.domain.speech_edit import Overlay
+
+    m = PlanMusic(track="t.m4a", bpm=100.0, effective_bpm=100.0, fold="giu_nguyen",
+                  first_beat_sec=0.2, audio_in_sec=0.2, duration_sec=60.0,
+                  source="library")  # fmt: skip
+    ov = BrollPlacement(overlay=Overlay(phrase_id="s_p3", t_start=2.4, t_end=3.6, beats=2),
+                        clip="b.mp4", start=5.0, end=10.0, peak=6.0)  # fmt: skip
+    e = build_speech_edl(speech_cuts(), [ov], speech_plan(m), CLIPS, RULES, preview=True)
+    assert e.mode == "speech" and e.ambient_db == 0.0  # the voice stays at full level
+    assert [(s.source, s.t_start, s.t_end) for s in e.shots] == [("a.mp4", 0.0, 2.0),
+                                                                 ("a.mp4", 2.0, 5.0)]  # fmt: skip
+    [o] = e.overlays
+    assert (o.source, o.t_start, o.t_end) == ("b.mp4", 2.4, 3.6)
+    assert o.src_in == pytest.approx(6.0 - 0.35 * 1.2, abs=1 / FPS) and o.hdr is True  # b: HDR
+    # 0.3 s between the phrases < duck_merge_gap_sec 0.4: one span, no pumping in the gap
+    assert e.duck_db == -18 and e.duck == [(0.1, 4.8)]
+    assert e.content_end == 5.0 and e.duration == 7.0
+    assert [(c.text, c.kind) for c in e.captions] == [("Nhắn tin nhận báo giá sỉ", "cta")]
+    assert [[w.text for w in g] for g in e.karaoke] == [["Giò", "lụa", "ngon."],
+                                                        ["Nhắn", "tin", "ngay"]]  # fmt: skip
+
+
+def test_speech_edl_refuses_broll_from_an_unknown_clip() -> None:
+    from gani_dung_video.domain.edl import BrollPlacement, build_speech_edl
+    from gani_dung_video.domain.speech_edit import Overlay
+
+    ov = BrollPlacement(overlay=Overlay(phrase_id="s_p3", t_start=2.4, t_end=3.6, beats=2),
+                        clip="zz.mp4", start=0, end=5, peak=1)  # fmt: skip
+    with pytest.raises(EdlError, match="zz"):
+        build_speech_edl(speech_cuts(), [ov], speech_plan(), CLIPS, RULES, preview=True)

@@ -12,12 +12,15 @@ import pytest
 
 from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.inventory_service import build_inventory
-from gani_dung_video.application.render_service import build_render
+from gani_dung_video.application.render_service import SpeechDraftsFile, build_render
 from gani_dung_video.cli import main
 from gani_dung_video.domain.beats import DraftSegment, SceneRef, snap_to_beats
 from gani_dung_video.domain.drafts import SnappedDraft
+from gani_dung_video.domain.edl import BrollPlacement, SpeechDraft
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import beats_of, compile_plan
+from gani_dung_video.domain.speech import SpokenWord
+from gani_dung_video.domain.speech_edit import Overlay, SpeechCut
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
@@ -68,6 +71,40 @@ def folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return d
 
 
+SPEECH_OPTS: dict[str, Any] = {"phong_cach": "ban_hang_co_loi", "muc_dich": "ban_hang",
+                               "do_dai_giay": 30, "so_ban_nhap": 1,
+                               "nhac": "khong_nhac"}  # fmt: skip
+
+
+def word(text: str, start: float, end: float) -> SpokenWord:
+    return SpokenWord(text=text, start=start, end=end, prob=0.9)
+
+
+@pytest.fixture(scope="module")
+def speech_folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    d = tmp_path_factory.mktemp("dung_loi")
+    ff(d / "a.mp4", "testsrc2=s=360x640:r=30", 8.0)  # the speaker
+    ff(d / "b.mp4", "smptebars=s=640x360:r=30", 8.0)  # B-roll
+    build_inventory(d, RULES)
+    plan = compile_plan(VideoOptions(**SPEECH_OPTS), RULES, music=None, available_tags=set())
+    (d / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
+    cuts = [
+        SpeechCut(phrase_id="a_p0", clip="a.mp4", src_in=0.0, src_out=2.0, t_start=0.0, t_end=2.0,
+                 words=[word("Giò", 0.1, 0.5), word("lụa", 0.5, 0.9), word("GANI", 0.9, 1.8)]),
+        SpeechCut(phrase_id="a_p1", clip="a.mp4", src_in=2.0, src_out=5.0, t_start=2.0, t_end=5.0,
+                 words=[word("Bò", 2.1, 2.5), word("viên", 2.5, 2.9), word("tròn", 2.9, 3.8)]),
+        SpeechCut(phrase_id="a_p2", clip="a.mp4", src_in=5.0, src_out=8.0, t_start=5.0, t_end=8.0,
+                 words=[word("Nhắn", 5.1, 5.6), word("tin", 5.6, 6.0), word("ngay", 6.0, 7.8)]),
+    ]  # fmt: skip
+    broll = [BrollPlacement(overlay=Overlay(phrase_id="a_p1", t_start=2.4, t_end=3.6, beats=2),
+                            clip="b.mp4", start=0.0, end=1.2, peak=0.6)]  # fmt: skip
+    speech_draft = SpeechDraft(draft="A", label="Thử render chế độ lời (ghép tay)", cuts=cuts,
+                               broll=broll, missing_shots=[], warnings=[])  # fmt: skip
+    sd = SpeechDraftsFile(model="THU-TAY-khong-AI", cost_vnd=0.0, drafts=[speech_draft])
+    (d / "edit" / "speech_drafts.json").write_text(sd.model_dump_json(), encoding="utf-8")
+    return d
+
+
 def duration(path: Path) -> float:
     r = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
@@ -103,6 +140,13 @@ def test_unknown_draft_letter_is_refused(folder: Path) -> None:
 
 
 def test_drafts_json_is_required(tmp_path: Path) -> None:
+    # plan.json now has to be read first to know which drafts file the style needs
+    # (drafts.json or speech_drafts.json), so this pins down the "drafts.json missing"
+    # case specifically rather than relying on incidental read order.
+    ff(tmp_path / "a.mp4", "testsrc2=s=360x640:r=30", 8.0)
+    build_inventory(tmp_path, RULES)
+    plan = compile_plan(VideoOptions(**OPTS), RULES, music=None, available_tags=set())
+    (tmp_path / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
     with pytest.raises(ConfigError, match="draft"):
         build_render(tmp_path, preview=True, rules=RULES)
 
@@ -124,3 +168,38 @@ def test_cli_qc_rechecks_an_existing_video(
 
 def test_cli_qc_without_a_rendered_video(folder: Path) -> None:
     assert main(["qc", str(folder), "--ban", "A", "--final"]) == 2  # no 1080p render yet
+
+
+# ─────────────── speech mode (5c-1) ───────────────
+
+
+def test_speech_mode_renders_the_voice_the_broll_overlay_and_the_cta(speech_folder: Path) -> None:
+    [res] = build_render(speech_folder, preview=True, rules=RULES)
+    out = speech_folder / "edit" / "render" / "A"
+    assert res.video == out / "nhap_A_540p.mp4" and res.video.is_file()
+    assert res.duration_sec == pytest.approx(10.0)  # 8 s of speech + 2 s end card
+    assert duration(res.video) == pytest.approx(res.duration_sec, abs=0.1)
+    srt = (out / "phude.srt").read_text(encoding="utf-8")
+    assert "Nhắn tin đặt hàng" in srt  # ban_hang's CTA, shown over the last phrase
+    assert (out / "cover.jpg").stat().st_size > 1000
+    log = json.loads((out / "render_log.json").read_text(encoding="utf-8"))
+    assert log["draft"] == "A" and log["options"]["style"] == "ban_hang_co_loi"
+    assert [s["source"] for s in log["shots"]] == ["a.mp4", "a.mp4", "a.mp4"]
+    assert log["qc"]["passed"] is True and res.qc_passed
+
+
+def test_speech_drafts_json_is_required_for_a_speech_style(tmp_path: Path) -> None:
+    d = tmp_path / "no_speech_drafts"
+    d.mkdir()
+    ff(d / "a.mp4", "testsrc2=s=360x640:r=30", 8.0)
+    build_inventory(d, RULES)
+    plan = compile_plan(VideoOptions(**SPEECH_OPTS), RULES, music=None, available_tags=set())
+    (d / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
+    with pytest.raises(ConfigError, match="speech_drafts"):
+        build_render(d, preview=True, rules=RULES)
+
+
+def test_cli_render_speech_mode(speech_folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["render", str(speech_folder), "--preview", "--ban", "A"]) == 0
+    out = capsys.readouterr().out
+    assert "QC: ĐẠT" in out and "nhap_A_540p.mp4" in out and "10s" in out
