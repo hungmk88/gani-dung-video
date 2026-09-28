@@ -1,0 +1,63 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Footage, project work dirs, renders (large + may contain faces/PII) ---
+edit/
+footage/
+jobs/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.m4v
+*.M4V
+*.mkv
+*.avi
+*.webm
+*.mts
+*.MTS
+*.heic
+*.HEIC
+
+# --- Music library (licensed tracks: do not redistribute via git) ---
+music/
+*.mp3
+*.m4a
+*.aac
+*.flac
+
+# --- Models / caches ---
+models/
+*.pt
+*.safetensors
+*.onnx
+
+# --- Local state ---
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Local drafts (reference only, never pushed) ---
+drafts/

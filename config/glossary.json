@@ -1,0 +1,19 @@
+{
+  "_ghi_chu": "terms: tên riêng máy nhận giọng hay nghe sai — 'correct' = cách viết đúng, 'heard_as' = cách máy hay viết sai (thêm dần khi gặp; so khớp không phân biệt hoa thường). banned_claims: CỤM từ cấm trên chữ/phụ đề (Đặc tả v2.1 Mục 5.2, chốt 28/09/2026). So khớp theo chuỗi âm tiết liền nhau, không theo chuỗi con — vì vậy 'giá trị', 'quản trị' không bị bắt. 'chữa'/'trị' chỉ cấm trong cụm y tế.",
+  "terms": [
+    {"correct": "GANI", "heard_as": ["gani foods", "gani food", "ga ni phu đi"]},
+    {"correct": "HACCP", "heard_as": ["hát sép", "ha xíp"]},
+    {"correct": "VCA", "heard_as": ["vê xê a"]},
+    {"correct": "Lộc Thủy", "heard_as": ["lộc thuỷ"]},
+    {"correct": "Vĩnh Lộc", "heard_as": ["vĩnh lọc", "vinh lộc", "vĩnh lốc", "vịnh lộc"]},
+    {"correct": "Ước Lễ", "heard_as": ["ước lệ", "ướt lễ", "ước lể", "uốc lễ"]},
+    {"correct": "giò lụa", "heard_as": ["dò lụa", "rò lụa", "giò lừa"]},
+    {"correct": "giò chả", "heard_as": ["dò chả", "rò chả"]},
+    {"correct": "chả quế", "heard_as": ["chà quế", "chả quê"]},
+    {"correct": "giò bò", "heard_as": ["dò bò", "rò bò"]}
+  ],
+  "banned_claims": [
+    "100%", "nhất", "duy nhất", "số 1", "hàn the",
+    "điều trị", "đặc trị", "chữa trị", "chữa bệnh", "trị bệnh", "phòng bệnh"
+  ]
+}

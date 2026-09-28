@@ -1,0 +1,6 @@
+# Production machine is macOS: keep LF so shell scripts run there.
+* text=auto eol=lf
+*.ttf binary
+*.wav binary
+*.png binary
+*.jpg binary

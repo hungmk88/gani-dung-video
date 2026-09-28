@@ -1,0 +1,154 @@
+{
+ "_ghi_chu": "Bộ quy tắc v2.0 — nguồn: Đặc tả App Dựng Video v2.1 (Mục 5, 6, Phụ lục A, D). Mọi con số chỉnh ở đây, không sửa code. Ma trận tương thích: ok = phù hợp, warn = dùng được có cảnh báo, bad = cảnh báo mạnh (X9) hoặc chặn (X1 qua max_duration). Danh sách từ cấm (claim) nằm ở glossary.json → banned_claims.",
+ "rules_version": "2.0",
+ "styles": {
+  "tvc_cat_nhanh": {
+   "name": "TVC cắt nhanh", "driver": "music", "driver_fallback": "grid",
+   "scene_sec": [0.8, 1.6], "scene_avg_sec": 1.3, "beats_allowed": [1, 2],
+   "segment_sec": [1.2, 2.5], "peak_ratio": [0.35, 0.5], "bpm_range": [110, 130],
+   "transition": "cut", "max_effects": 3, "punch_zoom": 0.05,
+   "text": {"max_words": 4, "every_n_scenes": 2, "on_beat": true},
+   "ambient_db": null, "grade": "high_contrast", "max_duration": 60
+  },
+  "ban_hang_co_loi": {
+   "name": "Bán hàng có lời", "driver": "speech",
+   "scene_sec": [2.0, 5.0], "scene_avg_sec": 2.5, "broll_beats": [2, 4],
+   "segment_sec": [1.2, 2.5], "silence_keep": [0.1, 0.25], "pad_ms": [80, 120],
+   "bpm_range": [85, 110], "transition": "cut", "zoom_alternate": 1.12,
+   "subtitle": "word_highlight", "duck_db": -18, "requires_speech": true
+  },
+  "ke_chuyen_nghe": {
+   "name": "Kể chuyện nghề", "driver": "music", "driver_if_speech": "speech",
+   "scene_sec": [2.5, 4.0], "scene_avg_sec": 3.0, "beats_allowed": [4, 6],
+   "segment_sec": [2.5, 4.5], "silence_keep": [0.15, 0.4], "bpm_range": [70, 95],
+   "transition": "cut", "dissolve_between_blocks": 7, "max_effects": 4,
+   "text": {"max_words": 8, "per_block": 1}, "ambient_db": -20
+  },
+  "review_mon_an": {
+   "name": "Review món ăn", "driver": "music",
+   "scene_sec": [1.5, 3.0], "scene_avg_sec": 2.0, "beats_allowed": [2, 4],
+   "segment_sec": [1.2, 3.0], "silence_keep": [0.15, 0.3], "bpm_range": [95, 120],
+   "transition": "cut", "max_effects": 3, "slowmo_min_fps": 60,
+   "text": {"min_words": 3, "max_words": 6}, "ambient_db": -12, "grade": "mon-an"
+  },
+  "sang_trong": {
+   "name": "Sang trọng", "driver": "music",
+   "scene_sec": [3.0, 5.0], "scene_avg_sec": 4.0, "beats_allowed": [6, 8],
+   "segment_sec": [3.0, 5.5], "bpm_range": [60, 85],
+   "transition": "dissolve_all", "dissolve_frames": 12, "max_effects": null,
+   "end": "fade_black", "text": {"max_words": 5}, "ambient_db": null
+  },
+  "theo_mo_ta": {
+   "name": "Theo mô tả của tôi", "driver": "auto",
+   "scene_sec": [2.5, 4.0], "scene_avg_sec": 3.0, "beats_allowed": [4, 6],
+   "bpm_range": null, "max_effects": 3, "note_min_words": 20
+  }
+ },
+ "purposes": {
+  "ban_hang": {
+   "name": "Bán hàng",
+   "blocks": [["hook", 0.10], ["nhu_cau", 0.15], ["san_pham", 0.45], ["bang_chung", 0.15], ["cta", 0.15]],
+   "required_tags": {"san_pham": ["thanh_pham", "mon_an"]},
+   "cta": "Nhắn tin đặt hàng", "max_duration": 180
+  },
+  "gioi_thieu_xuong": {
+   "name": "Giới thiệu xưởng",
+   "blocks": [["hook", 0.10], ["ve_sinh", 0.25], ["quy_trinh", 0.35], ["bang_chung", 0.15], ["cta", 0.15]],
+   "required_tags": {"ve_sinh": ["nguoi_thao_tac"], "bang_chung": ["chung_nhan", "thiet_bi"]},
+   "cta": "Nhắn tin nhận báo giá sỉ", "max_duration": 180
+  },
+  "khuyen_mai": {
+   "name": "Khuyến mãi",
+   "blocks": [["hook_uu_dai", 0.15], ["san_pham", 0.35], ["chi_tiet_uu_dai", 0.35], ["cta_gap", 0.15]],
+   "required_tags": {"san_pham": ["thanh_pham"]},
+   "required_fields": ["uu_dai", "thoi_han"],
+   "cta": "Ưu đãi đến [ngày]", "max_duration": 60
+  },
+  "ke_chuyen_thuong_hieu": {
+   "name": "Kể chuyện thương hiệu",
+   "blocks": [["mo", 0.15], ["con_nguoi", 0.50], ["gia_tri", 0.20], ["logo", 0.15]],
+   "required_tags": {"con_nguoi": ["nguoi_noi"]},
+   "cta": "Theo dõi GANI", "max_duration": 180
+  }
+ },
+ "durations": {
+  "15": {"blocks_merge": ["hook", "main", "cta"], "hook_max_sec": 2, "cta_sec": 3},
+  "30": {},
+  "45": {"hero_at_sec": [20, 25]},
+  "60": {"hero_at_sec": [20, 40]},
+  "180": {"chapters": [3, 4], "chapter_title_sec": 1.5, "max_segments_per_clip": 3, "min_gap_sec": 3}
+ },
+ "drafts": {
+  "allowed": [1, 2, 3],
+  "strategy": {"1": ["toi_uu"], "2": ["toi_uu", "doi_hook_doi_mach"], "3": ["toi_uu", "doi_hook_doi_mach", "doi_nhip_hoac_nhac"]},
+  "max_scene_overlap": 0.6
+ },
+ "music_modes": {
+  "ai_tu_chon": {"name": "AI tự chọn", "needs_rights_tick": false},
+  "khong_nhac": {"name": "Không nhạc", "needs_rights_tick": false},
+  "thu_vien": {"name": "Nhạc có sẵn trong thư viện", "needs_rights_tick": false},
+  "tai_len": {"name": "Tải nhạc của tôi", "needs_rights_tick": true}
+ },
+ "music": {"bpm_max_deviation": 0.2, "loop_unit_beats": 4},
+ "footage": {"min_usable_ratio": 1.3},
+ "_ghi_chu_scenes_needed": "Bảng 5.3.A của đặc tả, chép nguyên. TVC 15s = 11 dù 15 ÷ 1,3 = 11,5 (các ô khác làm tròn lên) — CEO chốt giữ 11 ngày 28/09/2026.",
+ "scenes_needed": {
+  "tvc_cat_nhanh":   {"15": 11, "30": 23, "45": 35, "60": 46, "180": 138},
+  "ban_hang_co_loi": {"15": 6,  "30": 12, "45": 18, "60": 24, "180": 72},
+  "ke_chuyen_nghe":  {"15": 5,  "30": 10, "45": 15, "60": 20, "180": 60},
+  "review_mon_an":   {"15": 8,  "30": 15, "45": 23, "60": 30, "180": 90},
+  "sang_trong":      {"15": 4,  "30": 8,  "45": 11, "60": 15, "180": 45},
+  "theo_mo_ta":      {"15": 5,  "30": 10, "45": 15, "60": 20, "180": 60}
+ },
+ "compat_style_purpose": {
+  "tvc_cat_nhanh":   {"ban_hang": "ok",   "gioi_thieu_xuong": "warn", "khuyen_mai": "ok",   "ke_chuyen_thuong_hieu": "warn"},
+  "ban_hang_co_loi": {"ban_hang": "ok",   "gioi_thieu_xuong": "ok",   "khuyen_mai": "ok",   "ke_chuyen_thuong_hieu": "warn"},
+  "ke_chuyen_nghe":  {"ban_hang": "warn", "gioi_thieu_xuong": "ok",   "khuyen_mai": "bad",  "ke_chuyen_thuong_hieu": "ok"},
+  "review_mon_an":   {"ban_hang": "ok",   "gioi_thieu_xuong": "bad",  "khuyen_mai": "ok",   "ke_chuyen_thuong_hieu": "warn"},
+  "sang_trong":      {"ban_hang": "warn", "gioi_thieu_xuong": "warn", "khuyen_mai": "bad",  "ke_chuyen_thuong_hieu": "ok"},
+  "theo_mo_ta":      {"ban_hang": "warn", "gioi_thieu_xuong": "warn", "khuyen_mai": "warn", "ke_chuyen_thuong_hieu": "warn"}
+ },
+ "compat_style_duration": {
+  "tvc_cat_nhanh":   {"15": "ok",   "30": "ok", "45": "warn", "60": "warn", "180": "bad"},
+  "ban_hang_co_loi": {"15": "ok",   "30": "ok", "45": "ok",   "60": "ok",   "180": "ok"},
+  "ke_chuyen_nghe":  {"15": "warn", "30": "ok", "45": "ok",   "60": "ok",   "180": "ok"},
+  "review_mon_an":   {"15": "ok",   "30": "ok", "45": "ok",   "60": "warn", "180": "warn"},
+  "sang_trong":      {"15": "warn", "30": "ok", "45": "ok",   "60": "ok",   "180": "warn"},
+  "theo_mo_ta":      {"15": "ok",   "30": "ok", "45": "ok",   "60": "ok",   "180": "ok"}
+ },
+ "conflicts": {
+  "X1":  {"level": "block", "stage": "preflight", "desc": "TVC cắt nhanh × 3 phút (vượt styles.*.max_duration)", "msg": "TVC cắt nhanh không dựng được 3 phút (cần khoảng 140 cảnh). Đổi sang 60s, hoặc đổi phong cách Kể chuyện nghề."},
+  "X2":  {"level": "block", "stage": "preflight", "desc": "Khuyến mãi × 3 phút (vượt purposes.*.max_duration)", "msg": "Video khuyến mãi không nên dài 3 phút — người xem không chờ để biết ưu đãi. Chọn 15–30s."},
+  "X3":  {"level": "block", "stage": "preflight", "desc": "Khuyến mãi thiếu mức ưu đãi/thời hạn", "msg": "Khuyến mãi cần nhập đủ mức ưu đãi và thời hạn. Còn thiếu: {missing}."},
+  "X4":  {"level": "block", "stage": "preflight", "desc": "Theo mô tả × ghi chú < 20 từ", "msg": "Phong cách 'Theo mô tả của tôi' cần ghi chú ít nhất {min} từ (hiện có {count}). Ví dụ: 'Mở bằng cảnh cắt lát giò, nhịp chậm, chữ trắng tối giản, kết bằng logo và số Zalo…'"},
+  "X5":  {"level": "block", "stage": "preflight", "desc": "Số cảnh dùng được < số cảnh cần", "msg": "Chỉ có {usable} cảnh dùng được, cần ít nhất {need}. Thiếu {short} cảnh — giảm độ dài, đổi phong cách chậm hơn, hoặc quay bổ sung."},
+  "X6":  {"level": "warn",  "stage": "preflight", "desc": "Số cảnh dùng được < số cảnh cần × 1,3", "msg": "Có {usable} cảnh, nên có {ideal} để AI có lựa chọn. Sẽ lấy nhiều đoạn từ cùng clip; chất lượng có thể giảm."},
+  "X7":  {"level": "warn",  "stage": "preflight", "desc": "Bán hàng có lời × không phát hiện lời nói", "msg": "Không thấy lời nói trong footage. Đổi phong cách, hoặc tải voice-over lên."},
+  "X8":  {"level": "warn",  "stage": "plan",      "desc": "Mục đích thiếu cảnh bắt buộc", "msg": "Thiếu cảnh bắt buộc: {tags}. Sẽ dựng bằng cảnh gần nhất."},
+  "X9":  {"level": "warn",  "stage": "preflight", "desc": "Phong cách × Mục đích lệch (bad ở compat_style_purpose)", "msg": "'{style}' ít hợp với mục đích '{purpose}' (lệch giọng điệu/nội dung). Vẫn dựng được."},
+  "X10": {"level": "warn",  "stage": "preflight", "desc": "Sang trọng hoặc Kể chuyện nghề × 15s", "when": {"styles": ["sang_trong", "ke_chuyen_nghe"], "duration": 15}, "msg": "Với '{style}', 15 giây chỉ đủ khoảng 4–5 cảnh. Vẫn dựng."},
+  "X11": {"level": "warn",  "stage": "preflight", "desc": "Không nhạc × phong cách dẫn bằng nhạc có driver_fallback = grid (TVC)", "msg": "'{style}' mà không có nhạc sẽ mất lực đẩy. Sẽ dùng lưới nhịp ảo {grid}s."},
+  "X12": {"level": "auto",  "stage": "preflight", "desc": "BPM bài nhạc ngoài dải phong cách", "msg": "BPM {bpm} ngoài dải {lo}–{hi} của phong cách. Tự tính theo {eff} BPM ({how}).", "msg_warn": "BPM {bpm} lệch nhiều so với dải {lo}–{hi} của phong cách, kể cả khi nhân/chia đôi. Nên chọn bài khác."},
+  "X13": {"level": "auto",  "stage": "preflight", "desc": "Bài nhạc ngắn hơn video", "msg": "Bài nhạc dài {music}s, ngắn hơn video {video}s. Sẽ lặp theo ô nhịp và chuyển giao mượt."},
+  "X14": {"level": "block", "stage": "preflight", "desc": "Nhạc tải lên chưa tick quyền sử dụng", "msg": "Nhạc tải lên phải tick 'Tôi có quyền sử dụng bài này' trước khi dựng."},
+  "X15": {"level": "warn",  "stage": "preflight", "desc": "3 bản × 3 phút", "when": {"drafts": 3, "duration": 180}, "msg": "3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3. Kiểm tra ước tính trước khi chạy."},
+  "X16": {"level": "warn",  "stage": "ai",        "desc": "Ghi chú mâu thuẫn với mục đích", "msg": "Ghi chú có vẻ hợp mục đích khác. Đổi mục đích?"},
+  "X17": {"level": "auto",  "stage": "render",    "desc": "Chế độ LỜI × nhạc có phách", "msg": "Cắt theo lời; nhạc tự giảm khi có lời; B-roll dịch về phách gần nhất nếu lệch ≤ 150ms."},
+  "X18": {"level": "auto",  "stage": "render",    "desc": "Phách nhạc × vị trí đỉnh động tác", "msg": "Giữ phách; lùi đỉnh tối đa đến 50% cảnh."}
+ },
+ "compat_msgs": {
+  "W_STYLE_PURPOSE": "'{style}' dùng được cho '{purpose}' nhưng không phải lựa chọn tối ưu.",
+  "W_STYLE_DURATION": "'{style}' ở {duration}s dùng được nhưng không phải độ dài tối ưu."
+ },
+ "input_msgs": {
+  "INVALID_OPTIONS": "Tùy chọn phải là một khối dữ liệu dạng key: value.",
+  "INVALID_PHONG_CACH": "Phong cách '{value}' không có. Chọn một trong: {allowed}.",
+  "INVALID_MUC_DICH": "Mục đích '{value}' không có. Chọn một trong: {allowed}.",
+  "INVALID_DO_DAI": "Độ dài '{value}' không có. Chọn một trong: {allowed} (giây).",
+  "INVALID_SO_BAN_NHAP": "Số bản nháp '{value}' không hợp lệ. Chọn một trong: {allowed}.",
+  "INVALID_NHAC": "Chế độ nhạc '{value}' không có. Chọn một trong: {allowed}.",
+  "INVALID_FACT": "Trường '{field}' có giá trị không hợp lệ: '{value}'.",
+  "INVALID_FIELD": "Trường '{field}' không có trong khối tùy chọn — kiểm tra lỗi chính tả (xem Phụ lục D).",
+  "RULES_VERSION": "yeu-cau.md ghi rules_version {got}, app đang dùng bộ quy tắc {want}. Kiểm tra lại tùy chọn."
+ }
+}

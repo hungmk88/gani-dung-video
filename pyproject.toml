@@ -1,0 +1,46 @@
+[project]
+name = "gani-dung-video"
+version = "2.0.0.dev0"
+description = "App Dựng Video GANI v2 — rule engine + AI trong khung (Đặc tả v2.1)"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5", "mypy>=1.10"]
+
+[project.scripts]
+gani-dv = "gani_dung_video.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# × and – are used on purpose in spec references (6 × 4, X1–X18, 60–85 BPM).
+allowed-confusables = ["×", "–"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"
+# 3.12: pytest's type hints pull in numpy stubs that use 3.12-only syntax. Runtime
+# compatibility with 3.11 is still enforced by ruff (target-version = "py311").
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+
+[tool.coverage.run]
+source = ["src/gani_dung_video"]
