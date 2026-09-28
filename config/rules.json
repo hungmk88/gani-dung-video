@@ -90,7 +90,15 @@
   "tai_len": {"name": "Tải nhạc của tôi", "needs_rights_tick": true}
  },
  "music": {"bpm_max_deviation": 0.2, "loop_unit_beats": 4},
- "footage": {"min_usable_ratio": 1.3},
+ "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
+ "footage": {
+  "min_usable_ratio": 1.3,
+  "video_extensions": [".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".mts"],
+  "duplicate_patterns": ["^(?P<base>.+) \\d+$", "^(?P<base>.+) \\(\\d+\\)$"],
+  "duplicate_hash_mb": 16,
+  "ffprobe_timeout_sec": 60,
+  "hdr_transfers": ["arib-std-b67", "smpte2084"]
+ },
  "_ghi_chu_scenes_needed": "Bảng 5.3.A của đặc tả, chép nguyên. TVC 15s = 11 dù 15 ÷ 1,3 = 11,5 (các ô khác làm tròn lên) — CEO chốt giữ 11 ngày 28/09/2026.",
  "scenes_needed": {
   "tvc_cat_nhanh":   {"15": 11, "30": 23, "45": 35, "60": 46, "180": 138},
