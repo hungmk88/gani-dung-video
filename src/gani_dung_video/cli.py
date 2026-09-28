@@ -8,6 +8,8 @@ python -m gani_dung_video transcribe <thu_muc_footage> [--model small]
     exit 0 = xong, 1 = có clip lỗi, 2 = chưa inventory / không nạp được model
 python -m gani_dung_video scenes <thu_muc_footage>
     exit 0 = đã ghi edit/scenes.json, 2 = chưa inventory
+python -m gani_dung_video plan <yeu-cau.md|options.json> <thu_muc_footage> [--nhac-thu-muc DIR]
+    exit 0 = đã ghi edit/plan.json, 1 = bị chặn (preflight) hoặc chưa hỗ trợ, 2 = lỗi file/nhạc
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 """
@@ -22,13 +24,16 @@ import sys
 from pathlib import Path
 
 from gani_dung_video.application.inventory_service import build_inventory
+from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
 from gani_dung_video.application.transcribe_service import transcribe_folder
+from gani_dung_video.domain.plan import PlanError
 from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
+from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.whisper_asr import AsrError
 
 logger = logging.getLogger("gani_dung_video")
@@ -55,6 +60,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sc.add_argument("folder", type=Path, help="Thư mục footage đã chạy inventory")
     se = sub.add_parser("semantics", help="Nhãn cảnh CLIP, điểm thẩm mỹ, đoạn trùng → scenes.json")
     se.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes")
+    pl = sub.add_parser("plan", help="Biên dịch tùy chọn → số phách từng khối → edit/plan.json")
+    pl.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
+    pl.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes và semantics")
+    pl.add_argument("--nhac-thu-muc", type=Path, help="Thư mục chứa nhạc (nếu ngoài 2 nơi trên)")
     return ap
 
 
@@ -69,6 +78,35 @@ def _run_scenes(folder: Path) -> int:
         f"  Cửa sổ 2s rung: {sum(w.shaky for s in r.scenes for w in s.windows)}"
         f"/{sum(len(s.windows) for s in r.scenes)}",
         f"  Đoạn đẹp dùng được theo phong cách — {counts}",
+        f"Kết quả: {out}",
+    ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _run_plan(file: Path, folder: Path, music_dir: Path | None) -> int:
+    try:
+        plan, out = build_plan(file, folder, music_dir)
+    except PreflightBlocked as e:
+        lines = [f"BỊ CHẶN [{i['code']}]: {i['msg']}" for i in e.result["errors"]]
+        sys.stdout.write("\n".join(lines) + "\n")
+        return 1
+    except PlanError as e:
+        sys.stdout.write(f"CHƯA HỖ TRỢ [{e.code}]: {e}\n")
+        return 1
+    m = plan.music
+    nhip = (
+        f"nhạc {m.track} {m.bpm:g} BPM ({m.source}), đếm {m.effective_bpm:g} BPM"
+        if m
+        else "lưới ảo"
+    )
+    lines = [
+        f"Dẫn nhịp: {plan.driver} — {nhip}, 1 phách = {plan.beat_sec:.3f}s",
+        f"Tổng: {plan.planned_beats} phách (mục tiêu {plan.target_beats}), "
+        f"mỗi cảnh {plan.beats_per_scene_allowed} phách",
+        "Khối — " + ", ".join(f"{b.role}: {b.beats}" for b in plan.blocks),
+        *[f"  Cảnh báo {w}" for w in plan.warnings],
+        *[f"  Tự điều chỉnh {a}" for a in plan.adjustments],
         f"Kết quả: {out}",
     ]
     sys.stdout.write("\n".join(lines) + "\n")
@@ -150,7 +188,9 @@ def main(argv: list[str] | None = None) -> int:
             return _run_scenes(args.folder)
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
+        if args.cmd == "plan":
+            return _run_plan(args.file, args.folder, args.nhac_thu_muc)
         return _run_preflight(args.file)
-    except (ConfigError, FfprobeMissingError, AsrError, SemanticError) as e:
+    except (ConfigError, FfprobeMissingError, AsrError, SemanticError, MusicError) as e:
         logger.error("LỖI: %s", e)
         return 2

@@ -90,6 +90,8 @@
   "tai_len": {"name": "Tải nhạc của tôi", "needs_rights_tick": true}
  },
  "music": {"bpm_max_deviation": 0.2, "loop_unit_beats": 4},
+ "_ghi_chu_music_analysis": "Đo nhịp nhạc tải lên (GĐ4a, chốt 29/09/2026) bằng numpy, không dùng librosa. Bài có trong library.json thì lấy BPM khai báo. min_confidence: tỷ lệ nổi bật của đỉnh nhịp so với nền; thấp hơn thì coi như không bắt được nhịp và dùng lưới ảo. Giá trị khởi đầu: nhạc tổng hợp đạt 8–13, nhiễu trắng 3–4, âm nền không nhịp 2; hiệu chỉnh trên nhạc thật.",
+ "music_analysis": {"sample_rate": 8000, "hop": 40, "min_bpm": 55, "max_bpm": 140, "max_seconds": 240, "min_confidence": 5.0, "ffmpeg_timeout_sec": 120, "extensions": [".mp3", ".m4a", ".wav", ".aac", ".flac", ".ogg"]},
  "_ghi_chu_speech": "Nhận dạng lời (GĐ3a). Clip CÓ LỜI chỉ khi đạt ĐỦ: tiếng nói ≥ min_speech_sec giây, ≥ min_words từ, tiếng nói ≥ min_speech_ratio thời lượng clip, độ tin cậy trung bình ≥ min_avg_confidence (chốt 28/09/2026: tiếng nói chuyện lọt mic ở xưởng chỉ 2–14% thời lượng, tin cậy 0,43–0,67). Cờ được tính lại mỗi lần chạy nên đổi ngưỡng không cần chạy lại Whisper. model_default dùng trên Mac Mini; Dell chạy thử bằng --model small. Model nằm trong bộ nhớ đệm Hugging Face của máy (không commit); máy mới cần mạng lần đầu. device=cpu cố ý: 'auto' chọn GPU GeForce MX130 của Dell (CUDA cc 5.0) và ctranslate2 4.8 bị sập (segfault); Mac Mini không có CUDA nên vốn chạy CPU. int8 nhanh hơn float32 ~30% trên CPU.",
  "speech": {
   "language": "vi",
@@ -233,7 +235,9 @@
  },
  "compat_msgs": {
   "W_STYLE_PURPOSE": "'{style}' dùng được cho '{purpose}' nhưng không phải lựa chọn tối ưu.",
-  "W_STYLE_DURATION": "'{style}' ở {duration}s dùng được nhưng không phải độ dài tối ưu."
+  "W_STYLE_DURATION": "'{style}' ở {duration}s dùng được nhưng không phải độ dài tối ưu.",
+  "W_NO_BEAT": "Không xác định được nhịp bài nhạc nên dùng lưới nhịp ảo, mỗi phách {grid}s.",
+  "W_GRID_NO_MUSIC": "Không có nhạc nên dùng lưới nhịp ảo, mỗi phách {grid}s."
  },
  "input_msgs": {
   "INVALID_OPTIONS": "Tùy chọn phải là một khối dữ liệu dạng key: value.",
@@ -244,6 +248,10 @@
   "INVALID_NHAC": "Chế độ nhạc '{value}' không có. Chọn một trong: {allowed}.",
   "INVALID_FACT": "Trường '{field}' có giá trị không hợp lệ: '{value}'.",
   "INVALID_FIELD": "Trường '{field}' không có trong khối tùy chọn — kiểm tra lỗi chính tả (xem Phụ lục D).",
-  "RULES_VERSION": "yeu-cau.md ghi rules_version {got}, app đang dùng bộ quy tắc {want}. Kiểm tra lại tùy chọn."
+  "RULES_VERSION": "yeu-cau.md ghi rules_version {got}, app đang dùng bộ quy tắc {want}. Kiểm tra lại tùy chọn.",
+  "PLAN_SPEECH_DRIVER": "Phong cách dẫn nhịp theo lời nói chưa được hỗ trợ ở bước biên dịch (sẽ có ở giai đoạn dựng). Chọn phong cách dẫn nhịp theo nhạc.",
+  "PLAN_CHAPTERS": "Video 3 phút cần chia chương, chưa được hỗ trợ (giai đoạn 7). Chọn độ dài 15–60 giây.",
+  "PLAN_NO_TRACK": "Chế độ nhạc '{mode}' cần ghi tên file nhạc ở nhac_file (chọn bài tự động chưa có).",
+  "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước."
  }
 }
