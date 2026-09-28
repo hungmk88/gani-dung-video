@@ -179,6 +179,23 @@
   ]
   }
  },
+ "_ghi_chu_pick": "Chọn ứng viên cho từng khối (GĐ4b, chốt 29/09/2026, đặc tả §7.1 sửa S12): loại cảnh mờ/nhãn khac/quá ngắn → lọc nhãn bắt buộc (thiếu thì lấy cảnh gần nhất theo xác suất CLIP và ghi missing_shots bằng tag_names) → món nhắc trong ghi chú lên trước → điểm thẩm mỹ. Số ứng viên = 2 × số cảnh khối cần, kẹp [min_candidates, max_candidates]. dish_min_similarity: độ tương đồng chữ–ảnh CLIP tối thiểu để coi là đúng món, đo trên footage GANI.",
+ "pick": {
+  "min_candidates": 6,
+  "max_candidates": 20,
+  "dish_min_similarity": 0.25,
+  "tag_names": {
+   "nguoi_thao_tac": "Công nhân thao tác",
+   "thiet_bi": "Máy móc, thiết bị",
+   "khu_vuc": "Toàn cảnh khu sản xuất",
+   "thanh_pham": "Thành phẩm",
+   "mon_an": "Món ăn đã nấu",
+   "mat_cat": "Mặt cắt sản phẩm",
+   "chung_nhan": "Giấy chứng nhận",
+   "nguoi_noi": "Người nói trước ống kính",
+   "khac": "Màn chữ / logo"
+  }
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,
@@ -252,6 +269,8 @@
   "PLAN_SPEECH_DRIVER": "Phong cách dẫn nhịp theo lời nói chưa được hỗ trợ ở bước biên dịch (sẽ có ở giai đoạn dựng). Chọn phong cách dẫn nhịp theo nhạc.",
   "PLAN_CHAPTERS": "Video 3 phút cần chia chương, chưa được hỗ trợ (giai đoạn 7). Chọn độ dài 15–60 giây.",
   "PLAN_NO_TRACK": "Chế độ nhạc '{mode}' cần ghi tên file nhạc ở nhac_file (chọn bài tự động chưa có).",
-  "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước."
+  "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước.",
+  "PICK_NO_PLAN": "Chưa có edit/plan.json — chạy lệnh `plan` trước.",
+  "PICK_STALE_PLAN": "edit/plan.json được biên dịch cho phong cách '{plan}', còn tùy chọn đang là '{opt}'. Chạy lại lệnh `plan`."
  }
 }

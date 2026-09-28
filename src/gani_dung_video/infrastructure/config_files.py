@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from gani_dung_video.domain.glossary import Term
 from gani_dung_video.domain.preflight import Rules
@@ -43,12 +43,18 @@ class _TermModel(BaseModel):
     heard_as: list[str] = []
 
 
+_Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# 1–3 English sentences per dish (CLIP only reads English); spec §7.1 "fix S3".
+_Prompts = Annotated[list[_Text], Field(min_length=1, max_length=3)]
+
+
 class GlossaryFile(BaseModel):
     """Shape of config/glossary.json."""
 
     model_config = ConfigDict(extra="ignore")
     terms: list[_TermModel]
     banned_claims: list[str]
+    visual: dict[_Text, _Prompts] = {}
 
     def term_objects(self) -> list[Term]:
         return [Term(t.correct, tuple(t.heard_as)) for t in self.terms]

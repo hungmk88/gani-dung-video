@@ -10,6 +10,8 @@ python -m gani_dung_video scenes <thu_muc_footage>
     exit 0 = đã ghi edit/scenes.json, 2 = chưa inventory
 python -m gani_dung_video plan <yeu-cau.md|options.json> <thu_muc_footage> [--nhac-thu-muc DIR]
     exit 0 = đã ghi edit/plan.json, 1 = bị chặn (preflight) hoặc chưa hỗ trợ, 2 = lỗi file/nhạc
+python -m gani_dung_video pick <yeu-cau.md|options.json> <thu_muc_footage>
+    exit 0 = đã ghi edit/candidates.json, 2 = chưa chạy plan / plan cũ / lỗi file
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 """
@@ -24,6 +26,7 @@ import sys
 from pathlib import Path
 
 from gani_dung_video.application.inventory_service import build_inventory
+from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.scenes_service import build_scenes
@@ -64,6 +67,9 @@ def _build_parser() -> argparse.ArgumentParser:
     pl.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
     pl.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes và semantics")
     pl.add_argument("--nhac-thu-muc", type=Path, help="Thư mục chứa nhạc (nếu ngoài 2 nơi trên)")
+    pk = sub.add_parser("pick", help="Ứng viên cảnh cho từng khối → edit/candidates.json")
+    pk.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy plan)")
+    pk.add_argument("folder", type=Path, help="Thư mục footage đã chạy plan")
     return ap
 
 
@@ -78,6 +84,23 @@ def _run_scenes(folder: Path) -> int:
         f"  Cửa sổ 2s rung: {sum(w.shaky for s in r.scenes for w in s.windows)}"
         f"/{sum(len(s.windows) for s in r.scenes)}",
         f"  Đoạn đẹp dùng được theo phong cách — {counts}",
+        f"Kết quả: {out}",
+    ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _run_pick(file: Path, folder: Path) -> int:
+    r, out = build_pick(file, folder)
+    lines = [
+        f"Phong cách: {r.style} — món trong ghi chú: {', '.join(r.dishes) or 'không có'}",
+        *[
+            f"  {b.role}: {len(b.candidates)} ứng viên ({b.beats} phách)"
+            + (f", thiếu nhãn {', '.join(b.missing_tags)}" if b.missing_tags else "")
+            for b in r.blocks
+        ],
+        f"  Cảnh còn thiếu: {', '.join(r.missing_shots) or 'không'}",
+        f"  Cặp đoạn giống nhau cần tránh dùng cả hai: {len(r.similar_pairs)}",
         f"Kết quả: {out}",
     ]
     sys.stdout.write("\n".join(lines) + "\n")
@@ -188,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_scenes(args.folder)
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
+        if args.cmd == "pick":
+            return _run_pick(args.file, args.folder)
         if args.cmd == "plan":
             return _run_plan(args.file, args.folder, args.nhac_thu_muc)
         return _run_preflight(args.file)

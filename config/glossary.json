@@ -15,5 +15,41 @@
   "banned_claims": [
     "100%", "nhất", "duy nhất", "số 1", "hàn the",
     "điều trị", "đặc trị", "chữa trị", "chữa bệnh", "trị bệnh", "phòng bệnh"
+  ],
+ "_ghi_chu_visual": "Từ điển hình ảnh (GĐ4b, chốt 29/09/2026, sửa S3 của đặc tả): món nhắc trong ghi chú yeu-cau.md được so với khung hình bằng CLIP qua 1–3 câu tiếng Anh tả hình dạng, màu, bề mặt cắt. 5 mục đầu lấy từ Phụ lục D; giò bò, chả quế, nem chua, giò chả do dev soạn. Ảnh mẫu (so ảnh–ảnh) để sau khi có footage đúng món.",
+ "visual": {
+  "giò lụa": [
+   "steamed Vietnamese pork roll wrapped in banana leaves",
+   "sliced pale pink smooth pork sausage on a cutting board"
+  ],
+  "chả mỡ chiên": [
+   "golden deep-fried pork patty with visible fat pieces"
+  ],
+  "bò viên": [
+   "round brown beef meatballs in a stainless steel tray",
+   "boiled beef meatballs floating in hot water"
+  ],
+  "rửa tay": [
+   "worker in white uniform washing hands at a sink"
+  ],
+  "chứng nhận": [
+   "framed certificate document hanging on a wall"
+  ],
+  "giò bò": [
+   "sliced Vietnamese beef roll, dark red meat with white tendon and black pepper",
+   "cylindrical beef sausage roll wrapped in banana leaves"
+  ],
+  "chả quế": [
+   "Vietnamese cinnamon pork loaf with a dark brown roasted cinnamon crust",
+   "sliced pork loaf with a golden brown crust and pale pink inside"
+  ],
+  "nem chua": [
+   "small Vietnamese fermented pork rolls wrapped in green banana leaves",
+   "pink fermented pork with garlic slices and chili, unwrapped from a leaf"
+  ],
+  "giò chả": [
+   "assorted Vietnamese pork rolls and sausages on a display",
+   "sliced Vietnamese pork rolls arranged on a plate"
   ]
+ }
 }

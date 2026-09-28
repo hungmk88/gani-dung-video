@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from gani_dung_video.domain.glossary import Word, apply_glossary, find_banned_claims, tokens
-from gani_dung_video.infrastructure.config_files import CONFIG_DIR, load_glossary
+from gani_dung_video.infrastructure.config_files import CONFIG_DIR, ConfigError, load_glossary
 
 G = load_glossary()
 TERMS = G.term_objects()
@@ -83,3 +85,28 @@ def test_banned_list_is_the_agreed_phrase_list() -> None:
         "chữa bệnh", "trị bệnh", "phòng bệnh",
     }  # fmt: skip
     assert "trị" not in BANNED and "chữa" not in BANNED
+
+
+# ─────────────── visual dictionary (phase 4b, decision 29/09/2026) ───────────────
+
+
+def test_visual_dictionary_has_the_agreed_dishes() -> None:
+    visual = load_glossary().visual
+    assert set(visual) == {"giò lụa", "chả mỡ chiên", "bò viên", "rửa tay", "chứng nhận",
+                           "giò bò", "chả quế", "nem chua", "giò chả"}  # fmt: skip
+    assert all(1 <= len(p) <= 3 for p in visual.values())
+    assert all(p.isascii() for ps in visual.values() for p in ps)  # CLIP reads English only
+
+
+@pytest.mark.parametrize(
+    "visual",
+    [{"giò lụa": []}, {"giò lụa": ["a", "b", "c", "d"]}, {"giò lụa": [""]}, {"": ["a"]},
+     {"giò lụa": "a string"}],
+)  # fmt: skip
+def test_bad_visual_entries_are_refused(tmp_path: Path, visual: object) -> None:
+    import json
+
+    g = tmp_path / "glossary.json"
+    g.write_text(json.dumps({"terms": [], "banned_claims": [], "visual": visual}), encoding="utf-8")
+    with pytest.raises(ConfigError, match=r"glossary\.json"):
+        load_glossary(g)
