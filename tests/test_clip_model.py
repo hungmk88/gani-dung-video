@@ -35,6 +35,14 @@ def cfg_for(sha: str) -> dict[str, Any]:
     return {**CFG, "aesthetic_file": "head.pth", "aesthetic_sha256": sha}
 
 
+def test_openai_weights_use_the_quickgelu_architecture() -> None:
+    # Bug found 29/09/2026: "ViT-L-14" + pretrained "openai" runs plain GELU while the OpenAI
+    # weights were trained with QuickGELU (open_clip warns "QuickGELU mismatch"), so every
+    # embedding was slightly off. The -quickgelu config is the same weights, right activation.
+    if CFG["clip_pretrained"] == "openai":
+        assert CFG["clip_model"].endswith("-quickgelu")
+
+
 def test_device_auto_prefers_apple_gpu_never_cuda() -> None:
     assert pick_device("auto", mps_available=True) == "mps"
     assert pick_device("auto", mps_available=False) == "cpu"

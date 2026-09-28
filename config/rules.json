@@ -122,7 +122,7 @@
  },
  "_ghi_chu_semantic": "Ngữ nghĩa hình (GĐ3c, chốt 28/09/2026). CLIP ViT-L/14 trọng số OpenAI + bộ chấm thẩm mỹ LAION v2 — anh chấp nhận dùng cho công cụ nội bộ. File LAION phải khớp aesthetic_sha256 (đã đối chiếu mã blob GitHub) mới được nạp, nạp bằng weights_only. device auto = GPU Apple (MPS) nếu có, không thì CPU. Nhãn: mỗi nhãn 3 câu tiếng Anh (CLIP chỉ hiểu tiếng Anh), gắn khi xác suất ≥ label_min_prob. Cảnh báo 2 đoạn cùng clip giống nhau khi độ tương đồng ≥ similar_warn = 0,95 (đo 29/09/2026 trên footage GANI: cùng clip trung vị 0,95, hai clip xưởng khác nhau p95 0,89, nên 0,85 của đặc tả §7.1 báo giả quá nhiều); mỗi cặp hai thời điểm báo một lần, kèm danh sách phong cách chọn chúng. Nhãn khac (màn chữ, màn kết mạng xã hội, logo) không phải footage: đoạn có nhãn đầu là khac không được tính là đoạn dùng được. Câu mô tả và ngưỡng là giá trị khởi đầu, hiệu chỉnh trên footage GANI.",
  "semantic": {
-  "clip_model": "ViT-L-14",
+  "clip_model": "ViT-L-14-quickgelu",
   "clip_pretrained": "openai",
   "aesthetic_file": "sac+logos+ava1-l14-linearMSE.pth",
   "aesthetic_url": "https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac%2Blogos%2Bava1-l14-linearMSE.pth",
