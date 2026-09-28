@@ -10,9 +10,12 @@ limits and quoting; fonts are copied next to the .ass so libass finds them by a 
 
 from __future__ import annotations
 
+import json
+import math
+import re
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from gani_dung_video.domain.edl import Edl, Shot
@@ -69,7 +72,21 @@ def _join_video(e: Edl) -> list[str]:
     return out
 
 
-def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None) -> list[str]:
+def _loudnorm(e: Edl, measured: Mapping[str, float] | None, measure_only: bool) -> str:
+    base = f"loudnorm=I={e.lufs}:TP={e.true_peak_db}:LRA=11"
+    if measure_only:
+        return base + ":print_format=json"
+    if measured is None:  # one pass (dynamic): close to target, fixed by pass 2 if not
+        return base
+    m = measured
+    return (f"{base}:measured_I={_n(m['input_i'])}:measured_TP={_n(m['input_tp'])}:"
+            f"measured_LRA={_n(m['input_lra'])}:measured_thresh={_n(m['input_thresh'])}:"
+            f"offset={_n(m['target_offset'])}:linear=true")  # fmt: skip
+
+
+def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
+           measured: Mapping[str, float] | None = None, measure_only: bool = False
+           ) -> list[str]:  # fmt: skip
     fmt = f"aresample={SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo"
     out = [f"anullsrc=r={SAMPLE_RATE}:cl=stereo,atrim=0:{_n(e.duration)}[abase]"]
     labels = ["[abase]"]
@@ -92,13 +109,20 @@ def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None) -> list[str
         out.append(",".join(chain) + "[amusic]")
         labels.append("[amusic]")
     out.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=first,"
-               f"loudnorm=I={e.lufs}:TP={e.true_peak_db}:LRA=11,{fmt}[aout]")  # fmt: skip
+               f"{_loudnorm(e, measured, measure_only)},{fmt}[aout]")  # fmt: skip
     return out
 
 
+def audio_graph(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
+                measure_only: bool = False) -> str:  # fmt: skip
+    """Audio part alone (loudness pass 1 prints its measurements as JSON)."""
+    return ";\n".join(_audio(e, has_audio, music_idx, measure_only=measure_only))
+
+
 def build_graph(
-    e: Edl, has_audio: Sequence[bool], music_idx: int | None = None, ass_name: str | None = None
-) -> str:
+    e: Edl, has_audio: Sequence[bool], music_idx: int | None = None, ass_name: str | None = None,
+    loudnorm: Mapping[str, float] | None = None,
+) -> str:  # fmt: skip
     """The -filter_complex text (pure: testable without ffmpeg)."""
     lines = [_video_chain(i, s, e) for i, s in enumerate(e.shots)]
     lines += _join_video(e)
@@ -106,7 +130,7 @@ def build_graph(
                  "format=yuv420p,setsar=1[vend]")  # fmt: skip
     subs = f",subtitles=filename={ass_name}:fontsdir=fonts" if ass_name else ""
     lines.append(f"[vjoin][vend]concat=n=2:v=1:a=0{subs}[vout]")
-    lines += _audio(e, has_audio, music_idx)
+    lines += _audio(e, has_audio, music_idx, measured=loudnorm)
     return ";\n".join(lines)
 
 
@@ -130,6 +154,8 @@ def encode_args(e: Edl, rules: Rules) -> list[str]:
 
     -aac_pns 0: the native AAC encoder's perceptual noise substitution pushed a -2.6 dB mix
     to +6.8 dB peaks on real GANI footage (29/09/2026); without it peaks stay below 0 dB.
+    Audio bitrate comes from rules.json (320 kbps: at 192 kbps AAC added up to 1.2 dB of
+    true peak to a -1.8 dBTP mix).
     """
     r, kbps = rules["render"], e.video_kbps
     return ["-c:v", "libx264", "-preset", "medium", "-b:v", f"{kbps}k",
@@ -139,35 +165,76 @@ def encode_args(e: Edl, rules: Rules) -> list[str]:
             "-ar", str(r["audio_rate"]), "-movflags", "+faststart"]  # fmt: skip
 
 
-def render(
-    e: Edl, footage_dir: Path, music: Path | None, ass: Path, out: Path, rules: Rules
-) -> None:
-    """Run ffmpeg for one EDL. Work files (graph, fonts) live next to the .ass file.
-
-    Raises:
-        RenderError: a source is missing/unreadable, ffmpeg is missing, fails or times out.
-    """
-    r = rules["render"]
-    work = ass.parent
+def _inputs(
+    e: Edl, footage_dir: Path, music: Path | None
+) -> tuple[list[str], list[bool], int | None]:
+    """Input arguments (one seek per shot, then the music), audio presence, music index."""
     sources = [footage_dir / s.source for s in e.shots]
     for p in sources + ([music] if music else []):
         if not p.is_file():
             raise RenderError(f"Không tìm thấy {p.name} — ffmpeg không thể dựng.")
-    timeout = float(r["ffmpeg_timeout_sec"])
-    has_audio = [_has_audio(p, 60.0) for p in sources]
-    args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+    args: list[str] = []
     for s, p in zip(e.shots, sources, strict=True):
         args += ["-ss", _n(s.src_in), "-t", _n(s.src_out - s.src_in), "-i", str(p)]
     music_idx = None
     if music is not None and e.music is not None:
         music_idx = len(sources)
         args += ["-ss", _n(e.music.audio_in_sec), "-i", str(music)]
+    return args, [_has_audio(p, 60.0) for p in sources], music_idx
+
+
+def render(
+    e: Edl, footage_dir: Path, music: Path | None, ass: Path, out: Path, rules: Rules,
+    loudnorm: Mapping[str, float] | None = None,
+) -> None:  # fmt: skip
+    """Run ffmpeg for one EDL. Work files (graph, fonts) live next to the .ass file.
+
+    Args:
+        loudnorm: pass-1 measurements (measure_loudnorm) for an exact linear second pass.
+
+    Raises:
+        RenderError: a source is missing/unreadable, ffmpeg is missing, fails or times out.
+    """
+    work = ass.parent
+    inputs, has_audio, music_idx = _inputs(e, footage_dir, music)
     _copy_fonts(work / "fonts")
     graph = work / "graph.txt"
-    graph.write_text(build_graph(e, has_audio, music_idx, ass.name), encoding="utf-8")
-    args += ["-/filter_complex", graph.name, "-map", "[vout]", "-map", "[aout]",
-             *encode_args(e, rules), "-t", _n(e.duration), str(out)]  # fmt: skip
-    _run(args, work, timeout)
+    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm), encoding="utf-8")
+    args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,
+            "-/filter_complex", graph.name, "-map", "[vout]", "-map", "[aout]",
+            *encode_args(e, rules), "-t", _n(e.duration), str(out)]  # fmt: skip
+    _run(args, work, float(rules["render"]["ffmpeg_timeout_sec"]))
+
+
+_JSON = re.compile(r"\{[^{}]*\"input_i\"[^{}]*\}", re.S)
+
+
+def parse_loudnorm(log: str) -> dict[str, float]:
+    """The pass-1 measurements loudnorm prints as JSON at the end of the log.
+
+    Raises:
+        RenderError: no loudnorm JSON in the log.
+    """
+    found = _JSON.findall(log)
+    if not found:
+        raise RenderError("Không đọc được số đo loudnorm lượt 1 trong log ffmpeg.")
+    data = json.loads(found[-1])
+    keys = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
+    values = {k: float(data[k]) for k in keys}
+    if not all(math.isfinite(v) for v in values.values()):
+        raise RenderError("Bản trộn âm thanh im lặng — không chuẩn hóa được (kiểm tra nhạc/clip).")
+    return values
+
+
+def measure_loudnorm(e: Edl, footage_dir: Path, music: Path | None, work: Path,
+                     rules: Rules) -> dict[str, float]:  # fmt: skip
+    """Loudness pass 1: run the audio mix alone and read what loudnorm measured."""
+    inputs, has_audio, music_idx = _inputs(e, footage_dir, music)
+    graph = work / "graph_audio.txt"
+    graph.write_text(audio_graph(e, has_audio, music_idx, measure_only=True), encoding="utf-8")
+    args = ["ffmpeg", "-hide_banner", "-nostats", "-y", *inputs, "-/filter_complex",
+            graph.name, "-map", "[aout]", "-t", _n(e.duration), "-f", "null", "-"]  # fmt: skip
+    return parse_loudnorm(_run(args, work, float(rules["render"]["ffmpeg_timeout_sec"])))
 
 
 def extract_cover(video: Path, at_sec: float, out: Path, timeout: float = 60.0) -> None:
@@ -176,7 +243,7 @@ def extract_cover(video: Path, at_sec: float, out: Path, timeout: float = 60.0) 
           str(video), "-frames:v", "1", "-q:v", "2", str(out)], video.parent, timeout)  # fmt: skip
 
 
-def _run(args: list[str], cwd: Path, timeout: float) -> None:
+def _run(args: list[str], cwd: Path, timeout: float) -> str:
     try:
         r = subprocess.run(args, cwd=cwd, capture_output=True, timeout=timeout, check=False)
     except FileNotFoundError as e:
@@ -186,3 +253,4 @@ def _run(args: list[str], cwd: Path, timeout: float) -> None:
     if r.returncode != 0:
         lines = r.stderr.decode("utf-8", "replace").strip().splitlines()
         raise RenderError(f"ffmpeg lỗi: {lines[-1] if lines else r.returncode}")
+    return r.stderr.decode("utf-8", "replace")

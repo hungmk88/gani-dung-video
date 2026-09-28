@@ -214,7 +214,7 @@
   },
   "chars_per_token": 3.0
  },
- "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz, −14 LUFS. Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
+ "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz 320 kbps, −14 LUFS, trần đỉnh −2,0 dBTP khi chuẩn hóa (29/09/2026: AAC 192 kbps làm đỉnh thật nhô thêm tới 1,2 dB, 320 kbps chỉ 0,1 dB; soát T3 yêu cầu ≤ −1,0 dBTP trên file xuất). Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
  "render": {
   "fps": 30,
   "final": {
@@ -228,9 +228,9 @@
    "video_kbps": 2500
   },
   "audio_rate": 48000,
-  "audio_kbps": 192,
+  "audio_kbps": 320,
   "lufs": -14.0,
-  "true_peak_db": -1.5,
+  "true_peak_db": -2.0,
   "end_card_sec": 2.0,
   "music_fade_sec": 1.5,
   "safe": {
@@ -259,6 +259,22 @@
    "footer": "GANI FOODY – Đạt chuẩn HACCP Codex 2022"
   },
   "ffmpeg_timeout_sec": 1800
+ },
+ "_ghi_chu_qc": "Soát kỹ thuật sau render (GĐ5b, chốt 29/09/2026): đo trên chính file xuất. T1 độ dài/khung/fps/codec, T2 số khung = độ dài × fps (±frame_slack), T3 −14 ±lufs_tolerance LU và đỉnh thật ≤ max_true_peak_db (sai → dựng lại với chuẩn hóa 2 lượt; ≤ silence_lufs là im lặng: bỏ qua nếu video cố ý không tiếng, là lỗi nếu có nhạc/tiếng hiện trường), T4 khung đen ≥ black_min_sec trong phần nội dung là lỗi (khung kết miễn), T5 đứng hình ≥ freeze_min_sec chỉ cảnh báo (bỏ qua chỗ cố ý kéo dài khung cuối), T6 hai dòng chữ cùng lúc là lỗi, T7 chữ quá max_lines dòng trong 800px → giảm font_step_px mỗi nấc, không dưới font_min_px, vẫn tràn là lỗi. Tối đa max_rounds vòng.",
+ "qc": {
+  "lufs_tolerance": 1.0,
+  "max_true_peak_db": -1.0,
+  "silence_lufs": -60.0,
+  "black_min_sec": 0.2,
+  "black_pix_th": 0.1,
+  "freeze_min_sec": 1.0,
+  "freeze_noise_db": -60,
+  "frame_slack": 1,
+  "max_lines": 2,
+  "font_step_px": 4,
+  "font_min_px": 64,
+  "max_rounds": 3,
+  "probe_timeout_sec": 900
  },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {

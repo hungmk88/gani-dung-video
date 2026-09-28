@@ -92,6 +92,9 @@ def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> No
     assert log["draft"] == "A" and log["options"]["style"] == "tvc_cat_nhanh"
     assert log["music"] is None and [s["source"] for s in log["shots"]][:2] == ["a.mp4", "b.mp4"]
     assert log["brand_placeholders"] == ["logo", "zalo"]
+    qc = json.loads((out / "qc_report.json").read_text(encoding="utf-8"))
+    assert qc["passed"] is True and qc["rounds"] >= 1 and res.qc_passed
+    assert log["qc"]["passed"] is True
 
 
 def test_unknown_draft_letter_is_refused(folder: Path) -> None:
@@ -107,4 +110,17 @@ def test_drafts_json_is_required(tmp_path: Path) -> None:
 def test_cli_render_preview(folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["render", str(folder), "--preview", "--ban", "A"]) == 0
     out = capsys.readouterr().out
+    assert "QC: ĐẠT" in out
     assert "nhap_A_540p.mp4" in out and "17.6s" in out
+
+
+def test_cli_qc_rechecks_an_existing_video(
+    folder: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    build_render(folder, preview=True, rules=RULES)
+    assert main(["qc", str(folder), "--ban", "A"]) == 0
+    assert "QC: ĐẠT" in capsys.readouterr().out
+
+
+def test_cli_qc_without_a_rendered_video(folder: Path) -> None:
+    assert main(["qc", str(folder), "--ban", "A", "--final"]) == 2  # no 1080p render yet

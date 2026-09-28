@@ -68,6 +68,12 @@ def test_caption_style_respects_safe_zones_and_minimum_size() -> None:
     assert s["Alignment"] == "2"  # bottom centre, above the 420 px app UI
 
 
+def test_font_size_can_be_lowered_by_the_qc_fix() -> None:
+    doc = ass_document(edl(), RULES, font_px={"caption": 68, "cta": 76})
+    assert style_line(doc, "Caption")["Fontsize"] == "68"
+    assert style_line(doc, "CTA")["Fontsize"] == "76"
+
+
 def test_sang_trong_uses_the_light_font() -> None:
     assert style_line(ass_document(edl("Be Vietnam Pro Light"), RULES), "Caption")["Fontname"] == (
         "Be Vietnam Pro Light")  # fmt: skip

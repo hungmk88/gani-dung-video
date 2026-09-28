@@ -16,7 +16,9 @@ python -m gani_dung_video draft <yeu-cau.md|options.json> <thu_muc_footage> [--d
     exit 0 = đã ghi edit/drafts.json (hoặc in ước tính), 1 = hết vòng sửa / chạm trần chi phí,
     2 = thiếu khóa API, lỗi file, lỗi mạng
 python -m gani_dung_video render <thu_muc_footage> [--preview] [--ban A]
-    exit 0 = đã dựng video, 2 = thiếu drafts.json / lỗi ffmpeg
+    exit 0 = đã dựng + đạt soát kỹ thuật, 1 = còn lỗi soát, 2 = thiếu drafts.json / lỗi ffmpeg
+python -m gani_dung_video qc <thu_muc_footage> --ban A [--final]
+    exit 0 = đạt, 1 = còn lỗi, 2 = chưa có video / lỗi file
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 """
@@ -35,7 +37,7 @@ from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
-from gani_dung_video.application.render_service import build_render
+from gani_dung_video.application.render_service import build_render, recheck
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
 from gani_dung_video.application.transcribe_service import transcribe_folder
@@ -45,6 +47,7 @@ from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffmpeg_render import RenderError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
+from gani_dung_video.infrastructure.media_probe import ProbeFailed
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.settings import SettingsError
 from gani_dung_video.infrastructure.whisper_asr import AsrError
@@ -88,6 +91,10 @@ def _build_parser() -> argparse.ArgumentParser:
     rd.add_argument("folder", type=Path, help="Thư mục footage đã chạy draft")
     rd.add_argument("--preview", action="store_true", help="Bản nháp 540p (nhanh)")
     rd.add_argument("--ban", help="Chỉ dựng một bản nháp (A, B hoặc C)")
+    qc = sub.add_parser("qc", help="Soát kỹ thuật lại một video đã dựng (không dựng lại)")
+    qc.add_argument("folder", type=Path, help="Thư mục footage đã chạy render")
+    qc.add_argument("--ban", required=True, help="Bản nháp cần soát (A, B hoặc C)")
+    qc.add_argument("--final", action="store_true", help="Soát bản 1080×1920 thay vì nháp")
     return ap
 
 
@@ -118,9 +125,21 @@ def _vnd(x: float) -> str:
 
 def _run_render(folder: Path, preview: bool, draft: str | None) -> int:
     results = build_render(folder, draft=draft, preview=preview)
-    lines = [f"Bản {r.draft}: {r.video} ({r.duration_sec:g}s)" for r in results]
+    lines: list[str] = []
+    for r in results:
+        verdict = "QC: ĐẠT" if r.qc_passed else "QC: KHÔNG ĐẠT — không giao bản này"
+        lines.append(f"Bản {r.draft}: {r.video} ({r.duration_sec:g}s) — {verdict}")
+        lines += [f"  {n}" for n in r.qc_notes]
     sys.stdout.write("\n".join(lines) + "\n")
-    return 0
+    return 0 if all(r.qc_passed for r in results) else 1
+
+
+def _run_qc(folder: Path, draft: str, final: bool) -> int:
+    found = recheck(folder, draft, preview=not final)
+    bad = [f for f in found if not f.startswith("WARN")]
+    lines = ["QC: ĐẠT" if not bad else "QC: KHÔNG ĐẠT", *[f"  {f}" for f in found]]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0 if not bad else 1
 
 
 def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
@@ -273,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_scenes(args.folder)
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
+        if args.cmd == "qc":
+            return _run_qc(args.folder, args.ban, args.final)
         if args.cmd == "render":
             return _run_render(args.folder, args.preview, args.ban)
         if args.cmd == "draft":
@@ -291,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         SettingsError,
         AiError,
         RenderError,
+        ProbeFailed,
     ) as e:
         logger.error("LỖI: %s", e)
         return 2

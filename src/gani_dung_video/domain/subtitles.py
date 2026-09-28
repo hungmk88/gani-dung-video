@@ -52,8 +52,8 @@ def _style(name: str, font: str, size: int, colour: str, align: int, ml: int, mr
             f"100,100,0,0,1,{outline},2,{align},{ml},{mr},{mv},1")  # fmt: skip
 
 
-def _styles(edl: Edl, r: Mapping[str, Any]) -> list[str]:
-    px, safe, brand = r["font_px"], r["safe"], r["brand"]
+def _styles(edl: Edl, r: Mapping[str, Any], sizes: Mapping[str, int] | None) -> list[str]:
+    px, safe, brand = {**r["font_px"], **(sizes or {})}, r["safe"], r["brand"]
     logo_colour = f"&H{_alpha(float(brand['logo_opacity']))}FFFFFF"
     return [
         _style("Caption", edl.font, int(px["caption"]), "&H00FFFFFF", 2, safe["left"],
@@ -91,8 +91,12 @@ def _events(edl: Edl, r: Mapping[str, Any]) -> list[str]:
     return out
 
 
-def ass_document(edl: Edl, rules: Rules) -> str:
-    """Full .ass file: captions, logo watermark, 2 s end card."""
+def ass_document(edl: Edl, rules: Rules, font_px: Mapping[str, int] | None = None) -> str:
+    """Full .ass file: captions, logo watermark, 2 s end card.
+
+    Args:
+        font_px: caption/CTA sizes lowered by the QC fit (phase 5b); defaults from rules.
+    """
     r = rules["render"]
     brand = r["brand"]
     flags = (("logo: placeholder (logo chữ tạm)", brand["logo_placeholder"]),
@@ -101,7 +105,7 @@ def ass_document(edl: Edl, rules: Rules) -> str:
     head = ["[Script Info]", "; GANI dựng video — " + "; ".join(notes or ["brand kit thật"]),
             "ScriptType: v4.00+", f"PlayResX: {PLAY_W}", f"PlayResY: {PLAY_H}", "WrapStyle: 0",
             "ScaledBorderAndShadow: yes", "YCbCr Matrix: TV.709", ""]  # fmt: skip
-    styles = ["[V4+ Styles]", f"Format: {_FIELDS}", *_styles(edl, r), ""]
+    styles = ["[V4+ Styles]", f"Format: {_FIELDS}", *_styles(edl, r, font_px), ""]
     events = ["[Events]",
               "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
               *_events(edl, r), ""]  # fmt: skip

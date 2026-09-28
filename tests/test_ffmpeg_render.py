@@ -14,8 +14,10 @@ from gani_dung_video.domain.subtitles import ass_document
 from gani_dung_video.infrastructure.config_files import load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import (
     RenderError,
+    audio_graph,
     build_graph,
     encode_args,
+    parse_loudnorm,
     render,
 )
 
@@ -85,6 +87,48 @@ def test_audio_is_placed_on_the_timeline_music_looped_and_loudness_normalised() 
     assert "loudnorm=I=-14.0:TP=-1.5" in g
 
 
+MEASURED = {
+    "input_i": -20.3,
+    "input_tp": -4.1,
+    "input_lra": 3.2,
+    "input_thresh": -30.5,
+    "target_offset": 0.4,
+}
+
+
+def test_second_pass_applies_the_measured_values_linearly() -> None:
+    g = build_graph(edl([shot("a.mp4", 0, 1)]), has_audio=[True], loudnorm=MEASURED)
+    assert ("loudnorm=I=-14.0:TP=-1.5:LRA=11:measured_I=-20.3:measured_TP=-4.1:"
+            "measured_LRA=3.2:measured_thresh=-30.5:offset=0.4:linear=true") in g  # fmt: skip
+
+
+def test_first_pass_graph_is_audio_only_and_prints_json() -> None:
+    g = audio_graph(edl([shot("a.mp4", 0, 1)]), [True], None, measure_only=True)
+    assert "print_format=json" in g and "[v" not in g and "subtitles" not in g
+
+
+LOUDNORM_LOG = """noise
+[Parsed_loudnorm_5 @ 0]
+{
+	"input_i" : "-20.30",
+	"input_tp" : "-4.10",
+	"input_lra" : "3.20",
+	"input_thresh" : "-30.50",
+	"output_i" : "-14.0",
+	"target_offset" : "0.40"
+}
+"""
+
+
+def test_parse_loudnorm_json_from_the_ffmpeg_log() -> None:
+    assert parse_loudnorm(LOUDNORM_LOG) == MEASURED
+    with pytest.raises(RenderError, match="loudnorm"):
+        parse_loudnorm("no json here")
+    silent = LOUDNORM_LOG.replace('"-20.30"', '"-inf"')
+    with pytest.raises(RenderError, match="im lặng"):
+        parse_loudnorm(silent)  # never hand -inf to loudnorm's linear pass
+
+
 def test_muted_style_without_music_still_has_a_silent_track() -> None:
     g = build_graph(edl([shot("a.mp4", 0, 1)], ambient=None), has_audio=[True])
     assert "volume=" not in g and "anullsrc" in g
@@ -98,6 +142,8 @@ def test_encoder_settings_meet_the_render_standard() -> None:
     # Found on real footage 29/09/2026: the native AAC encoder's noise substitution (PNS) turned
     # a -2.6 dB mix into +6.8 dB peaks (audible clipping). PNS off keeps it at -1.2 dB.
     assert "-aac_pns 0" in joined
+    # 192 kbps AAC added up to 1.2 dB of true peak on real footage; 320 kbps added 0.1 dB.
+    assert "-b:a 320k" in joined
 
 
 # ─────────────── real render ───────────────

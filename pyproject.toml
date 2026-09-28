@@ -12,6 +12,8 @@ dependencies = [
     # 29/09/2026; both MIT.
     "anthropic==1.9.0",
     "pydantic-settings==2.15.0",
+    # Phase 5b: caption widths from the real glyphs. pip-audit clean 29/09/2026, MIT, no deps.
+    "fonttools==4.65.0",
 ]
 
 [project.optional-dependencies]
@@ -57,7 +59,7 @@ plugins = ["pydantic.mypy"]
 # so mypy must pass without them. All are confined to one infrastructure module each.
 module = [
     "faster_whisper", "faster_whisper.*", "open_clip", "open_clip.*",
-    "torch", "torch.*", "PIL", "PIL.*",
+    "torch", "torch.*", "PIL", "PIL.*", "fontTools", "fontTools.*",
 ]
 ignore_missing_imports = true
 
