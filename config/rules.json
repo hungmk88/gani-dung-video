@@ -90,6 +90,19 @@
   "tai_len": {"name": "Tải nhạc của tôi", "needs_rights_tick": true}
  },
  "music": {"bpm_max_deviation": 0.2, "loop_unit_beats": 4},
+ "_ghi_chu_speech": "Nhận dạng lời (GĐ3a). Clip CÓ LỜI chỉ khi đạt ĐỦ: tiếng nói ≥ min_speech_sec giây, ≥ min_words từ, tiếng nói ≥ min_speech_ratio thời lượng clip, độ tin cậy trung bình ≥ min_avg_confidence (chốt 28/09/2026: tiếng nói chuyện lọt mic ở xưởng chỉ 2–14% thời lượng, tin cậy 0,43–0,67). Cờ được tính lại mỗi lần chạy nên đổi ngưỡng không cần chạy lại Whisper. model_default dùng trên Mac Mini; Dell chạy thử bằng --model small. Model nằm trong bộ nhớ đệm Hugging Face của máy (không commit); máy mới cần mạng lần đầu. device=cpu cố ý: 'auto' chọn GPU GeForce MX130 của Dell (CUDA cc 5.0) và ctranslate2 4.8 bị sập (segfault); Mac Mini không có CUDA nên vốn chạy CPU. int8 nhanh hơn float32 ~30% trên CPU.",
+ "speech": {
+  "language": "vi",
+  "model_default": "large-v3-turbo",
+  "min_speech_sec": 1.0,
+  "min_words": 3,
+  "min_speech_ratio": 0.30,
+  "min_avg_confidence": 0.60,
+  "vad_filter": true,
+  "beam_size": 5,
+  "device": "cpu",
+  "compute_type": "int8"
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,

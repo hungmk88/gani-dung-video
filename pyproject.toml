@@ -42,5 +42,10 @@ mypy_path = "src"
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+# faster-whisper ships no type hints; its use is confined to infrastructure/whisper_asr.py.
+module = ["faster_whisper", "faster_whisper.*"]
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["src/gani_dung_video"]
