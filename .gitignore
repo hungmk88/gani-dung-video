@@ -8,6 +8,9 @@
 # --- Footage, project work dirs, renders (large + may contain faces/PII) ---
 edit/
 footage/
+test_footage/
+Xuong GANI/
+Nhac test BPM/
 jobs/
 *.mp4
 *.MP4
@@ -29,12 +32,17 @@ music/
 *.m4a
 *.aac
 *.flac
+*.wav
+*.ogg
 
 # --- Models / caches ---
 models/
 *.pt
+*.pth
+*.bin
 *.safetensors
 *.onnx
+*.npz
 
 # --- Local state ---
 *.sqlite
