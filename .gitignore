@@ -69,3 +69,8 @@ Thumbs.db
 
 # --- Local drafts (reference only, never pushed) ---
 drafts/
+
+# --- Frontend build artifacts & dependencies (phase 6 prototype, feature/gd6-frontend-preview) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
