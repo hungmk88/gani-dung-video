@@ -12,10 +12,7 @@
     {"correct": "chả quế", "heard_as": ["chà quế", "chả quê"]},
     {"correct": "giò bò", "heard_as": ["dò bò", "rò bò"]}
   ],
-  "banned_claims": [
-    "100%", "nhất", "duy nhất", "số 1", "hàn the",
-    "điều trị", "đặc trị", "chữa trị", "chữa bệnh", "trị bệnh", "phòng bệnh"
-  ],
+  "banned_claims": ["100%", "duy nhất", "số 1", "hàn the", "điều trị", "đặc trị", "chữa trị", "chữa bệnh", "trị bệnh", "phòng bệnh", "ngon nhất", "tốt nhất", "rẻ nhất", "chất lượng nhất", "sạch nhất", "uy tín nhất"],
  "_ghi_chu_visual": "Từ điển hình ảnh (GĐ4b, chốt 29/09/2026, sửa S3 của đặc tả): món nhắc trong ghi chú yeu-cau.md được so với khung hình bằng CLIP qua 1–3 câu tiếng Anh tả hình dạng, màu, bề mặt cắt. 5 mục đầu lấy từ Phụ lục D; giò bò, chả quế, nem chua, giò chả do dev soạn. Ảnh mẫu (so ảnh–ảnh) để sau khi có footage đúng món.",
  "visual": {
   "giò lụa": [

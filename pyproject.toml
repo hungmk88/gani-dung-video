@@ -8,6 +8,10 @@ dependencies = [
     "faster-whisper>=1.2",
     # 4.10.0.84: pip-audit clean 28/09/2026; headless = no GUI deps (X11/Qt).
     "opencv-python-headless==4.10.0.84",
+    # Phase 4c: Claude API + secrets from .env. pip-audit clean (OSV + PyPI, 14-package tree)
+    # 29/09/2026; both MIT.
+    "anthropic==1.9.0",
+    "pydantic-settings==2.15.0",
 ]
 
 [project.optional-dependencies]

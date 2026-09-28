@@ -12,6 +12,9 @@ python -m gani_dung_video plan <yeu-cau.md|options.json> <thu_muc_footage> [--nh
     exit 0 = đã ghi edit/plan.json, 1 = bị chặn (preflight) hoặc chưa hỗ trợ, 2 = lỗi file/nhạc
 python -m gani_dung_video pick <yeu-cau.md|options.json> <thu_muc_footage>
     exit 0 = đã ghi edit/candidates.json, 2 = chưa chạy plan / plan cũ / lỗi file
+python -m gani_dung_video draft <yeu-cau.md|options.json> <thu_muc_footage> [--dry-run]
+    exit 0 = đã ghi edit/drafts.json (hoặc in ước tính), 1 = hết vòng sửa / chạm trần chi phí,
+    2 = thiếu khóa API, lỗi file, lỗi mạng
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 """
@@ -25,6 +28,7 @@ import logging
 import sys
 from pathlib import Path
 
+from gani_dung_video.application.draft_service import DraftError, DryRun, build_drafts
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
@@ -33,10 +37,12 @@ from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
 from gani_dung_video.application.transcribe_service import transcribe_folder
 from gani_dung_video.domain.plan import PlanError
+from gani_dung_video.infrastructure.claude_client import AiError
 from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
 from gani_dung_video.infrastructure.music_analysis import MusicError
+from gani_dung_video.infrastructure.settings import SettingsError
 from gani_dung_video.infrastructure.whisper_asr import AsrError
 
 logger = logging.getLogger("gani_dung_video")
@@ -70,6 +76,10 @@ def _build_parser() -> argparse.ArgumentParser:
     pk = sub.add_parser("pick", help="Ứng viên cảnh cho từng khối → edit/candidates.json")
     pk.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy plan)")
     pk.add_argument("folder", type=Path, help="Thư mục footage đã chạy plan")
+    dr = sub.add_parser("draft", help="Gọi Claude chọn cảnh + viết chữ → edit/drafts.json")
+    dr.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy pick)")
+    dr.add_argument("folder", type=Path, help="Thư mục footage đã chạy pick")
+    dr.add_argument("--dry-run", action="store_true", help="Chỉ ước tính token/chi phí")
     return ap
 
 
@@ -86,6 +96,43 @@ def _run_scenes(folder: Path) -> int:
         f"  Đoạn đẹp dùng được theo phong cách — {counts}",
         f"Kết quả: {out}",
     ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _num(x: float) -> str:
+    return f"{x:,.0f}".replace(",", ".")
+
+
+def _vnd(x: float) -> str:
+    return _num(x) + "đ"
+
+
+def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
+    try:
+        r, out = build_drafts(file, folder, dry_run=dry_run)
+    except DraftError as e:
+        sys.stdout.write(f"KHÔNG ĐẠT: {e}\n")
+        return 1
+    if isinstance(r, DryRun):
+        lines = [
+            f"Ước tính (không gọi API) — model {r.model}",
+            f"  Token vào ≈ {_num(r.input_tokens)} → {_vnd(r.input_only_vnd)}",
+            f"  Một lần gọi tối đa ≈ {_vnd(r.worst_call_vnd)} (gồm cả giới hạn token ra)",
+            f"  Tối đa {r.max_attempts} vòng; trần {_vnd(r.cap_vnd)}",
+        ]
+    else:
+        lines = [
+            f"Model {r.model} — {len(r.drafts)} bản nháp sau {r.attempts} vòng",
+            f"  Token {_num(r.input_tokens)} vào / {_num(r.output_tokens)} ra — {_vnd(r.cost_vnd)} "
+            f"(trần {_vnd(r.cap_vnd)})",
+            *[
+                f"  Bản {d.draft} ({d.label}): {len(d.segments)} cảnh, {d.segments[-1].t_end:g}s"
+                for d in r.drafts
+            ],
+            *[f"  Ghi chú {n}" for n in r.notes],
+            f"Kết quả: {out}",
+        ]
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
@@ -211,11 +258,21 @@ def main(argv: list[str] | None = None) -> int:
             return _run_scenes(args.folder)
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
+        if args.cmd == "draft":
+            return _run_draft(args.file, args.folder, args.dry_run)
         if args.cmd == "pick":
             return _run_pick(args.file, args.folder)
         if args.cmd == "plan":
             return _run_plan(args.file, args.folder, args.nhac_thu_muc)
         return _run_preflight(args.file)
-    except (ConfigError, FfprobeMissingError, AsrError, SemanticError, MusicError) as e:
+    except (
+        ConfigError,
+        FfprobeMissingError,
+        AsrError,
+        SemanticError,
+        MusicError,
+        SettingsError,
+        AiError,
+    ) as e:
         logger.error("LỖI: %s", e)
         return 2

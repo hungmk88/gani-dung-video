@@ -196,6 +196,24 @@
    "khac": "Màn chữ / logo"
   }
  },
+ "_ghi_chu_ai": "Gọi Claude (GĐ4c, chốt 29/09/2026). model mặc định claude-sonnet-5-5 (giá tra trang Anthropic 29/09/2026: $2 vào / $10 ra mỗi 1 triệu token; token ra gồm cả phần suy nghĩ); máy nào muốn đổi model thì đặt GANI_DV_CLAUDE_MODEL trong .env. effort medium. Gọi 1 lần cho mọi bản nháp; lỗi V1–V9 loại 'ai' thì gọi lại kèm danh sách lỗi, chỉ cho bản bị lỗi, tối đa max_attempts vòng (R2). Trước mỗi lần gọi: đã tiêu + chi phí xấu nhất của lần gọi (token vào ước tính + max_tokens ra) mà vượt cost_cap_vnd theo độ dài video (≤ 60s: 20.000đ) thì DỪNG, không gọi. chars_per_token chỉ dùng để ước tính cho --dry-run.",
+ "ai": {
+  "model": "claude-sonnet-5-5",
+  "effort": "medium",
+  "max_tokens": 16000,
+  "timeout_sec": 180,
+  "network_retries": 2,
+  "max_attempts": 3,
+  "price_usd_per_mtok": {
+   "input": 2.0,
+   "output": 10.0
+  },
+  "usd_vnd": 25500,
+  "cost_cap_vnd": {
+   "60": 20000
+  },
+  "chars_per_token": 3.0
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,
@@ -271,6 +289,10 @@
   "PLAN_NO_TRACK": "Chế độ nhạc '{mode}' cần ghi tên file nhạc ở nhac_file (chọn bài tự động chưa có).",
   "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước.",
   "PICK_NO_PLAN": "Chưa có edit/plan.json — chạy lệnh `plan` trước.",
-  "PICK_STALE_PLAN": "edit/plan.json được biên dịch cho phong cách '{plan}', còn tùy chọn đang là '{opt}'. Chạy lại lệnh `plan`."
+  "PICK_STALE_PLAN": "edit/plan.json được biên dịch cho phong cách '{plan}', còn tùy chọn đang là '{opt}'. Chạy lại lệnh `plan`.",
+  "DRAFT_NO_PICK": "Chưa có edit/candidates.json — chạy lệnh `pick` trước.",
+  "DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",
+  "DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
+  "DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }
 }
