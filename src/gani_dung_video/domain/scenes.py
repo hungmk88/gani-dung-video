@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+EXCLUDED_LABELS = frozenset({"khac"})  # decision 29/09/2026: never counted as usable
+
 
 class FrameStats(BaseModel):
     """Metrics of one sampled frame, relative to the previous sample."""
@@ -36,6 +38,13 @@ class Segment(BaseModel):
     start: float
     end: float
     peak: float
+    aesthetic: float | None = None  # LAION score of the peak frame (phase 3c)
+    labels: list[str] = []  # CLIP zero-shot labels of the peak frame (phase 3c)
+
+    @property
+    def excluded(self) -> bool:
+        """True when the leading label says this is not footage (text card, outro, logo)."""
+        return bool(self.labels) and self.labels[0] in EXCLUDED_LABELS
 
 
 class Window(BaseModel):
@@ -65,19 +74,34 @@ class Scene(BaseModel):
     shaky: bool = False  # True when every window is shaky (no usable span left)
     windows: list[Window] = []
     segments: dict[str, list[Segment]] = {}  # style → "đoạn đẹp" inside usable spans
+    labels: list[str] = []  # phase 3c: from the mean label probabilities of its windows
+    label_probs: dict[str, float] = {}
 
     @property
     def duration(self) -> float:
         return self.end - self.start
 
 
+class SimilarPair(BaseModel):
+    """Two moments of one clip that look alike (spec §7.1), reported once per pair with the
+    styles that picked both (segment ranges differ per style, the peak frames do not)."""
+
+    clip: str
+    peak_a: float
+    peak_b: float
+    similarity: float
+    styles: list[str]
+
+
 class ScenesFile(BaseModel):
-    """Content of edit/scenes.json."""
+    """Content of edit/scenes.json (phase 3c fields stay empty until `semantics` runs)."""
 
     folder: str
     rules_version: str
     scenes: list[Scene]
     usable_by_style: dict[str, int]  # so_canh_dung_duoc for preflight X5/X6
+    semantic_model: str | None = None
+    similar: list[SimilarPair] = []
 
 
 def split_scenes(
@@ -160,9 +184,12 @@ def style_segment_range(style: Mapping[str, Any]) -> tuple[float, float]:
 
 def usable_by_style(scenes: Sequence[Scene], styles: Mapping[str, Any]) -> dict[str, int]:
     """Usable "đoạn đẹp" per style (so_canh_dung_duoc for X5/X6): segments of non-blurry
-    scenes; segments already lie inside shake-free spans."""
+    scenes, minus segments labelled as non-footage; segments already lie inside shake-free
+    spans."""
     return {
-        name: sum(len(sc.segments.get(name, [])) for sc in scenes if not sc.blurry)
+        name: sum(
+            1 for sc in scenes if not sc.blurry for g in sc.segments.get(name, []) if not g.excluded
+        )
         for name in styles
     }
 
@@ -204,22 +231,19 @@ def usable_spans(windows: Sequence[Window]) -> list[tuple[float, float]]:
     return spans
 
 
-def _candidates(
-    stats: Sequence[FrameStats], spans: Sequence[tuple[float, float]], lo: float, hi: float,
-    gap: float,
-) -> list[tuple[float, Segment]]:  # fmt: skip
-    """One candidate per slot of (hi + gap) s inside each span, scored by peak activity."""
-    out: list[tuple[float, Segment]] = []
-    for a, b in spans:
-        cursor = a
-        while b - cursor >= lo:
-            slot_end = min(b, cursor + hi + gap)
-            part = [s for s in stats if cursor <= s.t < slot_end]
-            seg = pick_segment(part, cursor, slot_end, lo, hi)
-            if seg is not None:
-                out.append((max(s.activity for s in part), seg))
-            cursor = slot_end
-    return out
+def _best_in(
+    stats: Sequence[FrameStats], free: Sequence[tuple[float, float]], lo: float, hi: float
+) -> tuple[float, Segment] | None:
+    """Highest-activity segment that fits in one of the free ranges (earliest wins ties)."""
+    best: tuple[float, Segment] | None = None
+    for a, b in free:
+        part = [s for s in stats if a <= s.t < b]
+        seg = pick_segment(part, a, b, lo, hi)
+        if seg is not None:
+            score = max(s.activity for s in part)
+            if best is None or score > best[0]:
+                best = (score, seg)
+    return best
 
 
 def pick_clip_segments(
@@ -229,14 +253,17 @@ def pick_clip_segments(
     """Up to max_n "đoạn đẹp" of one clip for a style, sorted by time.
 
     Spec §5.3.C / check V4: several segments may come from one long clip if they are at
-    least `gap` s apart, at most 3 per clip. The busiest moments (action peak) win.
+    least `gap` s apart, at most 3 per clip. Greedy: take the busiest moment (action peak),
+    cut [start - gap, end + gap] out of the free ranges, repeat in what is left.
     """
+    free = [(float(a), float(b)) for a, b in spans]
     chosen: list[Segment] = []
-    ranked = sorted(_candidates(stats, spans, lo, hi, gap), key=lambda c: (-c[0], c[1].start))
-    for _, seg in ranked:
-        if len(chosen) >= max_n:
+    while len(chosen) < max_n:
+        best = _best_in(stats, free, lo, hi)
+        if best is None:
             break
-        if all(seg.start - c.end >= gap - 1e-6 or c.start - seg.end >= gap - 1e-6
-               for c in chosen):  # fmt: skip
-            chosen.append(seg)
+        seg = best[1]
+        chosen.append(seg)
+        cut_a, cut_b = seg.start - gap, seg.end + gap
+        free = [r for a, b in free for r in ((a, min(b, cut_a)), (max(a, cut_b), b)) if r[1] > r[0]]
     return sorted(chosen, key=lambda c: c.start)

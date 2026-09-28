@@ -10,6 +10,7 @@ import pytest
 from gani_dung_video.domain.scenes import (
     FrameStats,
     Scene,
+    Segment,
     Window,
     blur_flags,
     classify_motion,
@@ -152,6 +153,18 @@ def test_usable_by_style_counts_segments_of_clean_scenes() -> None:
     assert counts == {"tvc_cat_nhanh": 3, "sang_trong": 1}  # blurry scene never counts
 
 
+def test_segments_labelled_khac_are_never_usable() -> None:
+    # Decision 29/09/2026: text cards / outros / logos (label "khac") are not footage.
+    def seg(*labels: str) -> Segment:
+        return Segment(start=0.0, end=2.0, peak=1.0, labels=list(labels))
+
+    segs = [seg("khac"), seg("thiet_bi", "khac"), seg(), seg("khac", "thiet_bi")]
+    sc = Scene(clip="a", index=0, start=0.0, end=6.0, sharpness=100, motion="tinh",
+               jitter=0, consistency=1, segments={"tvc_cat_nhanh": segs})  # fmt: skip
+    # Only a segment whose *leading* label is khac is dropped; unlabelled ones still count.
+    assert usable_by_style([sc], {"tvc_cat_nhanh": {}}) == {"tvc_cat_nhanh": 2}
+
+
 # ─────────────── 2 s motion windows → usable spans (decision 28/09/2026) ───────────────
 
 
@@ -205,6 +218,16 @@ def test_gap_applies_across_spans() -> None:
     st = series(60)
     segs = pick_clip_segments(st, [(0.0, 2.5), (4.0, 6.5)], 1.2, 2.5, gap=3.0, max_n=3)
     assert len(segs) == 1  # the two 2.5 s spans are only 1.5 s apart
+
+
+def test_room_left_before_the_best_segment_is_used() -> None:
+    # Bug found in 3c (12 s clean take gave 1 segment): the first slot's segment was pushed
+    # next to the best one and dropped for the 3 s gap, although 0–3.5 s was still free.
+    acts = {37: 9.0, 23: 5.0}  # best peak at 7.4 s, a smaller one at 4.6 s
+    st = [fs(i * 0.2, act=acts.get(i, 1.0)) for i in range(60)]
+    segs = pick_clip_segments(st, [(0.0, 12.0)], 1.2, 2.5, gap=3.0, max_n=3)
+    assert len(segs) == 2 and segs[1].peak == pytest.approx(7.4)
+    assert segs[1].start - segs[0].end >= 3.0
 
 
 def test_busiest_moments_win_when_capped() -> None:

@@ -8,6 +8,8 @@ python -m gani_dung_video transcribe <thu_muc_footage> [--model small]
     exit 0 = xong, 1 = có clip lỗi, 2 = chưa inventory / không nạp được model
 python -m gani_dung_video scenes <thu_muc_footage>
     exit 0 = đã ghi edit/scenes.json, 2 = chưa inventory
+python -m gani_dung_video semantics <thu_muc_footage>
+    exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 """
 
 from __future__ import annotations
@@ -22,7 +24,9 @@ from pathlib import Path
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.scenes_service import build_scenes
+from gani_dung_video.application.semantics_service import build_semantics
 from gani_dung_video.application.transcribe_service import transcribe_folder
+from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
 from gani_dung_video.infrastructure.whisper_asr import AsrError
@@ -49,6 +53,8 @@ def _build_parser() -> argparse.ArgumentParser:
     tr.add_argument("--model", help="Model Whisper (mặc định theo rules.json; Dell: small)")
     sc = sub.add_parser("scenes", help="Tách cảnh, đo nét/rung, đoạn đẹp → edit/scenes.json")
     sc.add_argument("folder", type=Path, help="Thư mục footage đã chạy inventory")
+    se = sub.add_parser("semantics", help="Nhãn cảnh CLIP, điểm thẩm mỹ, đoạn trùng → scenes.json")
+    se.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes")
     return ap
 
 
@@ -65,6 +71,27 @@ def _run_scenes(folder: Path) -> int:
         f"  Đoạn đẹp dùng được theo phong cách — {counts}",
         f"Kết quả: {out}",
     ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _run_semantics(folder: Path) -> int:
+    r, out = build_semantics(folder)
+    label_count: dict[str, int] = {}
+    for sc in r.scenes:
+        for lb in sc.labels:
+            label_count[lb] = label_count.get(lb, 0) + 1
+    labels = ", ".join(f"{k}: {v}" for k, v in sorted(label_count.items())) or "chưa có"
+    lines = [
+        f"Model: {r.semantic_model} — {len(r.scenes)} cảnh",
+        f"  Nhãn cảnh — {labels}",
+        f"  Cặp thời điểm giống nhau (cùng clip): {len(r.similar)}",
+        *[f"    - {p.clip} {p.peak_a:g}s ≈ {p.peak_b:g}s ({p.similarity:.2f})"
+          f" — {', '.join(p.styles)}" for p in r.similar[:10]],
+        "  Đoạn dùng được sau khi loại màn chữ/logo — "
+        + ", ".join(f"{k}: {v}" for k, v in r.usable_by_style.items()),
+        f"Kết quả: {out}",
+    ]  # fmt: skip
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
@@ -121,7 +148,9 @@ def main(argv: list[str] | None = None) -> int:
             return _run_transcribe(args.folder, args.model)
         if args.cmd == "scenes":
             return _run_scenes(args.folder)
+        if args.cmd == "semantics":
+            return _run_semantics(args.folder)
         return _run_preflight(args.file)
-    except (ConfigError, FfprobeMissingError, AsrError) as e:
+    except (ConfigError, FfprobeMissingError, AsrError, SemanticError) as e:
         logger.error("LỖI: %s", e)
         return 2

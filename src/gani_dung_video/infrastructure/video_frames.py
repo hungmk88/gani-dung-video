@@ -1,4 +1,5 @@
-"""OpenCV frame analysis: sample a clip at N fps, downscale, measure each sample (phase 3b).
+"""OpenCV frame analysis: sample a clip at N fps, downscale, measure each sample (phase 3b);
+grab RGB frames at given times for CLIP (phase 3c).
 
 OpenCV 4.10 applies the phone's rotation flag itself, so frames arrive in display
 orientation (1080×1920 for portrait) — the same size inventory.json reports.
@@ -6,6 +7,7 @@ orientation (1080×1920 for portrait) — the same size inventory.json reports.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import cv2
@@ -81,4 +83,29 @@ def analyse_clip(path: Path, sample_fps: float, width: int) -> list[FrameStats]:
         cap.release()
     if not out:
         raise VisionError(f"Không đọc được khung hình nào từ {path.name}")
+    return out
+
+
+def grab_frames(path: Path, times: Sequence[float], width: int) -> list[NDArray[np.uint8]]:
+    """RGB frames (display orientation, resized to `width`) at the given times in seconds.
+
+    Raises:
+        VisionError: the file cannot be opened or a time cannot be decoded.
+    """
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        raise VisionError(f"OpenCV không mở được {path.name}")
+    out: list[NDArray[np.uint8]] = []
+    try:
+        for t in times:
+            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
+            ok, frame = cap.read()
+            if not ok:
+                raise VisionError(f"Không đọc được khung {t:g}s của {path.name}")
+            h, w = frame.shape[:2]
+            small = cv2.resize(frame, (width, max(1, round(h * width / w))),
+                               interpolation=cv2.INTER_AREA)  # fmt: skip
+            out.append(np.asarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB), dtype=np.uint8))
+    finally:
+        cap.release()
     return out

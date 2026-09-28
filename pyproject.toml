@@ -12,6 +12,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5", "mypy>=1.10"]
+# Phase 3c (CLIP + LAION). pip-audit clean 28/09/2026 (OSV + PyPI, 22-package tree).
+# torch 2.14 wheels: macOS 14+ Apple Silicon, Windows x64 (CPU), Linux.
+ai = ["torch==2.14.0", "torchvision==0.29.0", "open-clip-torch==3.3.0"]
 
 [project.scripts]
 gani-dv = "gani_dung_video.cli:main"
@@ -46,8 +49,12 @@ python_version = "3.12"
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# faster-whisper ships no type hints; its use is confined to infrastructure/whisper_asr.py.
-module = ["faster_whisper", "faster_whisper.*"]
+# faster-whisper and open_clip ship no type hints; torch/PIL come with the optional [ai] extra,
+# so mypy must pass without them. All are confined to one infrastructure module each.
+module = [
+    "faster_whisper", "faster_whisper.*", "open_clip", "open_clip.*",
+    "torch", "torch.*", "PIL", "PIL.*",
+]
 ignore_missing_imports = true
 
 [tool.coverage.run]

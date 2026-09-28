@@ -118,6 +118,65 @@
   "segment_gap_sec": 3.0,
   "max_segments_per_clip": 3
  },
+ "_ghi_chu_semantic": "Ngữ nghĩa hình (GĐ3c, chốt 28/09/2026). CLIP ViT-L/14 trọng số OpenAI + bộ chấm thẩm mỹ LAION v2 — anh chấp nhận dùng cho công cụ nội bộ. File LAION phải khớp aesthetic_sha256 (đã đối chiếu mã blob GitHub) mới được nạp, nạp bằng weights_only. device auto = GPU Apple (MPS) nếu có, không thì CPU. Nhãn: mỗi nhãn 3 câu tiếng Anh (CLIP chỉ hiểu tiếng Anh), gắn khi xác suất ≥ label_min_prob. Cảnh báo 2 đoạn cùng clip giống nhau khi độ tương đồng ≥ similar_warn = 0,95 (đo 29/09/2026 trên footage GANI: cùng clip trung vị 0,95, hai clip xưởng khác nhau p95 0,89, nên 0,85 của đặc tả §7.1 báo giả quá nhiều); mỗi cặp hai thời điểm báo một lần, kèm danh sách phong cách chọn chúng. Nhãn khac (màn chữ, màn kết mạng xã hội, logo) không phải footage: đoạn có nhãn đầu là khac không được tính là đoạn dùng được. Câu mô tả và ngưỡng là giá trị khởi đầu, hiệu chỉnh trên footage GANI.",
+ "semantic": {
+  "clip_model": "ViT-L-14",
+  "clip_pretrained": "openai",
+  "aesthetic_file": "sac+logos+ava1-l14-linearMSE.pth",
+  "aesthetic_url": "https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac%2Blogos%2Bava1-l14-linearMSE.pth",
+  "aesthetic_sha256": "21dd590f3ccdc646f0d53120778b296013b096a035a2718c9cb0d511bff0f1e0",
+  "device": "auto",
+  "frame_width": 360,
+  "label_min_prob": 0.3,
+  "similar_warn": 0.95,
+  "labels": {
+   "nguoi_thao_tac": [
+    "a worker in white uniform and gloves working in a food factory",
+    "gloved hands preparing meat on a stainless steel table",
+    "a factory worker operating a food processing machine"
+   ],
+   "thiet_bi": [
+    "an industrial stainless steel food processing machine",
+    "a meat grinder or mixer machine in a factory",
+    "a steam cooking cabinet in a food factory"
+   ],
+   "khu_vuc": [
+    "the interior of a clean food processing factory",
+    "a wide view of a factory production room with a tiled floor",
+    "a cold storage room in a food factory"
+   ],
+   "thanh_pham": [
+    "packaged sausages or meatballs ready for sale",
+    "vacuum-sealed food products with printed labels",
+    "a tray full of finished meatballs"
+   ],
+   "mon_an": [
+    "a plate of cooked Vietnamese food on a dining table",
+    "a delicious dish served in a bowl with herbs",
+    "people eating a meal together"
+   ],
+   "mat_cat": [
+    "a close-up of a sliced sausage showing its cross-section",
+    "a pork roll cut in half showing the inside",
+    "a meatball cut open showing its texture"
+   ],
+   "chung_nhan": [
+    "a food safety certificate document",
+    "a framed certificate hanging on a wall",
+    "a printed quality certification paper with a stamp"
+   ],
+   "nguoi_noi": [
+    "a person talking to the camera",
+    "a presenter speaking in front of the camera",
+    "a close-up of a person's face while talking"
+   ],
+  "khac": [
+   "a text card or title slate with words on a plain background",
+   "a social media app outro screen with a logo and a username",
+   "a black screen with a logo, credits or a watermark"
+  ]
+  }
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,
