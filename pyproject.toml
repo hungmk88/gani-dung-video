@@ -5,6 +5,9 @@ description = "App Dựng Video GANI v2 — rule engine + AI trong khung (Đặc
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",
+    "faster-whisper>=1.2",
+    # 4.10.0.84: pip-audit clean 28/09/2026; headless = no GUI deps (X11/Qt).
+    "opencv-python-headless==4.10.0.84",
 ]
 
 [project.optional-dependencies]

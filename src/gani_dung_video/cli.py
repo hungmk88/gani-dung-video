@@ -6,6 +6,8 @@ python -m gani_dung_video inventory <thu_muc_footage>
     exit 0 = đã ghi edit/inventory.json, 2 = thiếu thư mục / thiếu ffprobe
 python -m gani_dung_video transcribe <thu_muc_footage> [--model small]
     exit 0 = xong, 1 = có clip lỗi, 2 = chưa inventory / không nạp được model
+python -m gani_dung_video scenes <thu_muc_footage>
+    exit 0 = đã ghi edit/scenes.json, 2 = chưa inventory
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from pathlib import Path
 
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.preflight_service import check_options_file
+from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.transcribe_service import transcribe_folder
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
@@ -44,7 +47,26 @@ def _build_parser() -> argparse.ArgumentParser:
     tr = sub.add_parser("transcribe", help="Nhận dạng lời từng clip → edit/transcripts/")
     tr.add_argument("folder", type=Path, help="Thư mục footage đã chạy inventory")
     tr.add_argument("--model", help="Model Whisper (mặc định theo rules.json; Dell: small)")
+    sc = sub.add_parser("scenes", help="Tách cảnh, đo nét/rung, đoạn đẹp → edit/scenes.json")
+    sc.add_argument("folder", type=Path, help="Thư mục footage đã chạy inventory")
     return ap
+
+
+def _run_scenes(folder: Path) -> int:
+    r, out = build_scenes(folder)
+    n = len(r.scenes)
+    counts = ", ".join(f"{k}: {v}" for k, v in r.usable_by_style.items())
+    lines = [
+        f"Đã tách: {n} cảnh từ {len({s.clip for s in r.scenes})} clip",
+        f"  Mờ: {sum(s.blurry for s in r.scenes)} · Rung cả cảnh: {sum(s.shaky for s in r.scenes)}"
+        f" · Lia máy: {sum(s.motion == 'lia' for s in r.scenes)}",
+        f"  Cửa sổ 2s rung: {sum(w.shaky for s in r.scenes for w in s.windows)}"
+        f"/{sum(len(s.windows) for s in r.scenes)}",
+        f"  Đoạn đẹp dùng được theo phong cách — {counts}",
+        f"Kết quả: {out}",
+    ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
 
 
 def _run_transcribe(folder: Path, model: str | None) -> int:
@@ -97,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_inventory(args.folder)
         if args.cmd == "transcribe":
             return _run_transcribe(args.folder, args.model)
+        if args.cmd == "scenes":
+            return _run_scenes(args.folder)
         return _run_preflight(args.file)
     except (ConfigError, FfprobeMissingError, AsrError) as e:
         logger.error("LỖI: %s", e)

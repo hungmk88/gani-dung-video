@@ -103,6 +103,21 @@
   "device": "cpu",
   "compute_type": "int8"
  },
+ "_ghi_chu_vision": "Hình kỹ thuật (GĐ3b, chốt 28/09/2026). Lấy mẫu sample_fps khung/giây, thu về rộng analysis_width px. Cắt cảnh khi khác biệt biểu đồ màu > cut_threshold. Mờ = độ nét (trung vị cảnh) < blur_floor, bất kể phân vị (chốt 28/09/2026, phương án B: bỏ luật 20% kém nét nhất vì gắn cờ oan khi footage đều nét và để lọt cảnh mờ khi cả buổi quay hỏng). Nhòe chuyển động mà độ nét vẫn cao để điểm thẩm mỹ GĐ3c xử lý. Chuyển động (px trên khung 360 giữa 2 mẫu): rung = giật > shake_jitter_px VÀ (đổi hướng: độ nhất quán < pan_min_consistency, HOẶC giật cục: độ giật / tốc độ trôi > pan_max_jerk_ratio); lia = trôi đều một hướng; tĩnh = < static_px. Các ngưỡng này là giá trị khởi đầu, hiệu chỉnh lại với 100 khung chấm tay (S2). Rung được chấm theo từng cửa sổ window_sec giây; các cửa sổ không rung liền nhau gom thành dải dùng được, đoạn đẹp chỉ lấy trong dải. Một clip cho tối đa max_segments_per_clip đoạn mỗi phong cách, cách nhau ≥ segment_gap_sec (đặc tả §5.3.C, V4).",
+ "vision": {
+  "sample_fps": 5,
+  "analysis_width": 360,
+  "cut_threshold": 0.3,
+  "min_scene_sec": 0.6,
+  "blur_floor": 30.0,
+  "static_px": 1.0,
+  "shake_jitter_px": 3.0,
+  "pan_min_consistency": 0.6,
+  "pan_max_jerk_ratio": 0.5,
+  "window_sec": 2.0,
+  "segment_gap_sec": 3.0,
+  "max_segments_per_clip": 3
+ },
  "_ghi_chu_footage": "Kiểm kê (GĐ2). duplicate_patterns: regex áp lên TÊN FILE BỎ ĐUÔI, nhóm 'base' = tên file gốc — chỉ những file khớp mới bị so trùng (không băm cả thư mục). Trùng = cùng dung lượng + cùng mã băm của duplicate_hash_mb MB đầu và cuối file. hdr_transfers: ffprobe color_transfer của HLG (arib-std-b67) và PQ (smpte2084).",
  "footage": {
   "min_usable_ratio": 1.3,
