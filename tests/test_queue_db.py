@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb, QueueDbError
 
 T0 = 1_000_000.0
@@ -38,7 +39,7 @@ def alive_all(pid: int) -> bool:
 
 
 def test_schema_is_created_with_wal_and_a_version(db: QueueDb, tmp_path: Path) -> None:
-    assert db.schema_version() == 2
+    assert db.schema_version() == 3
     con = sqlite3.connect(tmp_path / "jobs" / "queue.db")
     try:
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -293,12 +294,12 @@ def test_a_job_out_of_attempts_is_failed_instead_of_requeued(db: QueueDb) -> Non
     assert job is not None and job.status == "failed" and job.finished_at == T0 + 500
 
 
-def test_paid_draft_jobs_are_never_requeued_after_a_crash(db: QueueDb) -> None:
+def test_draft_jobs_are_never_requeued_after_a_crash(db: QueueDb) -> None:
     jid = running(db, kind="draft", max_attempts=5)
     [r] = db.recover_orphans(T0 + 500, alive_none, stale_sec=120, retry_delay=30)
     assert (r.job_id, r.action) == (jid, "failed")
     job = db.get(jid)
-    assert job is not None and "ai_log" in (job.error_msg or "")
+    assert job is not None and "queue retry" in (job.error_msg or "")  # the message fits the phase
 
 
 def test_a_live_worker_with_a_fresh_heartbeat_is_left_alone(db: QueueDb) -> None:
@@ -463,11 +464,13 @@ def make_v1(path: Path) -> None:
     con.close()
 
 
-def test_a_v1_database_is_upgraded_with_every_job_and_event_kept(tmp_path: Path) -> None:
+def test_a_v1_database_is_upgraded_to_the_newest_schema_with_everything_kept(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "queue.db"
     make_v1(path)
     db = QueueDb(path)
-    assert db.schema_version() == 2
+    assert db.schema_version() == 3
     done, running = db.get(1), db.get(2)
     assert done is not None and running is not None
     assert (done.status, done.result, done.final, done.output_path) == ("completed", "passed", True,
@@ -543,10 +546,10 @@ def test_two_processes_opening_an_old_file_upgrade_it_once(tmp_path: Path) -> No
         th.join(timeout=60)
     assert errors == []
     db = QueueDb(path)
-    assert db.schema_version() == 2 and len(db.list_jobs()) == 2
+    assert db.schema_version() == 3 and len(db.list_jobs()) == 2
 
 
-def test_a_fresh_database_starts_at_v2_without_any_backup(tmp_path: Path) -> None:
+def test_a_fresh_database_starts_at_the_newest_version_without_any_backup(tmp_path: Path) -> None:
     QueueDb(tmp_path / "queue.db")
     assert not (tmp_path / "queue.db.v1.bak").exists()
 
@@ -716,3 +719,377 @@ def test_a_crashed_analysis_is_requeued_but_keeps_what_it_finished(db: QueueDb) 
     [r] = db.recover_orphans(T0 + 500, alive_none, stale_sec=120, retry_delay=30)
     assert (r.job_id, r.action) == (jid, "requeued")
     assert db.get(jid).stages_done == ["inventory"]  # type: ignore[union-attr]
+
+
+# ─────────────── 6c-2: schema v3 (approval deadline) ───────────────
+
+# the jobs table exactly as phase 6c-1 created it (v2): no approval_expires_at yet
+_V2_JOBS = """
+CREATE TABLE jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK (kind IN ('render', 'draft', 'analyze')),
+  project_dir TEXT NOT NULL, options_file TEXT NOT NULL, draft TEXT NOT NULL,
+  final INTEGER NOT NULL DEFAULT 0, no_asr INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing',
+    'awaiting_approval', 'completed', 'failed', 'cancelled')),
+  result TEXT CHECK (result IN ('passed', 'qc_failed')),
+  attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL CHECK (max_attempts >= 1),
+  priority INTEGER NOT NULL DEFAULT 0, not_before REAL NOT NULL DEFAULT 0,
+  created_at REAL NOT NULL, started_at REAL, finished_at REAL, worker_pid INTEGER,
+  child_pid INTEGER, heartbeat_at REAL, stage TEXT, progress_pct REAL NOT NULL DEFAULT 0,
+  output_path TEXT, error_msg TEXT, exit_code INTEGER,
+  cancel_requested INTEGER NOT NULL DEFAULT 0, pipeline_id INTEGER,
+  depends_on INTEGER REFERENCES jobs (id) ON DELETE SET NULL,
+  phase TEXT CHECK (phase IN ('estimate', 'paid')), stages_done TEXT NOT NULL DEFAULT '',
+  force INTEGER NOT NULL DEFAULT 0, cost_input_tokens INTEGER, cost_worst_call_vnd REAL,
+  cost_cap_vnd REAL, approved_vnd REAL, approved_at REAL, spent_vnd REAL
+)
+"""
+
+
+def make_v2(path: Path) -> None:
+    con = sqlite3.connect(path)
+    con.execute(_V2_JOBS)
+    for stmt in _V1.split(";\n")[1:]:  # the v1 script minus its jobs table: same other tables
+        if stmt.strip() and "CREATE TABLE jobs" not in stmt and "idx_jobs_claim" not in stmt:
+            con.execute(stmt)
+    con.execute("CREATE INDEX idx_jobs_claim ON jobs (status, priority DESC, id)")
+    con.execute("PRAGMA journal_mode = WAL")
+    con.execute(
+        "INSERT INTO jobs (kind, project_dir, options_file, draft, status, attempts, max_attempts,"
+        " created_at, phase, stages_done, cost_worst_call_vnd, approved_vnd) VALUES ('draft', "
+        "'E:/a', 'o', '', 'awaiting_approval', 1, 1, 10, 'estimate', 'plan,pick', 4207.3, NULL)"
+    )
+    con.execute(
+        "INSERT INTO job_events (job_id, ts, level, text) VALUES (1, 11, 'info', 'xin chào')"
+    )
+    con.execute("PRAGMA user_version = 2")
+    con.commit()
+    con.close()
+
+
+def test_a_v2_database_gets_the_deadline_column_and_keeps_everything(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v2(path)
+    db = QueueDb(path)
+    assert db.schema_version() == 3
+    job = db.get(1)
+    assert job is not None
+    assert (job.status, job.phase, job.stages_done, job.cost_worst_call_vnd) == (
+        "awaiting_approval", "estimate", ["plan", "pick"], 4207.3)  # fmt: skip
+    assert job.approval_expires_at is None
+    assert [e.text for e in db.events(1)] == ["xin chào"]
+    con = sqlite3.connect(path)
+    try:
+        con.execute("UPDATE jobs SET approval_expires_at = 123.5 WHERE id = 1")
+        cols = [r[1] for r in con.execute("PRAGMA table_info(jobs)")]
+        assert cols.count("approval_expires_at") == 1
+    finally:
+        con.close()
+
+
+def test_the_v2_upgrade_keeps_its_own_backup_and_leaves_the_v1_one_alone(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v2(path)
+    QueueDb(path)
+    backup = tmp_path / "queue.db.v2.bak"
+    assert backup.is_file()
+    con = sqlite3.connect(backup)
+    try:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 2
+    finally:
+        con.close()
+    assert not (tmp_path / "queue.db.v1.bak").exists()
+
+
+def test_a_v1_database_goes_straight_to_v3_without_a_v2_backup(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    QueueDb(path)
+    assert (tmp_path / "queue.db.v1.bak").is_file()
+    assert not (tmp_path / "queue.db.v2.bak").exists()
+    con = sqlite3.connect(path)
+    try:
+        assert "approval_expires_at" in [r[1] for r in con.execute("PRAGMA table_info(jobs)")]
+    finally:
+        con.close()
+
+
+def test_two_processes_opening_a_v2_file_upgrade_it_once(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v2(path)
+    errors: list[BaseException] = []
+
+    def opener() -> None:
+        try:
+            QueueDb(path)
+        except BaseException as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=opener) for _ in range(6)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(timeout=60)
+    assert errors == [] and QueueDb(path).schema_version() == 3
+
+
+# ─────────────── 6c-2: holding a draft job for approval ───────────────
+
+TTL = 86_400.0
+
+
+def estimate(**kw: object) -> Estimate:
+    base: dict[str, object] = {"model": "claude-sonnet-5-5", "input_tokens": 2400,
+                               "input_only_vnd": 122.4, "worst_call_vnd": 4207.3,
+                               "cap_vnd": 20_000.0, "max_attempts": 3}  # fmt: skip
+    return Estimate(**{**base, **kw})  # type: ignore[arg-type]
+
+
+def draft_job(**kw: object) -> NewJob:
+    return new_job("", **{"kind": "draft", "priority": None, "max_attempts": 1, **kw})
+
+
+def held(db: QueueDb, at: float = T0, **kw: object) -> int:
+    """A draft job that ran its free stages and now waits for approval."""
+    jid = db.enqueue(draft_job(**kw), at)
+    db.claim(at, 1)
+    db.hold_for_approval(jid, at + 5, estimate(), TTL)
+    return jid
+
+
+def test_a_draft_job_is_held_with_its_estimate_and_a_deadline(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    db.claim(T0, 1)
+    db.set_child(jid, 55)
+    db.hold_for_approval(jid, T0 + 10, estimate(), TTL)
+    job = db.get(jid)
+    assert job is not None
+    assert (job.status, job.phase, job.worker_pid, job.child_pid) == (
+        "awaiting_approval",
+        "estimate",
+        None,
+        None,
+    )
+    assert (job.cost_input_tokens, job.cost_worst_call_vnd, job.cost_cap_vnd) == (
+        2400,
+        4207.3,
+        20_000.0,
+    )
+    assert job.approval_expires_at == T0 + 10 + TTL and job.approved_vnd is None
+    assert job.finished_at is None  # it is not finished, only waiting
+
+
+def test_only_a_running_job_can_be_held(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    with pytest.raises(QueueDbError, match="processing"):
+        db.hold_for_approval(jid, T0, estimate(), TTL)
+
+
+def test_a_held_job_frees_the_worker_for_other_jobs(db: QueueDb) -> None:
+    held(db)
+    other = db.enqueue(new_job("A", priority=None), T0)
+    got = db.claim(T0 + 20, 1)
+    assert got is not None and got.id == other  # the waiting draft is not claimable
+
+
+def test_approving_makes_the_job_claimable_for_its_paid_phase(db: QueueDb) -> None:
+    jid = held(db)
+    db.approve(jid, T0 + 100, 6000.0)
+    job = db.get(jid)
+    assert job is not None
+    assert (job.status, job.phase, job.approved_vnd, job.approved_at) == (
+        "queued",
+        "paid",
+        6000.0,
+        T0 + 100,
+    )
+    assert job.approval_expires_at is None
+    got = db.claim(T0 + 101, 1)
+    assert got is not None and got.id == jid and got.phase == "paid"
+
+
+def test_only_a_waiting_job_can_be_approved(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    with pytest.raises(QueueDbError, match="chờ duyệt"):
+        db.approve(jid, T0, 6000.0)
+    with pytest.raises(QueueDbError, match="99"):
+        db.approve(99, T0, 6000.0)
+
+
+def test_a_paid_job_without_an_approval_can_never_be_claimed(db: QueueDb) -> None:
+    """The database refuses even if code above it is wrong."""
+    jid = db.enqueue(draft_job(), T0)
+    con = sqlite3.connect(db.path)
+    try:
+        con.execute("UPDATE jobs SET phase = 'paid' WHERE id = ?", (jid,))
+        con.commit()
+    finally:
+        con.close()
+    assert db.claim(T0 + 1, 1) is None
+    con = sqlite3.connect(db.path)
+    try:
+        con.execute("UPDATE jobs SET approved_vnd = 5000 WHERE id = ?", (jid,))
+        con.commit()
+    finally:
+        con.close()
+    got = db.claim(T0 + 2, 1)
+    assert got is not None and got.id == jid
+
+
+def test_the_estimate_phase_of_a_draft_job_is_claimable_without_approval(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    got = db.claim(T0, 1)
+    assert got is not None and got.id == jid and got.priority == 20
+
+
+def test_an_estimate_that_changed_puts_an_approved_job_back_on_hold(db: QueueDb) -> None:
+    jid = held(db)
+    db.approve(jid, T0 + 10, 6000.0)
+    db.claim(T0 + 11, 1)  # the paid phase starts and finds the estimate changed
+    db.hold_for_approval(jid, T0 + 12, estimate(worst_call_vnd=5100.0, input_tokens=2900), TTL)
+    job = db.get(jid)
+    assert job is not None
+    assert (job.status, job.phase, job.approved_vnd, job.approved_at) == (
+        "awaiting_approval",
+        "estimate",
+        None,
+        None,
+    )  # the old approval is void
+    assert job.cost_worst_call_vnd == 5100.0 and job.cost_input_tokens == 2900
+
+
+# ─────────────── 6c-2: the approval window ───────────────
+
+
+def test_a_waiting_job_expires_after_its_window(db: QueueDb) -> None:
+    jid = held(db)
+    fresh = held(db, T0 + 50_000)
+    assert db.expire_approvals(T0 + TTL) == []  # not yet (window ends at held-time + TTL)
+    assert db.expire_approvals(T0 + 5 + TTL + 1) == [jid]
+    job = db.get(jid)
+    assert job is not None and job.status == "cancelled" and job.finished_at == T0 + 5 + TTL + 1
+    assert "hết hạn" in (job.error_msg or "").lower() and "queue retry" in (job.error_msg or "")
+    assert db.get(fresh).status == "awaiting_approval"  # type: ignore[union-attr]
+
+
+def test_expiring_never_touches_other_statuses(db: QueueDb) -> None:
+    approved = held(db)
+    db.approve(approved, T0 + 10, 6000.0)
+    queued = db.enqueue(draft_job(), T0)
+    assert db.expire_approvals(T0 + 10 * TTL) == []
+    assert db.get(approved).status == "queued" and db.get(queued).status == "queued"  # type: ignore[union-attr]
+
+
+def test_a_waiting_job_can_be_cancelled_at_once(db: QueueDb) -> None:
+    jid = held(db)
+    assert db.request_cancel(jid, T0 + 30) == "cancelled"
+    job = db.get(jid)
+    assert job is not None and job.status == "cancelled" and job.finished_at == T0 + 30
+
+
+def test_duplicates_include_a_draft_waiting_for_approval(db: QueueDb) -> None:
+    jid = held(db)
+    assert db.find_active("draft", "E:/footage", "", False) == jid
+
+
+# ─────────────── 6c-2: how much has been spent, how much is promised ───────────────
+
+
+def paid_job(db: QueueDb, at: float, approved: float, spent: float | None,
+             outcome: str = "completed") -> int:  # fmt: skip
+    jid = held(db, at, project_dir=f"E:/p{at}")
+    db.approve(jid, at + 10, approved)
+    db.claim(at + 11, 1)
+    if outcome == "completed":
+        db.finish(jid, at + 20, "completed", "passed", 0, None, None, spent_vnd=spent)
+    elif outcome == "failed":
+        db.finish(jid, at + 20, "failed", None, 2, "lỗi", None, spent_vnd=spent)
+    return jid
+
+
+def test_finish_stores_what_was_spent(db: QueueDb) -> None:
+    jid = paid_job(db, T0, 6000.0, 1224.0)
+    assert db.get(jid).spent_vnd == 1224.0  # type: ignore[union-attr]
+
+
+def test_spent_counts_finished_paid_jobs_of_the_last_24_hours(db: QueueDb) -> None:
+    paid_job(db, T0, 6000.0, 1224.0)
+    paid_job(db, T0 + 100, 6000.0, 300.0, outcome="failed")
+    spent, reserved = db.spend_summary(T0 + 3600)
+    assert (spent, reserved) == (1524.0, 0.0)
+    assert db.spend_summary(T0 + 100_000)[0] == 0.0  # outside the 24 h window
+
+
+def test_reserved_is_the_approval_of_jobs_that_may_still_spend(db: QueueDb) -> None:
+    waiting = held(db, T0, project_dir="E:/c")  # not approved: reserves nothing
+    queued = held(db, T0, project_dir="E:/a")
+    db.approve(queued, T0 + 10, 6000.0)  # approved, waiting for the worker
+    running = held(db, T0, project_dir="E:/b")
+    db.approve(running, T0 + 10, 7000.0)
+    got = db.claim(T0 + 20, 1)  # one of the two approved jobs starts
+    assert got is not None and got.status == "processing"
+    assert db.get(waiting).status == "awaiting_approval"  # type: ignore[union-attr]
+    assert db.spend_summary(T0 + 30) == (0.0, 13_000.0)  # both count: one running, one queued
+
+
+def test_a_paid_job_whose_spending_is_unknown_counts_its_whole_approval(db: QueueDb) -> None:
+    paid_job(db, T0, 6000.0, None, outcome="failed")  # crashed: nobody measured the bill
+    assert db.spend_summary(T0 + 100) == (6000.0, 0.0)
+
+
+def test_render_and_analysis_jobs_never_count_as_spending(db: QueueDb) -> None:
+    r = db.enqueue(new_job("A", priority=None), T0)
+    db.claim(T0, 1)
+    db.finish(r, T0 + 1, "completed", "passed", 0, None, None, spent_vnd=999.0)
+    assert db.spend_summary(T0 + 2) == (0.0, 0.0)
+
+
+# ─────────────── 6c-2: retrying a draft job, and what a crash means ───────────────
+
+
+def test_a_manual_retry_starts_again_from_a_fresh_estimate(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    db.claim(T0, 1)
+    for stage in ("plan", "pick", "estimate"):
+        db.mark_stage_done(jid, stage)
+    db.hold_for_approval(jid, T0 + 1, estimate(), TTL)
+    db.approve(jid, T0 + 2, 6000.0)
+    db.claim(T0 + 3, 1)
+    db.finish(jid, T0 + 4, "failed", None, 2, "API lỗi", None, spent_vnd=100.0)
+    assert db.retry_manual(jid)
+    job = db.get(jid)
+    assert job is not None
+    assert (job.status, job.phase, job.approved_vnd, job.cost_worst_call_vnd) == (
+        "queued", "estimate", None, None)  # fmt: skip
+    assert job.stages_done == ["plan", "pick"]  # the estimate is redone, the free work is kept
+    assert job.approval_expires_at is None and job.spent_vnd == 100.0  # the bill stays on record
+
+
+def test_a_cancelled_waiting_job_can_be_retried_too(db: QueueDb) -> None:
+    jid = held(db)
+    db.request_cancel(jid, T0 + 30)
+    assert db.retry_manual(jid)
+    assert db.get(jid).phase == "estimate"  # type: ignore[union-attr]
+
+
+def test_a_crash_never_requeues_a_draft_job_and_the_message_fits_the_phase(db: QueueDb) -> None:
+    free = db.enqueue(draft_job(project_dir="E:/free"), T0)
+    db.claim(T0, 77)  # dies while planning: nothing was spent
+    paid = held(db, T0, project_dir="E:/paid")
+    db.approve(paid, T0 + 1, 6000.0)
+    db.claim(T0 + 2, 78)  # dies during the API call: money may have been spent
+    out = db.recover_orphans(T0 + 900, alive_none, stale_sec=120, retry_delay=30)
+    assert {(r.job_id, r.action) for r in out} == {(free, "failed"), (paid, "failed")}
+    free_msg = db.get(free).error_msg or ""  # type: ignore[union-attr]
+    paid_msg = db.get(paid).error_msg or ""  # type: ignore[union-attr]
+    assert "queue retry" in free_msg and "ai_log" not in free_msg
+    assert "ai_log" in paid_msg and "duyệt lại" in paid_msg
+
+
+def test_the_stage_vocabulary_of_drafting_is_accepted(db: QueueDb) -> None:
+    jid = db.enqueue(draft_job(), T0)
+    db.claim(T0, 1)
+    for stage in ("plan", "pick", "phrases", "estimate"):
+        db.mark_stage_done(jid, stage)
+    assert db.get(jid).stages_done == ["plan", "pick", "phrases", "estimate"]  # type: ignore[union-attr]

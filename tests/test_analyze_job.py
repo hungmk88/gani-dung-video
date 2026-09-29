@@ -495,12 +495,3 @@ def test_a_dependent_job_is_cancelled_when_the_analysis_fails_for_good(
     assert d.process_next() is False  # nothing runnable; the sweep cancels the render
     j = job(db, r)
     assert j.status == "cancelled" and f"#{a}" in (j.error_msg or "")
-
-
-def test_the_draft_kind_is_not_run_yet(db: QueueDb, folder: Path, clock: Clock) -> None:
-    jid = db.enqueue(NewJob(kind="draft", project_dir=str(folder), options_file="x", draft="",
-                            max_attempts=1), time.time())  # fmt: skip
-    runner = FakeRunner()
-    make(db, runner, clock).process_next()
-    j = job(db, jid)
-    assert j.status == "failed" and runner.ran == [] and "6c" in (j.error_msg or "")

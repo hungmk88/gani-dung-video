@@ -253,7 +253,7 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
 def build_drafts(
     options_file: Path, folder: Path, rules: Rules | None = None,
     glossary: GlossaryFile | None = None, caller: Caller | None = None,
-    settings: Settings | None = None, dry_run: bool = False,
+    settings: Settings | None = None, dry_run: bool = False, max_vnd: float | None = None,
 ) -> tuple[DraftsFile | DryRun, Path | None]:  # fmt: skip
     """Ask Claude for the drafts of <folder>/edit/plan.json and write edit/drafts.json.
 
@@ -262,11 +262,15 @@ def build_drafts(
         SettingsError: no API key (only when a real call is needed).
         CostCapReached / DraftError: budget or check rounds exhausted (nothing written).
         AiError: the API call itself failed.
+
+    `max_vnd` (what a person approved for a queued job) can only lower the cost cap.
     """
     rules = rules if rules is not None else load_rules()
     glossary = glossary if glossary is not None else load_glossary()
     folder = folder.expanduser().resolve()
     job = _job(options_file, folder, rules, glossary)
+    if max_vnd is not None and not dry_run:
+        job.cap = min(job.cap, max_vnd)
     settings = settings if settings is not None else load_settings()
     model = settings.gani_dv_claude_model or str(job.cfg["model"])
     if dry_run:

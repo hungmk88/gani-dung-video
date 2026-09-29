@@ -250,6 +250,14 @@ def test_cost_cap_stops_before_a_call_that_could_break_it(tmp_path: Path) -> Non
     assert log_lines(tmp_path)[-1]["stopped"] == "cost_cap"
 
 
+def test_max_vnd_lowers_the_cap_below_the_table(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    fake = FakeClaude({"drafts": [A, B]})
+    with pytest.raises(SpeechCostCapReached):
+        build_speech_drafts(tmp_path / "o.json", tmp_path, RULES, caller=fake, max_vnd=100.0)
+    assert fake.prompts == [] and log_lines(tmp_path)[-1]["cap_vnd"] == 100.0
+
+
 # ─────────────── dry run, config errors ───────────────
 
 

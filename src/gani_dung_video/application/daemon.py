@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from gani_dung_video.application.analyze_job import JobEnv, run_analyze
+from gani_dung_video.application.draft_job import run_draft
 from gani_dung_video.application.render_service import RENDER_DIR, _video_name
 from gani_dung_video.domain.jobs import (
     Job,
@@ -74,13 +75,16 @@ class Daemon:
         clock: Callable[[], float] = time.time, alive: Callable[[int], bool] = pid_alive,
         killer: Callable[[int], None] = kill_tree, pid: int | None = None,
         argv_base: Sequence[str] | None = None, log_dir: Path | None = None,
-        whisper_model: str | None = None,
+        whisper_model: str | None = None, music_dir: str | None = None,
+        ai_key_present: Callable[[], bool] | None = None,
     ) -> None:  # fmt: skip
         self.db, self._cfg, self._rules = db, rules["queue"], rules
         self._runner, self._clock, self._alive, self._killer = runner, clock, alive, killer
         self._pid = pid if pid is not None else os.getpid()
         self._argv_base = argv_base
         self._whisper_model = whisper_model
+        self._music_dir = music_dir
+        self._ai_key_present = ai_key_present if ai_key_present is not None else (lambda: False)
         self._log_dir = log_dir if log_dir is not None else db.path.parent / "logs"
         self._local_stop: str | None = None  # "graceful" | "now", from a signal
         self._grace_until: float | None = None
@@ -160,18 +164,26 @@ class Daemon:
         return JobEnv(db=self.db, rules=self._rules, runner=self._runner, clock=self._clock,
                       pid=self._pid, argv_base=self._argv_base, log_dir=self._log_dir,
                       child_env=self._child_env(), should_stop=self._should_stop,
-                      whisper_model=self._whisper_model)  # fmt: skip
+                      whisper_model=self._whisper_model, music_dir=self._music_dir,
+                      ai_key_present=self._ai_key_present)  # fmt: skip
 
     def process_next(self) -> bool:
         """Claim and run one job. False when nothing was runnable."""
         for jid in self.db.cascade_blocked(self._clock()):  # jobs whose dependency ended badly
             logger.warning("Job %d bị hủy vì job nó phụ thuộc không hoàn thành", jid)
+        for jid in self.db.expire_approvals(self._clock()):  # nobody approved in time
+            logger.warning("Job %d hết hạn duyệt chi phí", jid)
+            self.db.add_event(jid, self._clock(), "warn",
+                              "Hết hạn duyệt chi phí: không gọi API. `queue retry` để ước tính "
+                              "lại.")  # fmt: skip
         job = self.db.claim(self._clock(), self._pid)
         if job is None:
             return False
         try:
             if job.kind == "analyze":
                 run_analyze(self._job_env(), job)
+            elif job.kind == "draft":
+                run_draft(self._job_env(), job)
             elif job.kind == "render":
                 self._run_job(job)
             else:

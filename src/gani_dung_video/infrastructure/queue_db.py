@@ -17,9 +17,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.jobs import (
-    ANALYZE_STAGES,
+    ALL_STAGES,
     KIND_PRIORITY,
     STATUSES,
+    Estimate,
     Job,
     blocked_reason,
     can_transition,
@@ -29,7 +30,7 @@ from gani_dung_video.domain.jobs import (
     parse_stages,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 STOP_MODES = ("graceful", "now")
 
 _STATUS_LIST = "'queued', 'processing', 'awaiting_approval', 'completed', 'failed', 'cancelled'"
@@ -80,7 +81,8 @@ def _jobs_ddl(name: str) -> str:
   cost_cap_vnd REAL,
   approved_vnd REAL,
   approved_at REAL,
-  spent_vnd REAL
+  spent_vnd REAL,
+  approval_expires_at REAL
 )"""
 
 
@@ -164,6 +166,20 @@ def _job(row: sqlite3.Row) -> Job:
     return Job(**data)
 
 
+def _crash_message(job: Job) -> str:
+    if job.kind != "draft":
+        return "Daemon sập khi đang dựng và đã hết số lần thử."
+    if job.phase == "paid":
+        return (
+            "Daemon sập khi đang gọi API tốn phí; không tự chạy lại. Xem edit/ai_log.jsonl để "
+            "biết đã tốn bao nhiêu; chạy lại bằng `queue retry` thì phải duyệt lại chi phí."
+        )
+    return (
+        "Daemon sập khi đang chuẩn bị kịch bản (chưa tốn phí API); job kịch bản không tự chạy "
+        "lại — dùng `queue retry`."
+    )
+
+
 class QueueDb:
     """Handle on queue.db; creates the file and schema on first use."""
 
@@ -216,7 +232,9 @@ class QueueDb:
             if version == 0:
                 self._create()
             elif version == 1:
-                self._migrate_1_to_2()
+                self._migrate_from_v1()
+            elif version == 2:
+                self._migrate_2_to_3()
         except sqlite3.DatabaseError as e:
             raise QueueDbError(f"{hint} ({e})") from e
 
@@ -234,8 +252,9 @@ class QueueDb:
                 raise
             con.execute("COMMIT")
 
-    def _migrate_1_to_2(self) -> None:
-        """Phase 6c: rebuild `jobs` with the new columns and the awaiting_approval status.
+    def _migrate_from_v1(self) -> None:
+        """Phase 6c: rebuild `jobs` with the new columns and the awaiting_approval status
+        (straight to the newest layout, so a v1 file never passes through v2).
 
         SQLite procedure for changing a table with foreign keys pointing at it: foreign keys
         OFF (so dropping the old table does not cascade-delete every event), one exclusive
@@ -262,7 +281,28 @@ class QueueDb:
                     raise QueueDbError(
                         "Nâng cấp queue.db bị hủy: dữ liệu cũ không khớp khóa ngoại."
                     )
-                con.execute("PRAGMA user_version = 2")
+                con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+        finally:
+            con.close()
+
+    def _migrate_2_to_3(self) -> None:
+        """Phase 6c-2: one new column, the deadline of an approval window. A plain ADD COLUMN
+        (no rebuild), inside one exclusive transaction, after a copy of the v2 file."""
+        con = sqlite3.connect(self.path, timeout=self._busy_ms / 1000, isolation_level=None)
+        try:
+            con.execute(f"PRAGMA busy_timeout = {int(self._busy_ms)}")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                if int(con.execute("PRAGMA user_version").fetchone()[0]) != 2:
+                    con.execute("ROLLBACK")  # another process already upgraded it
+                    return
+                self.backup(self.path.with_name(self.path.name + ".v2.bak"))
+                con.execute("ALTER TABLE jobs ADD COLUMN approval_expires_at REAL")
+                con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             except BaseException:
                 con.execute("ROLLBACK")
                 raise
@@ -303,7 +343,8 @@ class QueueDb:
         with self._conn() as con:
             row = con.execute(
                 "SELECT id FROM jobs WHERE kind = ? AND project_dir = ? AND draft = ? "
-                "AND final = ? AND status IN ('queued', 'processing') ORDER BY id LIMIT 1",
+                "AND final = ? AND status IN ('queued', 'processing', 'awaiting_approval') "
+                "ORDER BY id LIMIT 1",
                 (kind, project_dir, draft, int(final))).fetchone()  # fmt: skip
         return int(row["id"]) if row else None
 
@@ -346,6 +387,9 @@ class QueueDb:
                 "SELECT j.id FROM jobs j LEFT JOIN jobs d ON d.id = j.depends_on "
                 "WHERE j.status = 'queued' AND j.not_before <= ? AND (j.depends_on IS NULL OR "
                 "(d.status = 'completed' AND (d.result IS NULL OR d.result = 'passed'))) "
+                # the paid phase of a draft job (it spends money) needs an approval, always
+                "AND (j.kind != 'draft' OR j.phase IS NULL OR j.phase = 'estimate' "
+                "OR j.approved_vnd IS NOT NULL) "
                 "ORDER BY j.priority DESC, j.id LIMIT 1", (now,)).fetchone()  # fmt: skip
             if row is None:
                 return None
@@ -383,16 +427,17 @@ class QueueDb:
     def finish(
         self, job_id: int, now: float, status: str, result: str | None,
         exit_code: int | None, error: str | None, output_path: str | None,
+        spent_vnd: float | None = None,
     ) -> None:  # fmt: skip
         with self._write() as con:
             self._must_be_processing(con, job_id, status)
             con.execute(
                 "UPDATE jobs SET status = ?, result = ?, exit_code = ?, error_msg = ?, "
                 "output_path = ?, finished_at = ?, worker_pid = NULL, child_pid = NULL, "
-                "progress_pct = CASE WHEN ? = 'completed' THEN 100 ELSE progress_pct END "
-                "WHERE id = ?",
-                (status, result, exit_code, error, output_path, now, status, job_id),
-            )  # fmt: skip
+                "progress_pct = CASE WHEN ? = 'completed' THEN 100 ELSE progress_pct END, "
+                "spent_vnd = COALESCE(?, spent_vnd) WHERE id = ?",
+                (status, result, exit_code, error, output_path, now, status, spent_vnd, job_id),
+            )
 
     def requeue(self, job_id: int, not_before: float, error: str | None,
                 consume_attempt: bool) -> None:  # fmt: skip
@@ -421,7 +466,7 @@ class QueueDb:
             if row is None:
                 return "missing"
             status = str(row["status"])
-            if status == "queued":
+            if status in ("queued", "awaiting_approval"):
                 con.execute("UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ?",
                             (now, job_id))  # fmt: skip
                 return "cancelled"
@@ -451,7 +496,22 @@ class QueueDb:
                 "exit_code = NULL, not_before = 0, started_at = NULL, finished_at = NULL, "
                 "heartbeat_at = NULL, stage = NULL, progress_pct = 0, output_path = NULL, "
                 "cancel_requested = 0 WHERE id = ?", (job_id,))  # fmt: skip
+            self._reset_draft(con, job_id)
             return True
+
+    @staticmethod
+    def _reset_draft(con: sqlite3.Connection, job_id: int) -> None:
+        """A draft job tried again starts at a fresh estimate: no old approval, no old numbers
+        (the free stages already done stay; what was spent stays on record)."""
+        row = con.execute("SELECT kind, stages_done FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is None or row["kind"] != "draft":
+            return
+        keep = [s for s in parse_stages(row["stages_done"]) if s != "estimate"]
+        con.execute(
+            "UPDATE jobs SET phase = 'estimate', approved_vnd = NULL, approved_at = NULL, "
+            "cost_input_tokens = NULL, cost_worst_call_vnd = NULL, cost_cap_vnd = NULL, "
+            "approval_expires_at = NULL, stages_done = ? WHERE id = ?",
+            (join_stages(keep), job_id))  # fmt: skip
 
     # ─────────────── phase 6c: dependencies and stages ───────────────
 
@@ -478,7 +538,7 @@ class QueueDb:
 
     def mark_stage_done(self, job_id: int, stage: str) -> None:
         """Record a finished stage of a running multi-stage job (a retry resumes after it)."""
-        if stage not in ANALYZE_STAGES:
+        if stage not in ALL_STAGES:
             raise QueueDbError(f"Giai đoạn '{stage}' không hợp lệ.")
         with self._write() as con:
             row = con.execute("SELECT status, stages_done FROM jobs WHERE id = ?",
@@ -491,6 +551,65 @@ class QueueDb:
             if stage not in done:
                 con.execute("UPDATE jobs SET stages_done = ? WHERE id = ?",
                             (join_stages([*done, stage]), job_id))  # fmt: skip
+
+    # ─────────────── phase 6c-2: approving what costs money ───────────────
+
+    def hold_for_approval(self, job_id: int, now: float, est: Estimate, ttl_sec: float) -> None:
+        """A running draft job has its free stages done: park it with its estimate until a
+        person approves. Any earlier approval is void (the estimate it covered is gone)."""
+        with self._write() as con:
+            self._must_be_processing(con, job_id, "awaiting_approval")
+            con.execute(
+                "UPDATE jobs SET status = 'awaiting_approval', phase = 'estimate', "
+                "cost_input_tokens = ?, cost_worst_call_vnd = ?, cost_cap_vnd = ?, "
+                "approved_vnd = NULL, approved_at = NULL, approval_expires_at = ?, "
+                "worker_pid = NULL, child_pid = NULL, heartbeat_at = NULL, stage = 'cho_duyet', "
+                "cancel_requested = 0 WHERE id = ?",
+                (est.input_tokens, est.worst_call_vnd, est.cap_vnd, now + ttl_sec, job_id),
+            )  # fmt: skip
+
+    def approve(self, job_id: int, now: float, max_vnd: float) -> None:
+        """Record an approval and queue the job's paid phase. The caller has already checked
+        the numbers (domain.jobs.validate_approval); only the state is re-checked here."""
+        with self._write() as con:
+            row = con.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise QueueDbError(f"Không có job {job_id}.")
+            if row["status"] != "awaiting_approval":
+                raise QueueDbError(f"Job {job_id} đang '{row['status']}', không phải chờ duyệt.")
+            con.execute(
+                "UPDATE jobs SET status = 'queued', phase = 'paid', approved_vnd = ?, "
+                "approved_at = ?, approval_expires_at = NULL, not_before = ?, stage = NULL "
+                "WHERE id = ?", (max_vnd, now, now, job_id))  # fmt: skip
+
+    def expire_approvals(self, now: float) -> list[int]:
+        """Cancel waiting jobs whose approval window closed; returns their ids."""
+        with self._write() as con:
+            rows = con.execute(
+                "SELECT id FROM jobs WHERE status = 'awaiting_approval' "
+                "AND approval_expires_at IS NOT NULL AND approval_expires_at < ?",
+                (now,)).fetchall()  # fmt: skip
+            msg = ("Hết hạn duyệt chi phí: không ai duyệt kịp nên không gọi API. Dùng "
+                   "`queue retry` để ước tính lại.")  # fmt: skip
+            for r in rows:
+                con.execute("UPDATE jobs SET status = 'cancelled', finished_at = ?, "
+                            "error_msg = ? WHERE id = ?", (now, msg, r["id"]))  # fmt: skip
+        return [int(r["id"]) for r in rows]
+
+    def spend_summary(self, now: float, window_sec: float = 86_400.0) -> tuple[float, float]:
+        """(spent in the window, reserved) for the daily budget. Spent: paid draft jobs finished
+        in the window, by the bill measured from ai_log — or, when nobody could measure it
+        (a crash), the whole approval. Reserved: approvals of jobs that may still spend."""
+        with self._conn() as con:
+            spent = con.execute(
+                "SELECT COALESCE(SUM(COALESCE(spent_vnd, approved_vnd, 0)), 0) FROM jobs "
+                "WHERE kind = 'draft' AND phase = 'paid' AND finished_at IS NOT NULL "
+                "AND finished_at >= ?", (now - window_sec,)).fetchone()[0]  # fmt: skip
+            reserved = con.execute(
+                "SELECT COALESCE(SUM(approved_vnd), 0) FROM jobs WHERE kind = 'draft' "
+                "AND phase = 'paid' AND status IN ('queued', 'processing') "
+                "AND approved_vnd IS NOT NULL").fetchone()[0]  # fmt: skip
+        return float(spent), float(reserved)
 
     # ─────────────── events ───────────────
 
@@ -531,10 +650,7 @@ class QueueDb:
                     self._requeue(con, job.id, now + retry_delay, msg, consume_attempt=True)
                     action = "requeued"
                 else:
-                    msg = ("Daemon sập khi đang chạy job tốn phí API; không tự chạy lại — xem "
-                           "ai_log.jsonl rồi chạy lại bằng tay."
-                           if job.kind == "draft" else
-                           "Daemon sập khi đang dựng và đã hết số lần thử.")  # fmt: skip
+                    msg = _crash_message(job)
                     con.execute(
                         "UPDATE jobs SET status = 'failed', error_msg = ?, finished_at = ?, "
                         "worker_pid = NULL, child_pid = NULL WHERE id = ?",

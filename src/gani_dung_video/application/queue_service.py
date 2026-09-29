@@ -17,6 +17,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application.preflight_service import check_options_file
+from gani_dung_video.domain.jobs import ApprovalError, BudgetState, Job, validate_approval
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.infrastructure.config_files import (
@@ -25,7 +26,7 @@ from gani_dung_video.infrastructure.config_files import (
     load_rules,
     read_options_file,
 )
-from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
+from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb, QueueDbError
 from gani_dung_video.infrastructure.settings import Settings, load_settings
 
 QUEUE_FILE = "queue.db"
@@ -34,6 +35,10 @@ LETTERS = "ABC"
 
 class NotReadyError(ConfigError):
     """The project cannot be rendered yet (no plan or no drafts); the API answers 409."""
+
+
+class ApprovalRefused(ConfigError):
+    """A cost approval that was refused (nothing changed; the message says why)."""
 
 
 class EnqueueResult(BaseModel):
@@ -225,3 +230,84 @@ def enqueue_analyze(
                max_attempts=int(rules["queue"]["max_attempts"])),
         now if now is not None else time.time())  # fmt: skip
     return EnqueueResult(job_id=jid, draft="", duplicate=False)
+
+
+def ai_key_configured(settings: Settings) -> bool:
+    """Whether an API key is set: only yes or no, never the key itself."""
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    return bool(key.strip())
+
+
+def music_dir(settings: Settings) -> str | None:
+    """The machine's music library folder (for the plan stage), if configured."""
+    raw = (settings.gani_dv_music_dir or "").strip()
+    return raw or None
+
+
+def enqueue_draft(
+    options_file: Path, folder: Path, db: QueueDb, *, after: int | None = None,
+    rules: Rules | None = None, settings: Settings | None = None, now: float | None = None,
+) -> EnqueueResult:  # fmt: skip
+    """Queue a draft job: free stages and an estimate now, the paid call only once approved.
+
+    Raises:
+        ConfigError: no allow-list, folder outside it or missing, options unreadable or blocked
+            by preflight, or `after` names a job that does not exist.
+    """
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    project = folder.expanduser().resolve()
+    if not _inside(project, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=project))
+    if not project.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=project))
+    options = options_file.expanduser().resolve()
+    check = check_options_file(options, rules)
+    if not check["valid"]:
+        first = check["errors"][0] if check["errors"] else {"code": "?", "msg": check["error_msg"]}
+        raise ConfigError(msgs["QUEUE_PREFLIGHT_BLOCKED"].format(code=first["code"],
+                                                                   msg=first["msg"]))  # fmt: skip
+    _need_dependency(db, after, msgs)
+    existing = db.find_active("draft", str(project), "", False)
+    if existing is not None:
+        return EnqueueResult(job_id=existing, draft="", duplicate=True)
+    jid = db.enqueue(
+        NewJob(kind="draft", project_dir=str(project), options_file=str(options), draft="",
+               depends_on=after, max_attempts=1),  # one chance: code never retries a paid job
+        now if now is not None else time.time())  # fmt: skip
+    return EnqueueResult(job_id=jid, draft="", duplicate=False)
+
+
+def approve_job(db: QueueDb, job_id: int, max_vnd: float, estimate_vnd: float, *,
+                rules: Rules | None = None, now: float | None = None) -> Job:  # fmt: skip
+    """Approve spending up to `max_vnd` on a waiting draft job and queue its paid phase.
+
+    `estimate_vnd` must repeat the estimate the job holds: nobody approves a number they have
+    not seen. The daily budget (rules queue.daily_budget_vnd, off when null) counts what was
+    spent in the last 24 hours, what approved jobs may still spend, and this maximum.
+
+    Raises:
+        ConfigError: no such job.
+        ApprovalRefused: the numbers, the window or the budget do not allow it.
+    """
+    rules = rules if rules is not None else load_rules()
+    stamp = now if now is not None else time.time()
+    job = db.get(job_id)
+    if job is None:
+        raise ConfigError(f"Không có job #{job_id}.")
+    limit = rules["queue"].get("daily_budget_vnd")
+    spent, reserved = db.spend_summary(stamp)
+    budget = BudgetState(limit=float(limit) if limit is not None else None,
+                         spent_24h=spent, reserved=reserved)  # fmt: skip
+    try:
+        validate_approval(job, max_vnd, estimate_vnd, stamp, budget)
+        db.approve(job_id, stamp, max_vnd)
+    except (ApprovalError, QueueDbError) as e:
+        raise ApprovalRefused(str(e)) from e
+    approved = db.get(job_id)
+    assert approved is not None
+    return approved

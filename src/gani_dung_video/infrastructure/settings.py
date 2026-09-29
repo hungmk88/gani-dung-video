@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # Whisper model the queue's `transcribe` stage uses on this machine (rules.json's default,
     # large-v3-turbo, is not on the Dell and is ~1.6 GB to download): e.g. "small".
     gani_dv_whisper_model: str | None = None
+    # The machine's music library: the queue's `plan` stage looks there for library tracks.
+    gani_dv_music_dir: str | None = None
 
 
 def load_settings(env_file: Path | None = ENV_FILE) -> Settings:

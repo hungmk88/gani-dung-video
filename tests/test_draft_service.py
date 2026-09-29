@@ -20,6 +20,7 @@ from gani_dung_video.application.draft_service import (
     build_drafts,
 )
 from gani_dung_video.cli import main
+from gani_dung_video.domain.jobs import parse_estimate_line
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.pick import BlockCandidates, Candidate, PickFile
 from gani_dung_video.domain.plan import compile_plan
@@ -249,6 +250,21 @@ def test_cost_cap_counts_what_earlier_rounds_spent(tmp_path: Path) -> None:
     assert len(fake.prompts) == 1
 
 
+def test_max_vnd_lowers_the_cap_below_the_table(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    fake = FakeClaude({"drafts": [A, B]})
+    with pytest.raises(CostCapReached):
+        build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, caller=fake, max_vnd=100.0)
+    assert fake.prompts == [] and log_lines(tmp_path)[-1]["cap_vnd"] == 100.0
+
+
+def test_max_vnd_above_the_table_cap_changes_nothing(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    fake = FakeClaude({"drafts": [A, B]})
+    build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, caller=fake, max_vnd=999_999.0)
+    assert len(fake.prompts) == 1
+
+
 # ─────────────── dry run, config errors ───────────────
 
 
@@ -294,6 +310,43 @@ def test_cli_draft_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
     assert main(["draft", str(opt), str(tmp_path), "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "không gọi API" in out and "20.000đ" in out
+
+
+def test_cli_draft_dry_run_json_is_one_parsable_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    opt = write_folder(tmp_path)
+    assert main(["draft", str(opt), str(tmp_path), "--dry-run", "--json"]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    est = parse_estimate_line(lines[-1])
+    assert len(lines) == 1 and est is not None
+    assert est.cap_vnd == 20000 and est.worst_call_vnd > est.input_only_vnd > 0
+
+
+def test_cli_json_without_dry_run_is_refused(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    opt = write_folder(tmp_path)
+    assert main(["draft", str(opt), str(tmp_path), "--json"]) == 2
+    assert "--dry-run" in caplog.text
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "nan", "inf", "abc"])
+def test_cli_max_vnd_must_be_a_positive_finite_number(tmp_path: Path, bad: str) -> None:
+    opt = write_folder(tmp_path)
+    assert main(["draft", str(opt), str(tmp_path), "--max-vnd", bad]) == 2
+
+
+def test_cli_max_vnd_caps_the_real_call(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opt = write_folder(tmp_path)
+    fake = FakeClaude({"drafts": [A, B]})
+    monkeypatch.setattr(draft_service, "load_settings",
+                        lambda: Settings(anthropic_api_key="test-key-not-real"))  # fmt: skip
+    monkeypatch.setattr(draft_service, "make_caller", lambda key, model, cfg: fake)
+    assert main(["draft", str(opt), str(tmp_path), "--max-vnd", "100"]) == 1
+    assert fake.prompts == [] and "KHÔNG ĐẠT" in capsys.readouterr().out
 
 
 def test_cli_draft_uses_the_real_caller_factory(

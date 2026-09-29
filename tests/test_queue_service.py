@@ -11,16 +11,22 @@ from typing import Any
 import pytest
 
 from gani_dung_video.application.queue_service import (
+    ApprovalRefused,
     NotReadyError,
+    ai_key_configured,
     allowed_roots,
+    approve_job,
     cancel_job,
     enqueue_analyze,
+    enqueue_draft,
     enqueue_project_render,
     enqueue_render,
+    music_dir,
     queue_dir,
     retry_job,
 )
 from gani_dung_video.cli import main
+from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
@@ -379,3 +385,239 @@ def test_cli_queue_analyze_outside_the_allow_list_exits_2(env: Path, tmp_path: P
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     assert main(["queue", "analyze", str(elsewhere)]) == 2
+
+
+# ─────────────── 6c-2: draft jobs and cost approval ───────────────
+
+
+def draft_for(db: QueueDb, opt: Path, folder: Path, root: Path | None, **kw: Any) -> Any:
+    return enqueue_draft(opt, folder, db, rules=RULES, settings=cfg(root), **kw)
+
+
+def test_a_draft_job_is_queued_for_the_estimate_with_one_attempt(db: QueueDb, opt: Path,
+                                                                 root: Path) -> None:  # fmt: skip
+    r = draft_for(db, opt, root / "footage", root)
+    job = db.get(r.job_id)
+    assert job is not None and not r.duplicate
+    assert (job.kind, job.status, job.priority, job.max_attempts) == ("draft", "queued", 20, 1)
+    assert job.options_file == str(opt.resolve())
+    assert job.project_dir == str((root / "footage").resolve()) and job.phase is None
+
+
+def test_a_draft_is_not_queued_twice_even_while_it_waits_for_approval(
+    db: QueueDb, opt: Path, root: Path
+) -> None:
+    first = draft_for(db, opt, root / "footage", root)
+    db.claim(time.time(), 1)
+    db.hold_for_approval(first.job_id, time.time(), estimate(), 86_400.0)
+    again = draft_for(db, opt, root / "footage", root)
+    assert again.duplicate and again.job_id == first.job_id
+
+
+def test_a_draft_can_wait_for_an_analysis(db: QueueDb, opt: Path, root: Path) -> None:
+    a = analyse(db, root / "footage", root)
+    r = draft_for(db, opt, root / "footage", root, after=a.job_id)
+    assert db.get(r.job_id).depends_on == a.job_id  # type: ignore[union-attr]
+    with pytest.raises(ConfigError, match="99"):
+        draft_for(db, opt, root / "footage", root, after=99)
+
+
+def test_a_draft_keeps_every_allow_list_and_preflight_rule(db: QueueDb, opt: Path, root: Path,
+                                                           tmp_path: Path) -> None:  # fmt: skip
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        draft_for(db, opt, root / "footage", None)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with pytest.raises(ConfigError, match="không nằm trong"):
+        draft_for(db, opt, elsewhere, root)
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({**OPTS, "do_dai_giay": 7}), encoding="utf-8")
+    with pytest.raises(ConfigError, match="bị chặn"):
+        draft_for(db, bad, root / "footage", root)
+    assert db.list_jobs() == []
+
+
+def estimate(**kw: Any) -> Estimate:
+    base: dict[str, Any] = {
+        "model": "m",
+        "input_tokens": 2400,
+        "input_only_vnd": 122.4,
+        "worst_call_vnd": 4207.3,
+        "cap_vnd": 20_000.0,
+        "max_attempts": 3,
+    }
+    return Estimate(**{**base, **kw})
+
+
+def waiting_job(db: QueueDb, root: Path, name: str = "footage", at: float | None = None) -> int:
+    (root / name).mkdir(exist_ok=True)
+    from gani_dung_video.infrastructure.queue_db import NewJob
+
+    stamp = at if at is not None else time.time()
+    jid = db.enqueue(NewJob(kind="draft", project_dir=str((root / name).resolve()),
+                            options_file="o", draft="", max_attempts=1), stamp)  # fmt: skip
+    got = db.claim(stamp, 1)
+    assert got is not None and got.id == jid
+    db.hold_for_approval(jid, stamp, estimate(), 86_400.0)
+    return jid
+
+
+def approve(db: QueueDb, jid: int, max_vnd: float = 6000.0, est: float = 4207.3,
+            rules: Any = None, now: float | None = None) -> Any:  # fmt: skip
+    return approve_job(db, jid, max_vnd, est, rules=rules or RULES, now=now)
+
+
+def test_approving_queues_the_paid_phase_with_the_agreed_maximum(db: QueueDb, root: Path) -> None:
+    jid = waiting_job(db, root)
+    job = approve(db, jid, 6000.0, 4207.0)
+    assert (job.status, job.phase, job.approved_vnd) == ("queued", "paid", 6000.0)
+    assert db.get(jid).approved_at is not None  # type: ignore[union-attr]
+
+
+def test_a_wrong_estimate_a_low_maximum_or_a_high_one_are_refused_and_change_nothing(
+    db: QueueDb, root: Path
+) -> None:
+    jid = waiting_job(db, root)
+    for args, needle in [((6000.0, 3000.0), "không khớp"), ((4000.0, 4207.3), "thấp hơn"),
+                         ((25_000.0, 4207.3), "vượt trần")]:  # fmt: skip
+        with pytest.raises(ApprovalRefused, match=needle):
+            approve(db, jid, *args)
+    job = db.get(jid)
+    assert job is not None and job.status == "awaiting_approval" and job.approved_vnd is None
+
+
+def test_a_refusal_is_a_config_error_so_the_cli_can_report_it(db: QueueDb, root: Path) -> None:
+    jid = waiting_job(db, root)
+    with pytest.raises(ConfigError):
+        approve(db, jid, 1.0, 4207.3)
+
+
+def test_approving_an_unknown_job_or_a_render_is_refused(db: QueueDb, root: Path,
+                                                         opt: Path) -> None:  # fmt: skip
+    with pytest.raises(ConfigError, match="99"):
+        approve(db, 99)
+    [r] = add(db, opt, root / "footage", root, ban="A")
+    with pytest.raises(ApprovalRefused, match="kịch bản"):
+        approve(db, r.job_id)
+
+
+def test_an_approval_after_the_window_is_refused(db: QueueDb, root: Path) -> None:
+    jid = waiting_job(db, root, at=time.time() - 100_000)
+    with pytest.raises(ApprovalRefused, match="hết hạn"):
+        approve(db, jid)
+
+
+def paid_and_done(db: QueueDb, root: Path, name: str, approved: float, spent: float) -> None:
+    jid = waiting_job(db, root, name)
+    approve(db, jid, approved, 4207.3)
+    db.claim(time.time(), 1)
+    db.finish(jid, time.time(), "completed", "passed", 0, None, None, spent_vnd=spent)
+
+
+BUDGET = {**RULES, "queue": {**RULES["queue"], "daily_budget_vnd": 100_000}}
+
+
+def test_without_a_daily_budget_nothing_limits_the_total(db: QueueDb, root: Path) -> None:
+    assert RULES["queue"]["daily_budget_vnd"] is None  # off by default
+    for n in range(6):
+        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0)
+    approve(db, waiting_job(db, root, "last"), 20_000.0)
+
+
+def test_the_daily_budget_counts_spent_reserved_and_the_new_maximum(db: QueueDb,
+                                                                   root: Path) -> None:  # fmt: skip
+    paid_and_done(db, root, "a", 20_000.0, 20_000.0)
+    paid_and_done(db, root, "b", 20_000.0, 20_000.0)
+    paid_and_done(db, root, "c", 20_000.0, 20_000.0)  # 60.000đ spent today
+    queued, last, over = (waiting_job(db, root, n) for n in ("d", "e", "f"))
+    approve(db, queued, 20_000.0, rules=BUDGET)  # 20.000đ reserved (approved, not yet run)
+    approve(db, last, 20_000.0, rules=BUDGET)  # 60 + 20 + 20 = 100.000đ: exactly the limit
+    with pytest.raises(ApprovalRefused, match="hạn mức ngày"):
+        approve(db, over, 6000.0, rules=BUDGET)
+    assert db.get(over).status == "awaiting_approval"  # type: ignore[union-attr]
+
+
+def test_spending_older_than_a_day_no_longer_counts(db: QueueDb, root: Path) -> None:
+    old = waiting_job(db, root, "old", at=time.time() - 200_000)
+    approve(db, old, 20_000.0, rules=BUDGET, now=time.time() - 200_000)
+    db.claim(time.time() - 200_000, 1)
+    db.finish(old, time.time() - 190_000, "completed", "passed", 0, None, None, spent_vnd=99_000.0)
+    approve(db, waiting_job(db, root, "new"), 20_000.0, rules=BUDGET)
+
+
+# ─────────────── 6c-2: the API key and the music library (settings) ───────────────
+
+
+def test_the_key_check_says_yes_or_no_and_never_the_key() -> None:
+    assert ai_key_configured(Settings(anthropic_api_key="sk-secret-value")) is True
+    assert ai_key_configured(Settings()) is False
+    assert ai_key_configured(Settings(anthropic_api_key="   ")) is False
+    assert ai_key_configured(Settings(anthropic_api_key="")) is False
+
+
+def test_the_music_folder_comes_from_the_settings(tmp_path: Path) -> None:
+    assert music_dir(Settings()) is None
+    assert music_dir(Settings(gani_dv_music_dir="  ")) is None
+    assert music_dir(Settings(gani_dv_music_dir=str(tmp_path))) == str(tmp_path)
+
+
+# ─────────────── 6c-2: the CLI ───────────────
+
+
+def held_via_cli(env: Path) -> int:
+    db = QueueDb(env)
+    jid = db.enqueue(NewJobForCli(), time.time())
+    db.claim(time.time(), 1)
+    db.hold_for_approval(jid, time.time(), estimate(), 86_400.0)
+    return jid
+
+
+def NewJobForCli() -> Any:
+    from gani_dung_video.infrastructure.queue_db import NewJob
+
+    return NewJob(kind="draft", project_dir="E:/footage", options_file="o", draft="",
+                  max_attempts=1)  # fmt: skip
+
+
+def test_cli_queue_draft_then_show_and_list(
+    env: Path, opt: Path, root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = str(root / "footage")
+    assert main(["queue", "draft", str(opt), folder]) == 0
+    assert "kịch bản" in capsys.readouterr().out.lower()
+    assert main(["queue", "list"]) == 0
+    assert "kịch bản" in capsys.readouterr().out.lower()
+
+
+def test_cli_show_prints_the_cost_block_of_a_waiting_job(
+    env: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    jid = held_via_cli(env)
+    assert main(["queue", "show", str(jid)]) == 0
+    out = capsys.readouterr().out
+    assert "chờ duyệt" in out and "4.207đ" in out and "20.000đ" in out
+    assert f"queue approve {jid}" in out
+
+
+def test_cli_approve_needs_both_numbers(env: Path) -> None:
+    jid = held_via_cli(env)
+    assert main(["queue", "approve", str(jid), "--max-vnd", "6000"]) == 2  # no --estimate
+    assert main(["queue", "approve", str(jid), "--estimate", "4207"]) == 2  # no --max-vnd
+    assert QueueDb(env).get(jid).status == "awaiting_approval"  # type: ignore[union-attr]
+
+
+def test_cli_approve_success_and_refusals(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    jid = held_via_cli(env)
+    assert main(["queue", "approve", str(jid), "--max-vnd", "6000", "--estimate", "3000"]) == 2
+    assert main(["queue", "approve", str(jid), "--max-vnd", "4000", "--estimate", "4207"]) == 2
+    assert QueueDb(env).get(jid).status == "awaiting_approval"  # type: ignore[union-attr]
+    capsys.readouterr()
+    assert main(["queue", "approve", str(jid), "--max-vnd", "6000", "--estimate", "4207"]) == 0
+    assert "6.000đ" in capsys.readouterr().out
+    job = QueueDb(env).get(jid)
+    assert job is not None and (job.status, job.phase, job.approved_vnd) == ("queued", "paid",
+                                                                            6000.0)  # fmt: skip
+
+
+def test_cli_approving_a_job_that_is_not_waiting_exits_2(env: Path) -> None:
+    assert main(["queue", "approve", "99", "--max-vnd", "6000", "--estimate", "4207"]) == 2

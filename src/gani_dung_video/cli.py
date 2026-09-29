@@ -43,9 +43,11 @@ import argparse
 import io
 import json
 import logging
+import math
 import signal
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -58,9 +60,13 @@ from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.queue_service import (
+    ai_key_configured,
+    approve_job,
     cancel_job,
     enqueue_analyze,
+    enqueue_draft,
     enqueue_render,
+    music_dir,
     open_queue,
     retry_job,
 )
@@ -74,7 +80,7 @@ from gani_dung_video.application.speech_draft_service import (
 )
 from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
-from gani_dung_video.domain.jobs import Job
+from gani_dung_video.domain.jobs import Job, format_vnd
 from gani_dung_video.domain.plan import Plan, PlanError
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.infrastructure.claude_client import AiError
@@ -128,6 +134,10 @@ def _build_parser() -> argparse.ArgumentParser:
     dr.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy pick)")
     dr.add_argument("folder", type=Path, help="Thư mục footage đã chạy pick")
     dr.add_argument("--dry-run", action="store_true", help="Chỉ ước tính token/chi phí")
+    dr.add_argument("--json", action="store_true", help="Với --dry-run: in ước tính 1 dòng JSON")
+    dr.add_argument(
+        "--max-vnd", type=_positive_vnd, help="Trần chi phí (đồng); chỉ hạ được trần cấu hình"
+    )
     rd = sub.add_parser("render", help="Dựng video từ edit/drafts.json → edit/render/")
     rd.add_argument("folder", type=Path, help="Thư mục footage đã chạy draft")
     rd.add_argument("--preview", action="store_true", help="Bản nháp 540p (nhanh)")
@@ -153,6 +163,24 @@ def _build_parser() -> argparse.ArgumentParser:
     qa.add_argument(
         "--after", type=int, help="Chỉ chạy sau khi job này xong (ví dụ một job phân tích)"
     )
+    qd = qsub.add_parser("draft", help="Kịch bản: plan, pick, ước tính chi phí rồi CHỜ DUYỆT")
+    qd.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
+    qd.add_argument("folder", type=Path, help="Thư mục footage (trong GANI_DV_ALLOWED_ROOTS)")
+    qd.add_argument("--after", type=int, help="Chỉ chạy sau khi job này xong (vd job phân tích)")
+    qp = qsub.add_parser("approve", help="Duyệt chi phí gọi Claude cho một job kịch bản đang chờ")
+    qp.add_argument("id", type=int)
+    qp.add_argument(
+        "--max-vnd",
+        type=float,
+        required=True,
+        help="Số đồng TỐI ĐA được phép tiêu cho job này (bắt buộc)",
+    )
+    qp.add_argument(
+        "--estimate",
+        type=float,
+        required=True,
+        help="Ước tính một lần gọi mà job đang giữ (lấy từ `queue show`; bắt buộc)",
+    )
     qn = qsub.add_parser("analyze", help="Phân tích footage (inventory, Whisper, scenes, CLIP)")
     qn.add_argument("folder", type=Path, help="Thư mục footage (trong GANI_DV_ALLOWED_ROOTS)")
     qn.add_argument("--force", action="store_true", help="Phân tích lại dù footage không đổi")
@@ -174,18 +202,52 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _positive_vnd(text: str) -> float:
+    """argparse type: a finite amount above zero (NaN and inf would switch the cap off)."""
+    try:
+        value = float(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"không phải số: {text!r}") from e
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("phải là số đồng lớn hơn 0")
+    return value
+
+
 def _job_line(j: Job) -> str:
     result = f"/{j.result}" if j.result else ""
     what = (
         "phân tích"
         if j.kind == "analyze"
+        else "kịch bản"
+        if j.kind == "draft"
         else f"bản {j.draft} ({'cuối' if j.final else 'nháp'})"
-        if j.kind == "render"
-        else j.kind
     )
     after = f" — sau job #{j.depends_on}" if j.depends_on else ""
     return (f"#{j.id} {what} {j.status}{result} {j.progress_pct:.0f}% — "
             f"{Path(j.project_dir).name}{after}")  # fmt: skip
+
+
+def _cost_lines(job: Job) -> list[str]:
+    """The cost block of a draft job: what it may cost, what was approved, what it spent."""
+    if job.kind != "draft":
+        return []
+    out: list[str] = []
+    worst = job.cost_worst_call_vnd
+    if worst is not None:
+        out.append(
+            f"  Ước tính tối đa một lần gọi: {format_vnd(worst)} "
+            f"({job.cost_input_tokens or 0} token vào), trần {format_vnd(job.cost_cap_vnd or 0)}"
+        )
+    if job.status == "awaiting_approval":
+        out.append(
+            f"  Đang chờ duyệt: queue approve {job.id} --max-vnd <số đồng tối đa> "
+            f"--estimate {round(worst or 0)}"
+        )
+    if job.approved_vnd is not None:
+        out.append(f"  Đã duyệt tối đa: {format_vnd(job.approved_vnd)}")
+    if job.spent_vnd is not None:
+        out.append(f"  Đã tiêu: {format_vnd(job.spent_vnd)}")
+    return out
 
 
 def _daemon_line(db: QueueDb, rules: Rules) -> str:
@@ -218,6 +280,19 @@ def _run_queue(args: argparse.Namespace) -> int:
         lines = [f"Job phân tích #{r.job_id} đã có trong hàng đợi." if r.duplicate
                  else f"Đã đưa vào hàng đợi: job #{r.job_id} — phân tích footage",
                  _daemon_line(db, rules)]  # fmt: skip
+    elif cmd == "draft":
+        r = enqueue_draft(args.file, args.folder, db, rules=rules, after=args.after)
+        lines = [f"Job kịch bản #{r.job_id} đã có trong hàng đợi." if r.duplicate
+                 else f"Đã đưa vào hàng đợi: job #{r.job_id} — kịch bản (dừng ở bước chờ duyệt "
+                      "chi phí, chưa gọi API)",
+                 _daemon_line(db, rules)]  # fmt: skip
+    elif cmd == "approve":
+        approved = approve_job(db, args.id, args.max_vnd, args.estimate, rules=rules)
+        lines = [
+            f"Đã duyệt job #{approved.id}: tối đa {format_vnd(args.max_vnd)}. "
+            "Daemon sẽ kiểm lại ước tính rồi mới gọi Claude.",
+            _daemon_line(db, rules),
+        ]
     elif cmd == "list":
         jobs = db.list_jobs(args.status, args.limit)
         lines = [_daemon_line(db, rules), *(_job_line(j) for j in jobs)]
@@ -235,6 +310,7 @@ def _run_queue(args: argparse.Namespace) -> int:
             lines.append(f"  Video: {job.output_path}")
         if job.error_msg:
             lines.append(f"  Lỗi: {job.error_msg}")
+        lines += _cost_lines(job)
         lines += [f"  | {e.text}" for e in db.events(job.id)[-20:]]
     elif cmd == "cancel":
         lines = [f"Job #{args.id}: {cancel_job(db, args.id)}"]
@@ -261,6 +337,8 @@ def _run_daemon() -> int:
         open_queue(settings),
         rules,
         whisper_model=(settings.gani_dv_whisper_model or "").strip() or None,
+        music_dir=music_dir(settings),
+        ai_key_present=lambda: ai_key_configured(settings),
     )
 
     def on_signal(signum: int, frame: object) -> None:
@@ -352,16 +430,22 @@ def _driver_of(folder: Path) -> str | None:
         return None
 
 
-def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
+def _run_draft(file: Path, folder: Path, dry_run: bool, as_json: bool = False,
+               max_vnd: float | None = None) -> int:  # fmt: skip
+    if as_json and not dry_run:
+        raise ConfigError("--json chỉ dùng cùng --dry-run.")
     r: DraftsFile | SpeechDraftsResult | DryRun
     try:
         if _driver_of(folder) == "speech":
-            r, out = build_speech_drafts(file, folder, dry_run=dry_run)
+            r, out = build_speech_drafts(file, folder, dry_run=dry_run, max_vnd=max_vnd)
         else:
-            r, out = build_drafts(file, folder, dry_run=dry_run)
+            r, out = build_drafts(file, folder, dry_run=dry_run, max_vnd=max_vnd)
     except (DraftError, SpeechDraftError) as e:
         sys.stdout.write(f"KHÔNG ĐẠT: {e}\n")
         return 1
+    if isinstance(r, DryRun) and as_json:
+        sys.stdout.write(json.dumps(asdict(r)) + "\n")
+        return 0
     if isinstance(r, DryRun):
         lines = [
             f"Ước tính (không gọi API) — model {r.model}",
@@ -545,7 +629,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "render":
             return _run_render(args.folder, args.preview, args.ban, not args.no_asr)
         if args.cmd == "draft":
-            return _run_draft(args.file, args.folder, args.dry_run)
+            return _run_draft(args.file, args.folder, args.dry_run, args.json, args.max_vnd)
         if args.cmd == "pick":
             return _run_pick(args.file, args.folder)
         if args.cmd == "phrases":

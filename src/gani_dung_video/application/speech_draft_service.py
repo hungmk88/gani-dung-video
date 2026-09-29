@@ -263,7 +263,7 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> SpeechDraftsRe
 
 def build_speech_drafts(
     options_file: Path, folder: Path, rules: Rules | None = None, caller: Caller | None = None,
-    settings: Settings | None = None, dry_run: bool = False,
+    settings: Settings | None = None, dry_run: bool = False, max_vnd: float | None = None,
 ) -> tuple[SpeechDraftsResult | DryRun, Path | None]:  # fmt: skip
     """Ask Claude for the speech-mode drafts of <folder>/edit/plan.json and write
     edit/speech_drafts.json.
@@ -275,10 +275,14 @@ def build_speech_drafts(
         SpeechCostCapReached / SpeechDraftError: budget or check rounds exhausted (nothing
             written).
         AiError: the API call itself failed.
+
+    `max_vnd` (what a person approved for a queued job) can only lower the cost cap.
     """
     rules = rules if rules is not None else load_rules()
     folder = folder.expanduser().resolve()
     job = _job(options_file, folder, rules)
+    if max_vnd is not None and not dry_run:
+        job.cap = min(job.cap, max_vnd)
     settings = settings if settings is not None else load_settings()
     model = settings.gani_dv_claude_model or str(job.cfg["model"])
     if dry_run:

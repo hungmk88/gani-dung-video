@@ -5,15 +5,22 @@ from __future__ import annotations
 import pytest
 
 from gani_dung_video.domain.jobs import (
+    ALL_STAGES,
     ANALYZE_STAGES,
     KIND_PRIORITY,
     STATUSES,
     AnalysisStamp,
+    ApprovalError,
+    BudgetState,
+    Estimate,
+    Job,
     analyze_progress,
     blocked_reason,
     can_transition,
     dependency_state,
+    draft_stages,
     estimate_progress,
+    estimates_match,
     footage_signature,
     join_stages,
     judge_run,
@@ -21,10 +28,13 @@ from gani_dung_video.domain.jobs import (
     line_level,
     may_retry,
     parse_clip_progress,
+    parse_estimate_line,
     parse_stages,
     remaining_stages,
+    spent_in_log,
     stage_of,
     stamp_is_fresh,
+    validate_approval,
 )
 
 # ─────────────── state machine ───────────────
@@ -321,3 +331,161 @@ def test_a_stamp_is_reused_only_when_nothing_changed_and_no_force() -> None:
 def test_a_stamp_from_an_incomplete_analysis_is_not_fresh() -> None:
     partial = stamp("x").model_copy(update={"stages": ["inventory", "transcribe"]})
     assert not stamp_is_fresh(partial, "x", force=False, artifacts_present=True)
+
+
+# ─────────────── 6c-2: draft stages and progress ───────────────
+
+
+def test_draft_stages_depend_on_the_driver() -> None:
+    assert draft_stages("music") == ("plan", "pick", "estimate")
+    assert draft_stages("grid") == ("plan", "pick", "estimate")
+    assert draft_stages(None) == ("plan", "pick", "estimate")
+    assert draft_stages("speech") == ("plan", "pick", "phrases", "estimate")
+
+
+def test_the_stage_vocabulary_covers_analysis_and_drafting() -> None:
+    assert (*ANALYZE_STAGES, "plan", "pick", "phrases", "estimate") == ALL_STAGES
+    assert parse_stages("plan,pick,phrases,estimate,bogus") == ["plan", "pick", "phrases",
+                                                                "estimate"]  # fmt: skip
+    assert remaining_stages(draft_stages("speech"), ["plan"]) == ["pick", "phrases", "estimate"]
+
+
+def test_progress_can_follow_any_stage_list() -> None:
+    expected = {"plan": 5.0, "pick": 60.0, "estimate": 5.0}
+    stages = draft_stages("music")
+    start = analyze_progress([], "plan", 0.0, expected, stages=stages)
+    mid = analyze_progress(["plan"], "pick", 0.0, expected, stages=stages)
+    assert start == pytest.approx(3.0) and mid == pytest.approx(3.0 + 92.0 * 5 / 70)
+    assert mid < analyze_progress(["plan", "pick"], "estimate", 0.0, expected, stages=stages)
+
+
+# ─────────────── 6c-2: the estimate printed by `draft --dry-run --json` ───────────────
+
+GOOD = ('{"model": "claude-sonnet-5-5", "input_tokens": 2400, "input_only_vnd": 122.4, '
+        '"worst_call_vnd": 4207.3, "cap_vnd": 20000.0, "max_attempts": 3}')  # fmt: skip
+
+
+def test_the_estimate_line_is_parsed() -> None:
+    e = parse_estimate_line(GOOD)
+    assert e is not None and e.model == "claude-sonnet-5-5" and e.input_tokens == 2400
+    assert e.worst_call_vnd == pytest.approx(4207.3) and e.cap_vnd == 20000.0
+
+
+@pytest.mark.parametrize("line", ["", "not json", "{}", "[1, 2]", '{"model": "x"}',
+                                  GOOD.replace("4207.3", '"lots"'), GOOD.replace("2400", "-5"),
+                                  GOOD.replace("4207.3", "-1"), GOOD.replace("4207.3", "NaN"),
+                                  "Ước tính (không gọi API) — model x"])  # fmt: skip
+def test_lines_that_are_not_an_estimate_are_ignored(line: str) -> None:
+    assert parse_estimate_line(line) is None
+
+
+def test_an_estimate_is_found_among_log_noise_by_its_own_shape() -> None:
+    assert parse_estimate_line("  " + GOOD + "  ") is not None
+    assert parse_estimate_line("INFO " + GOOD) is None  # it must be the whole line
+
+
+def est(**kw: object) -> Estimate:
+    base: dict[str, object] = {
+        "model": "m",
+        "input_tokens": 2400,
+        "input_only_vnd": 122.4,
+        "worst_call_vnd": 4207.3,
+        "cap_vnd": 20000.0,
+        "max_attempts": 3,
+    }
+    return Estimate(**{**base, **kw})  # type: ignore[arg-type]
+
+
+def test_two_estimates_match_when_tokens_and_whole_dong_agree() -> None:
+    assert estimates_match(est(), est(worst_call_vnd=4207.4))  # same whole đồng
+    assert not estimates_match(est(), est(worst_call_vnd=4300.0))
+    assert not estimates_match(est(), est(input_tokens=2401))
+    assert not estimates_match(est(), est(cap_vnd=10000.0))
+
+
+# ─────────────── 6c-2: spending measured from ai_log.jsonl ───────────────
+
+
+def test_spent_is_the_sum_of_the_cost_lines() -> None:
+    log = "\n".join([
+        '{"time": "t", "mode": "music", "attempt": 1, "cost_vnd": 1224.0, "spent_vnd": 1224.0}',
+        '{"time": "t", "mode": "music", "attempt": 2, "cost_vnd": 300.5}',
+        '{"time": "t", "stopped": "cost_cap", "spent_vnd": 1524.5}',  # no cost of its own
+        "not json", "", '{"cost_vnd": "x"}', '{"cost_vnd": -5}', "[1]",
+    ])  # fmt: skip
+    assert spent_in_log(log) == pytest.approx(1524.5)
+    assert spent_in_log("") == 0.0
+
+
+# ─────────────── 6c-2: approving a cost ───────────────
+
+NOW = 1_000_000.0
+NO_LIMIT = BudgetState(limit=None, spent_24h=0.0, reserved=0.0)
+
+
+def waiting(**kw: object) -> Job:
+    base: dict[str, object] = {
+        "id": 5, "kind": "draft", "project_dir": "E:/p", "options_file": "o", "draft": "",
+        "final": False, "no_asr": False, "status": "awaiting_approval", "attempts": 1,
+        "max_attempts": 1, "created_at": 1.0, "phase": "estimate", "cost_input_tokens": 2400,
+        "cost_worst_call_vnd": 4207.3, "cost_cap_vnd": 20000.0,
+        "approval_expires_at": NOW + 3600}  # fmt: skip
+    return Job(**{**base, **kw})  # type: ignore[arg-type]
+
+
+def refuse(job: Job, max_vnd: float, estimate: float, budget: BudgetState = NO_LIMIT) -> str:
+    with pytest.raises(ApprovalError) as e:
+        validate_approval(job, max_vnd, estimate, NOW, budget)
+    return str(e.value)
+
+
+def test_a_matching_approval_within_the_cap_is_accepted() -> None:
+    validate_approval(waiting(), 6000.0, 4207.3, NOW, NO_LIMIT)
+    validate_approval(waiting(), 4207.3, 4207, NOW, NO_LIMIT)  # exactly one call, whole đồng
+    validate_approval(waiting(), 20000.0, 4207.3, NOW, NO_LIMIT)  # exactly the cap
+
+
+def test_only_a_job_that_is_waiting_for_approval_can_be_approved() -> None:
+    for status in ("queued", "processing", "completed", "failed", "cancelled"):
+        assert "chờ duyệt" in refuse(waiting(status=status), 6000, 4207.3)
+    assert "kịch bản" in refuse(waiting(kind="render"), 6000, 4207.3)
+
+
+def test_the_estimate_must_be_echoed_exactly_so_nobody_approves_blind() -> None:
+    msg = refuse(waiting(), 6000.0, 3000.0)
+    assert "4.207đ" in msg and "ước tính" in msg.lower()  # the correct number is shown
+    assert "đổi" in refuse(waiting(), 6000.0, 4208.0)
+
+
+def test_the_maximum_cannot_be_below_one_call_or_above_the_cap() -> None:
+    low = refuse(waiting(), 4000.0, 4207.3)
+    assert "thấp hơn" in low and "4.207đ" in low
+    high = refuse(waiting(), 25000.0, 4207.3)
+    assert "vượt trần" in high and "20.000đ" in high
+
+
+@pytest.mark.parametrize("bad", [0.0, -5.0, float("nan"), float("inf")])
+def test_a_meaningless_maximum_is_refused(bad: float) -> None:
+    assert "hợp lệ" in refuse(waiting(), bad, 4207.3)
+
+
+def test_an_expired_approval_window_is_refused() -> None:
+    assert "hết hạn" in refuse(waiting(approval_expires_at=NOW - 1), 6000, 4207.3)
+    validate_approval(waiting(approval_expires_at=NOW), 6000, 4207.3, NOW, NO_LIMIT)  # not yet
+
+
+def test_a_job_without_a_stored_estimate_cannot_be_approved() -> None:
+    assert "ước tính" in refuse(waiting(cost_worst_call_vnd=None), 6000, 4207.3)
+
+
+def test_the_daily_budget_counts_spent_reserved_and_the_new_maximum() -> None:
+    budget = BudgetState(limit=100_000.0, spent_24h=65_000.0, reserved=20_000.0)
+    validate_approval(waiting(), 15_000.0, 4207.3, NOW, budget)  # exactly reaches 100.000đ
+    msg = refuse(waiting(), 15_001.0, 4207.3, budget)
+    assert "hạn mức ngày" in msg and "100.000đ" in msg
+    assert "65.000đ" in msg and "20.000đ" in msg and "15.001đ" in msg  # the numbers behind it
+
+
+def test_no_daily_limit_means_no_daily_check() -> None:
+    huge = BudgetState(limit=None, spent_24h=9e9, reserved=9e9)
+    validate_approval(waiting(), 6000.0, 4207.3, NOW, huge)

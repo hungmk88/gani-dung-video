@@ -18,7 +18,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -64,6 +64,9 @@ class JobEnv:
     child_env: Mapping[str, str]
     should_stop: Callable[[Job], str | None]
     whisper_model: str | None = None
+    music_dir: str | None = None  # the machine's music library, for the `plan` stage
+    # Whether an API key is configured (never its value). Fails closed: unknown = no key.
+    ai_key_present: Callable[[], bool] = field(default=lambda: False)
 
 
 def stage_argv(stage: str, folder: str, base: Sequence[str] | None = None,
@@ -113,7 +116,7 @@ def _precheck(folder: Path, rules: Rules) -> str | None:
     return None
 
 
-def _settle_stop(env: JobEnv, job: Job, v: Verdict, res: RunResult, tail: str) -> None:
+def settle_stop(env: JobEnv, job: Job, v: Verdict, res: RunResult, tail: str) -> None:
     """A stage ended badly (or was stopped): the job is cancelled, handed back, retried from
     that stage, or failed. Finished stages stay recorded in every case."""
     cfg = env.rules["queue"]
@@ -141,6 +144,61 @@ def _reuse(env: JobEnv, job: Job) -> None:
     env.db.finish(job.id, env.clock(), "completed", "passed", 0, None, None)
 
 
+def run_stage(
+    env: JobEnv, job: Job, stage: str, argv: Sequence[str], *, stages: Sequence[str],
+    done: list[str], job_start: float, stall_sec: float, timeout_sec: float, tail: list[str],
+    capture: list[str] | None = None, fraction_of: Callable[[str], float | None] | None = None,
+) -> tuple[RunResult, Verdict]:  # fmt: skip
+    """Run one stage command of a multi-stage job and judge how it ended.
+
+    Every console line is stored as an event (and kept in `tail`, and in `capture` when the
+    caller wants to read the output, e.g. an estimate); progress and the daemon heartbeat move
+    with it. `fraction_of` may turn a line into how far the stage really is (CLIP's `[clip N/M]`).
+    `job_start` (monotonic) budgets `timeout_sec` over the whole job, not per stage."""
+    cfg = env.rules["queue"]
+    expected = cfg["stage_expected_sec"]
+    stage_start, last_tick = time.monotonic(), [0.0]
+    fraction: list[float | None] = [None]
+
+    def tick(force: bool = False) -> None:
+        mono = time.monotonic()
+        if not force and mono - last_tick[0] < 1.0:
+            return
+        last_tick[0] = mono
+        pct = analyze_progress(done, stage, mono - stage_start, expected, fraction[0], stages)
+        env.db.progress(job.id, env.clock(), stage, pct)
+        env.db.daemon_heartbeat(env.pid, env.clock())
+
+    def on_line(line: str) -> None:
+        if line.strip():
+            tail.append(line.strip())
+            del tail[:-_TAIL_LINES]
+        if capture is not None:
+            capture.append(line)
+        env.db.add_event(job.id, env.clock(), line_level(line), line,
+                         keep=int(cfg["max_events_per_job"]))  # fmt: skip
+        got = fraction_of(line) if fraction_of is not None else None
+        if got is not None:
+            fraction[0] = got
+        tick(force=got is not None)
+
+    def should_stop() -> str | None:
+        tick()
+        return env.should_stop(job)
+
+    env.db.add_event(job.id, env.clock(), "info", f"== Giai đoạn {stage} ==")
+    tick(force=True)
+    budget = timeout_sec - (time.monotonic() - job_start)
+    res = (env.runner(
+        list(argv), REPO_ROOT, on_line, should_stop, [Path(job.project_dir) / EDIT_DIR],
+        stall_sec, budget, on_start=lambda pid: env.db.set_child(job.id, pid),
+        poll_sec=min(float(cfg["poll_sec"]), 0.5), log_path=env.log_dir / f"{job.id}.log",
+        env=env.child_env,
+    ) if budget > 0 else RunResult("timeout", None))  # fmt: skip
+    limit = stall_sec if res.reason == "stalled" else timeout_sec
+    return res, judge_stage(res.reason, res.exit_code, stage, detail=f"{int(limit)}s")
+
+
 def run_analyze(env: JobEnv, job: Job) -> None:
     """Run (or skip, or resume) the analysis of one project folder."""
     cfg = env.rules["queue"]
@@ -155,55 +213,18 @@ def run_analyze(env: JobEnv, job: Job) -> None:
         return
     todo = remaining_stages(ANALYZE_STAGES, job.stages_done)
     done = list(ANALYZE_STAGES[: len(ANALYZE_STAGES) - len(todo)])
-    expected = cfg["stage_expected_sec"]
     tail: list[str] = []
     job_start = time.monotonic()
     for stage in todo:
-        stage_start, last_tick = time.monotonic(), [0.0]
-        fraction: list[float | None] = [None]
-
-        def tick(force: bool = False, stage: str = stage, stage_start: float = stage_start,
-                 last_tick: list[float] = last_tick, fraction: list[float | None] = fraction,
-                 done: list[str] = done) -> None:  # fmt: skip
-            mono = time.monotonic()
-            if not force and mono - last_tick[0] < 1.0:
-                return
-            last_tick[0] = mono
-            pct = analyze_progress(done, stage, mono - stage_start, expected, fraction[0])
-            env.db.progress(job.id, env.clock(), stage, pct)
-            env.db.daemon_heartbeat(env.pid, env.clock())
-
-        def on_line(line: str, stage: str = stage, tick: Callable[..., None] = tick,
-                    fraction: list[float | None] = fraction) -> None:  # fmt: skip
-            if line.strip():
-                tail.append(line.strip())
-                del tail[:-_TAIL_LINES]
-            env.db.add_event(job.id, env.clock(), line_level(line), line,
-                             keep=int(cfg["max_events_per_job"]))  # fmt: skip
-            clip = parse_clip_progress(line) if stage == "semantics" else None
-            if clip is not None:
-                fraction[0] = clip
-            tick(force=clip is not None)
-
-        def should_stop(tick: Callable[..., None] = tick) -> str | None:
-            tick()
-            return env.should_stop(job)
-
-        env.db.add_event(job.id, env.clock(), "info", f"== Giai đoạn {stage} ==")
-        tick(force=True)
-        budget = float(cfg["analyze_timeout_sec"]) - (time.monotonic() - job_start)
-        res = (env.runner(
-            stage_argv(stage, str(folder), env.argv_base, env.whisper_model), REPO_ROOT,
-            on_line, should_stop,
-            [folder / EDIT_DIR], float(cfg["analyze_stall_sec"]), budget,
-            on_start=lambda pid: env.db.set_child(job.id, pid),
-            poll_sec=min(float(cfg["poll_sec"]), 0.5), log_path=env.log_dir / f"{job.id}.log",
-            env=env.child_env,
-        ) if budget > 0 else RunResult("timeout", None))  # fmt: skip
-        limit = cfg["analyze_stall_sec"] if res.reason == "stalled" else cfg["analyze_timeout_sec"]
-        verdict = judge_stage(res.reason, res.exit_code, stage, detail=f"{int(limit)}s")
+        res, verdict = run_stage(
+            env, job, stage, stage_argv(stage, str(folder), env.argv_base, env.whisper_model),
+            stages=ANALYZE_STAGES, done=done, job_start=job_start,
+            stall_sec=float(cfg["analyze_stall_sec"]),
+            timeout_sec=float(cfg["analyze_timeout_sec"]),
+            tail=tail, fraction_of=parse_clip_progress if stage == "semantics" else None,
+        )  # fmt: skip
         if verdict.status != "completed":
-            _settle_stop(env, job, verdict, res, " | ".join(tail))
+            settle_stop(env, job, verdict, res, " | ".join(tail))
             return
         env.db.mark_stage_done(job.id, stage)
         done.append(stage)

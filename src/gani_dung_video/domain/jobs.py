@@ -9,11 +9,13 @@ would give the same file, so it is never retried by itself.
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 Status = Literal["queued", "processing", "awaiting_approval", "completed", "failed", "cancelled"]
 # awaiting_approval (phase 6c): a draft job has its free stages and its cost estimate done and
@@ -79,6 +81,7 @@ class Job(BaseModel):
     approved_vnd: float | None = None
     approved_at: float | None = None
     spent_vnd: float | None = None
+    approval_expires_at: float | None = None  # awaiting_approval: the window closes at this time
 
 
 class Verdict(BaseModel):
@@ -173,6 +176,10 @@ def line_level(line: str) -> str:
 # Short work first: a render must not wait behind a half-hour analysis (never pre-empted).
 KIND_PRIORITY: dict[str, int] = {"render": 30, "draft": 20, "analyze": 10}
 ANALYZE_STAGES: tuple[str, ...] = ("inventory", "transcribe", "scenes", "semantics")
+# Drafting (6c-2): plan → pick → (phrases, speech styles) → estimate; then, once approved, the
+# paid `draft` call itself, which is a phase of its own rather than a recorded stage.
+DRAFT_STAGES: tuple[str, ...] = ("plan", "pick", "phrases", "estimate")
+ALL_STAGES: tuple[str, ...] = (*ANALYZE_STAGES, *DRAFT_STAGES)
 _CLIP_LINE = re.compile(r"^\[clip (\d+)/(\d+)\].*\s(\d+)/(\d+)\s*$")
 
 
@@ -200,7 +207,7 @@ def parse_stages(text: str | None) -> list[str]:
     """The `stages_done` column: comma-separated known stage names, in the order written."""
     if not text:
         return []
-    return [x for x in (p.strip() for p in text.split(",")) if x in ANALYZE_STAGES]
+    return [x for x in (p.strip() for p in text.split(",")) if x in ALL_STAGES]
 
 
 def join_stages(stages: Iterable[str]) -> str:
@@ -230,14 +237,15 @@ def parse_clip_progress(line: str) -> float | None:
 def analyze_progress(
     done: Sequence[str], current: str | None, elapsed_sec: float,
     expected: Mapping[str, float], fraction: float | None = None,
+    stages: Sequence[str] = ANALYZE_STAGES,
 ) -> float:  # fmt: skip
     """Estimated percent of an analysis: finished stages by their expected duration, plus the
     running stage by the real `fraction` when its log gives one, else by elapsed time.
     Between 3 % and 95 %; only the finished job shows 100."""
-    total = sum(float(expected.get(s, 0.0)) for s in ANALYZE_STAGES)
+    total = sum(float(expected.get(s, 0.0)) for s in stages)
     if total <= 0:
         return _PROGRESS_START
-    finished = sum(float(expected.get(s, 0.0)) for s in done if s in ANALYZE_STAGES)
+    finished = sum(float(expected.get(s, 0.0)) for s in done if s in stages)
     running = 0.0
     if current is not None and current not in done:
         exp = float(expected.get(current, 0.0))
@@ -301,3 +309,121 @@ def stamp_is_fresh(stamp: AnalysisStamp | None, signature: str, force: bool,
         and stamp.signature == signature
         and set(ANALYZE_STAGES) <= set(stamp.stages)
     )
+
+
+# ─────────────── phase 6c-2: drafting, estimates and cost approval ───────────────
+
+
+def draft_stages(driver: str | None) -> tuple[str, ...]:
+    """The free stages of a draft job; speech-driven styles also extract phrases."""
+    if driver == "speech":
+        return ("plan", "pick", "phrases", "estimate")
+    return ("plan", "pick", "estimate")
+
+
+class Estimate(BaseModel):
+    """What `draft --dry-run --json` prints: the worst cost of one Claude call, no API used."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    input_tokens: int = Field(ge=0)
+    input_only_vnd: float = Field(ge=0)
+    worst_call_vnd: float = Field(ge=0)  # input + max output tokens, one call
+    cap_vnd: float = Field(ge=0)  # the video's cost cap from rules.json
+    max_attempts: int = Field(ge=1)
+
+
+def parse_estimate_line(line: str) -> Estimate | None:
+    """An estimate is a whole line of JSON; anything else (log noise, prose) is not one."""
+    text = line.strip()
+    if not text.startswith("{"):
+        return None
+    try:
+        return Estimate.model_validate(json.loads(text))
+    except (ValueError, ValidationError):
+        return None
+
+
+def estimates_match(a: Estimate, b: Estimate) -> bool:
+    """Same input size and the same amounts to the whole đồng: nothing changed in between."""
+    return (a.input_tokens == b.input_tokens
+            and round(a.worst_call_vnd) == round(b.worst_call_vnd)
+            and round(a.cap_vnd) == round(b.cap_vnd))  # fmt: skip
+
+
+def spent_in_log(text: str) -> float:
+    """Total `cost_vnd` of the lines of an ai_log.jsonl chunk (bad lines are skipped)."""
+    total = 0.0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        cost = entry.get("cost_vnd") if isinstance(entry, dict) else None
+        if isinstance(cost, int | float) and not isinstance(cost, bool) and math.isfinite(cost) \
+                and cost >= 0:  # fmt: skip
+            total += float(cost)
+    return total
+
+
+class BudgetState(BaseModel):
+    """The daily budget check's inputs (limit None = no daily limit)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    limit: float | None
+    spent_24h: float  # paid `draft` jobs finished in the last 24 hours
+    reserved: float  # approved but not yet finished: money that may still be spent
+
+
+class ApprovalError(ValueError):
+    """An approval that must not go through (message in Vietnamese, with the right numbers)."""
+
+
+def format_vnd(x: float) -> str:
+    """4207.3 → '4.207đ' (Vietnamese thousands separator, whole đồng)."""
+    return f"{x:,.0f}".replace(",", ".") + "đ"
+
+
+_vnd = format_vnd
+
+
+def validate_approval(job: Job, max_vnd: float, estimate_vnd: float, now: float,
+                      budget: BudgetState) -> None:  # fmt: skip
+    """Raise ApprovalError unless approving `max_vnd` for this job is safe.
+
+    The person must have seen the estimate (`estimate_vnd` echoes it), the maximum must cover
+    at least one call and stay under the video's cap, the window must still be open, and the
+    daily budget (spent + reserved + this maximum) must hold."""
+    if job.kind != "draft":
+        raise ApprovalError("Chỉ job kịch bản (draft) mới cần duyệt chi phí.")
+    if job.status != "awaiting_approval":
+        raise ApprovalError(f"Job không đang chờ duyệt (đang '{job.status}').")
+    worst, cap = job.cost_worst_call_vnd, job.cost_cap_vnd
+    if worst is None or cap is None:
+        raise ApprovalError("Job chưa có ước tính chi phí; chưa thể duyệt.")
+    if job.approval_expires_at is not None and now > job.approval_expires_at:
+        raise ApprovalError("Đã hết hạn duyệt; thử lại job để có ước tính mới.")
+    if not math.isfinite(max_vnd) or max_vnd <= 0:
+        raise ApprovalError("Số tiền tối đa phải là số dương hợp lệ.")
+    if not math.isfinite(estimate_vnd) or round(estimate_vnd) != round(worst):
+        raise ApprovalError(f"Ước tính bạn nhập ({_vnd(estimate_vnd)}) không khớp ước tính hiện "
+                            f"tại của job ({_vnd(worst)}): ước tính đã đổi hoặc nhập sai; xem lại "
+                            "rồi duyệt.")  # fmt: skip
+    if max_vnd < worst:
+        raise ApprovalError(f"Số tiền tối đa ({_vnd(max_vnd)}) thấp hơn một lần gọi tối đa "
+                            f"({_vnd(worst)}): không thể gọi lần nào.")  # fmt: skip
+    if max_vnd > cap:
+        raise ApprovalError(f"Số tiền tối đa ({_vnd(max_vnd)}) vượt trần {_vnd(cap)} của video "
+                            "này.")  # fmt: skip
+    if (
+        budget.limit is not None
+        and budget.spent_24h + budget.reserved + max_vnd > budget.limit + 1e-6
+    ):
+        raise ApprovalError(
+            f"Duyệt này vượt hạn mức ngày {_vnd(budget.limit)}: đã tiêu {_vnd(budget.spent_24h)} "
+            f"+ đã đặt cọc {_vnd(budget.reserved)} + duyệt mới {_vnd(max_vnd)}.")  # fmt: skip
