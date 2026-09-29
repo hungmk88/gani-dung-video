@@ -140,7 +140,7 @@ ALL = Artifacts(inventory=True, scenes=True, speech=True, plan=True, pick=True, 
 def steps(art: Artifacts = ALL, **kw: object) -> dict[str, str]:
     base: dict[str, object] = {"size": "preview", "status": "queued", "result": None,
                                "stage": None, "error_msg": None}  # fmt: skip
-    got = derive_steps(art, RunInfo(**{**base, **kw}))  # type: ignore[arg-type]
+    got = derive_steps(art, RunInfo(**{**base, **kw}))
     return {s.id: s.status for s in got}
 
 
@@ -329,7 +329,7 @@ def test_a_pipeline_status_is_read_from_its_jobs(jobs: list[tuple[str, str | Non
 def kind_steps(art: Artifacts, kind: str, **kw: object) -> dict[str, str]:
     base: dict[str, object] = {"size": "preview", "status": "queued", "result": None,
                                "stage": None, "error_msg": None, "kind": kind}  # fmt: skip
-    got = derive_steps(art, RunInfo(**{**base, **kw}))  # type: ignore[arg-type]
+    got = derive_steps(art, RunInfo(**{**base, **kw}))
     return {s.id: s.status for s in got}
 
 

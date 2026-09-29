@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from gani_dung_video.application import speech_draft_service
+from gani_dung_video.application.draft_service import DryRun
 from gani_dung_video.application.render_service import SpeechDraftsFile
 from gani_dung_video.application.speech_draft_service import (
     SpeechCostCapReached,
@@ -267,6 +268,7 @@ def test_dry_run_estimates_without_calling(tmp_path: Path) -> None:
     est, path = build_speech_drafts(tmp_path / "o.json", tmp_path, RULES, caller=fake,
                                     dry_run=True)  # fmt: skip
     assert fake.prompts == [] and path is None
+    assert isinstance(est, DryRun)
     assert est.model == RULES["ai"]["model"] and est.input_tokens > 300
     assert est.worst_call_vnd > est.input_only_vnd > 0
     assert est.cap_vnd == 20000 and est.max_attempts == 3

@@ -393,7 +393,7 @@ def est(**kw: object) -> Estimate:
         "cap_vnd": 20000.0,
         "max_attempts": 3,
     }
-    return Estimate(**{**base, **kw})  # type: ignore[arg-type]
+    return Estimate(**{**base, **kw})
 
 
 def test_two_estimates_match_when_tokens_and_whole_dong_agree() -> None:
@@ -430,7 +430,7 @@ def waiting(**kw: object) -> Job:
         "max_attempts": 1, "created_at": 1.0, "phase": "estimate", "cost_input_tokens": 2400,
         "cost_worst_call_vnd": 4207.3, "cost_cap_vnd": 20000.0,
         "approval_expires_at": NOW + 3600}  # fmt: skip
-    return Job(**{**base, **kw})  # type: ignore[arg-type]
+    return Job(**{**base, **kw})
 
 
 def refuse(job: Job, max_vnd: float, estimate: float, budget: BudgetState = NO_LIMIT) -> str:

@@ -14,7 +14,12 @@ from pathlib import Path
 
 import pytest
 
-from gani_dung_video.infrastructure.process_runner import kill_tree, pid_alive, run_child
+from gani_dung_video.infrastructure.process_runner import (
+    RunResult,
+    kill_tree,
+    pid_alive,
+    run_child,
+)
 
 PY = sys.executable
 
@@ -30,7 +35,7 @@ def run(
     watch: list[Path] | None = None,
     started: list[int] | None = None,
     log: Path | None = None,
-):  # type: ignore[no-untyped-def]
+) -> RunResult:
     got = lines if lines is not None else []
     return run_child(
         [PY, "-c", code], tmp_path, got.append,

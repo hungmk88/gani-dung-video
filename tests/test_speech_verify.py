@@ -112,7 +112,8 @@ def test_a_compliant_response_has_no_issues() -> None:
 
 
 def test_s1_not_json_or_wrong_shape_asks_the_ai_again() -> None:
-    for raw in ("not json", {"drafts": "x"}, {"nope": []}):
+    cases: list[object] = ["not json", {"drafts": "x"}, {"nope": []}]
+    for raw in cases:
         resp, issues = run(raw)
         assert resp is None and codes(issues) == ["S1"] and issues[0].level == "ai"
 

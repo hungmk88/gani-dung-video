@@ -617,7 +617,8 @@ def new_pipeline(api: Api, name: str = "fresh", **body: Any) -> dict[str, Any]:
 
 
 def hold_draft(api: Api, view: dict[str, Any]) -> int:
-    analyze, draft = view["jobs"][0]["id"], view["jobs"][1]["id"]
+    analyze: int = view["jobs"][0]["id"]
+    draft: int = view["jobs"][1]["id"]
     assert api.ctx.db.claim(time.time(), 1).id == analyze  # type: ignore[union-attr]
     api.ctx.db.finish(analyze, time.time(), "completed", "passed", 0, None, None)
     assert api.ctx.db.claim(time.time(), 1).id == draft  # type: ignore[union-attr]

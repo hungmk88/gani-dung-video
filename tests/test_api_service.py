@@ -487,7 +487,8 @@ def estimate() -> Estimate:
 
 def reach_approval(ctx: ApiContext, view: Any) -> int:
     """Run the analysis to completion and park the draft job at the approval gate."""
-    analyze, draft = view.jobs[0].id, view.jobs[1].id
+    analyze: int = view.jobs[0].id
+    draft: int = view.jobs[1].id
     job = ctx.db.claim(time.time(), 1)
     assert job is not None and job.id == analyze
     ctx.db.finish(analyze, time.time(), "completed", "passed", 0, None, None)

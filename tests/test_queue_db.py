@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,11 +21,11 @@ from gani_dung_video.infrastructure.queue_db import (
 T0 = 1_000_000.0
 
 
-def new_job(draft: str = "A", kind: str = "render", **kw: object) -> NewJob:
-    base: dict[str, object] = {"kind": kind, "project_dir": "E:/footage", "options_file": "o.md",
+def new_job(draft: str = "A", **kw: Any) -> NewJob:
+    base: dict[str, Any] = {"kind": "render", "project_dir": "E:/footage", "options_file": "o.md",
                                "draft": draft, "final": False, "no_asr": False,
                                "max_attempts": 2, "priority": 0}  # fmt: skip
-    return NewJob(**{**base, **kw})  # type: ignore[arg-type]
+    return NewJob(**{**base, **kw})
 
 
 @pytest.fixture
@@ -848,7 +849,7 @@ def estimate(**kw: object) -> Estimate:
     base: dict[str, object] = {"model": "claude-sonnet-5-5", "input_tokens": 2400,
                                "input_only_vnd": 122.4, "worst_call_vnd": 4207.3,
                                "cap_vnd": 20_000.0, "max_attempts": 3}  # fmt: skip
-    return Estimate(**{**base, **kw})  # type: ignore[arg-type]
+    return Estimate(**{**base, **kw})
 
 
 def draft_job(**kw: object) -> NewJob:
