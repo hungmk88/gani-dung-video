@@ -1,4 +1,4 @@
-# API web cục bộ — hợp đồng kỹ thuật (Giai đoạn 6b)
+# API web cục bộ — hợp đồng kỹ thuật (Giai đoạn 6b + 6c)
 
 Tài liệu này là **hợp đồng** giữa backend (`gani-dung-video`) và giao diện (nhánh
 `feature/gd6-frontend-preview`). Backend không sửa gì ở nhánh giao diện; phía giao diện viết
@@ -28,13 +28,14 @@ nằm ở `config/rules.json` → `api`.
   dẫn tuyệt đối. Giao diện lấy mã từ `GET /api/projects`, không tự ghép.
 - **Không có tải footage lên qua HTTP.** Footage nằm sẵn trên máy dựng, trong một thư mục
   thuộc `GANI_DV_ALLOWED_ROOTS`.
-- Mỗi **job** là một bản nháp ở một kích thước (`preview` 540p hoặc `final` 1080×1920).
-  Server không gộp; giao diện tự gộp theo `(project_id, draft)` nếu muốn.
+- Mỗi job có `kind`: `render` (một bản nháp ở một kích thước, `preview` 540p hoặc `final`
+  1080×1920), `analyze` (phân tích footage) hoặc `draft` (kịch bản, có bước duyệt chi phí). Server
+  không gộp; giao diện tự gộp theo `(project_id, draft)` nếu muốn, hoặc theo `pipeline_id` (mục 4b).
 
 ### Lỗi
 
 Luôn có dạng `{"error": {"code": "...", "message": "tiếng Việt"}}`, không kèm đường dẫn hay
-stack trace.
+stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, `job_id` ở `pipeline_active`).
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
@@ -43,7 +44,9 @@ stack trace.
 | 404 | `not_found` | Không có dự án / job / tệp / đường dẫn |
 | 405 | `method_not_allowed` | Sai phương thức (kèm header `Allow`) |
 | 409 | `not_ready` | Dự án chưa có `plan.json` hoặc `drafts.json`/`speech_drafts.json` — chạy `plan`/`pick`/`draft` trước |
-| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt |
+| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt; duyệt chi phí một job không phải `draft` |
+| 409 | `pipeline_active` | Dự án đã có job đang chờ/chạy/chờ duyệt (kèm `pipeline_id`, `job_id`) |
+| 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
 | 411 | `can_content_length` | Thân dùng `Transfer-Encoding` (không hỗ trợ) |
 | 413 | `than_qua_lon` | Thân > `api.max_body_bytes` (64KB) |
 | 415 | `content_type_no` | `Content-Type` có mặt nhưng không phải `application/json`, hoặc có thân mà thiếu `Content-Type` |
@@ -54,11 +57,14 @@ stack trace.
 
 | Phương thức + đường dẫn | Việc | Trả về |
 |---|---|---|
-| `GET /api/health` | Daemon online không (nhịp tim < 15 giây), số job theo trạng thái | `HealthView` |
+| `GET /api/health` | Daemon online không (nhịp tim < 15 giây), số job theo trạng thái, có khóa API không, ngân sách ngày | `HealthView` |
 | `GET /api/projects` | Dự án trong allow-list và đã có gì | `ProjectView[]` |
 | `POST /api/preflight` | Chạy đúng `preflight_check` của Python (nguồn sự thật duy nhất) | Kết quả preflight (`valid`, `errors`, `warnings`, `adjustments`, …) |
 | `POST /api/jobs` | Đưa bản dựng vào hàng đợi | `201` + `JobView[]` |
-| `GET /api/jobs?status=&project_id=&limit=` | Danh sách, mới nhất trước (`limit` 1–200, mặc định 50) | `JobView[]` |
+| `POST /api/pipelines` | Ghi `options.json` + tạo chuỗi `analyze → draft → render` (mục 4b) | `201` + `PipelineView` |
+| `GET /api/pipelines/{id}` | Các job của một pipeline và trạng thái chung | `PipelineView` |
+| `POST /api/jobs/{id}/approve` | Duyệt chi phí gọi Claude của job `draft` đang chờ | `JobView` |
+| `GET /api/jobs?status=&project_id=&kind=&limit=` | Danh sách mọi loại job, mới nhất trước (`limit` 1–200, mặc định 50; `kind` = `render`\|`draft`\|`analyze`, mặc định không lọc) | `JobView[]` |
 | `GET /api/jobs/{id}` | Chi tiết kèm 200 dòng console cuối | `JobDetail` |
 | `GET /api/jobs/{id}/events?after=N` | Dòng console có `id > N` (con trỏ) | `EventView[]` |
 | `POST /api/jobs/{id}/cancel` | Chờ thì hủy ngay; đang chạy thì gửi cờ dừng | `JobView` |
@@ -101,8 +107,11 @@ từ `plan.json` của dự án, không gửi lại.
   "daemon_online": false,
   "daemon_pid": null,
   "daemon_stopping": null,
-  "jobs": {"queued": 0, "processing": 0, "completed": 1, "failed": 0, "cancelled": 0},
-  "allowed_roots_configured": true
+  "jobs": {"queued": 0, "processing": 0, "awaiting_approval": 0, "completed": 1, "failed": 0,
+           "cancelled": 0},
+  "allowed_roots_configured": true,
+  "ai_key_configured": false,
+  "budget": {"limit_vnd": null, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0}
 }
 ```
 
@@ -160,6 +169,186 @@ từ `plan.json` của dự án, không gửi lại.
 `options` là `plan.json → options` nguyên văn (khóa tiếng Anh: `style`, `purpose`,
 `duration`, `drafts`, `music`).
 
+## 4b. Pipeline, duyệt chi phí và các loại job (Giai đoạn 6c)
+
+Từ 6c, API trả **mọi loại job** (`kind`): `analyze` (phân tích footage: kiểm kê, Whisper, cắt
+cảnh, CLIP), `draft` (kịch bản: `plan` → `pick` → ước tính chi phí → **chờ duyệt** → gọi Claude)
+và `render` (như cũ). Một lần bấm "Chạy" của Wizard tạo cả chuỗi bằng `POST /api/pipelines`.
+
+### Luồng Wizard
+
+1. `POST /api/preflight` với các tùy chọn (như cũ) — hiện lỗi/cảnh báo ngay trên form.
+2. `POST /api/pipelines` → server chạy lại preflight (không tin client), ghi
+   `<dự án>/edit/options.json` (nguyên tử: ghi tệp tạm rồi đổi tên) và tạo **một chuỗi job trong
+   một giao dịch**: `analyze → draft → render` (mỗi bản A/B/C một job `render`, tất cả chờ job
+   `draft`). Không có gì được ghi nếu preflight chặn hoặc dự án đang bận.
+3. Polling `GET /api/pipelines/{id}` (hoặc `GET /api/jobs?kind=…`). Daemon chạy tuần tự:
+   phân tích (có thể vài chục phút trên máy yếu; nếu footage không đổi thì dùng lại kết quả)
+   → `draft` pha miễn phí (plan, pick, **ước tính chi phí**).
+4. Job `draft` dừng ở `status = "awaiting_approval"` (`frontend_status` cũng là
+   `"awaiting_approval"`, `needs_approval = true`). Giao diện mở hộp thoại duyệt chi phí, hiện
+   `cost.worst_call_vnd` (một lần gọi tối đa), `cost.cap_vnd` (trần cho độ dài video này) và
+   `approval_expires_at` (hết hạn duyệt, mặc định 24 giờ).
+5. `POST /api/jobs/{id}/approve` với `{"max_vnd", "estimate_vnd"}`. `estimate_vnd` phải **lặp
+   lại đúng ước tính người dùng vừa thấy** (làm tròn đồng); lệch thì bị từ chối (409) — nghĩa là
+   ước tính đã đổi hoặc nhập sai. Daemon còn **tính lại ước tính** trước khi gọi Claude: đổi số
+   thì job quay về `awaiting_approval` với số mới và **không tốn đồng nào**.
+6. Sau khi duyệt và gọi xong, các job `render` tự chạy.
+
+Không duyệt trong hạn → job `draft` tự hủy (`error_msg` "Hết hạn duyệt chi phí"), các job
+`render` chờ nó bị hủy theo. Máy chưa có `ANTHROPIC_API_KEY` → job `draft` báo lỗi **trước khi
+gọi**, chi phí 0đ; `GET /api/health` cho biết qua `ai_key_configured` (chỉ có/không, không bao
+giờ trả giá trị khóa).
+
+### `POST /api/pipelines`
+
+```json
+{
+  "project_id": "0/Xuong GANI",
+  "options": {
+    "phong_cach": "ke_chuyen_nghe",
+    "muc_dich": "gioi_thieu_xuong",
+    "do_dai_giay": 15,
+    "so_ban_nhap": 2,
+    "nhac": "khong_nhac"
+  },
+  "draft": "all",
+  "final": false,
+  "no_asr": false,
+  "force_analyze": false
+}
+```
+
+- `options`: đúng khuôn của `POST /api/preflight` (khóa tiếng Việt như `yeu-cau.md`).
+- `draft`: `"A"`, `"B"`, `"C"` hoặc `"all"` — chỉ định bản nào được dựng; số bản kịch bản
+  luôn theo `so_ban_nhap`. Bản không có trong `options` → 400.
+- `final`, `no_asr`: như `POST /api/jobs`. `force_analyze`: phân tích lại dù footage không đổi.
+- Trả `201` + `PipelineView` (rút gọn):
+
+```json
+{
+  "id": 1,
+  "project_id": "0/Xuong GANI",
+  "project_name": "Xuong GANI",
+  "status": "queued",
+  "needs_approval": false,
+  "jobs": [
+    {"id": 1, "pipeline_id": 1, "depends_on": null, "kind": "analyze", "draft": "",
+     "status": "queued", "frontend_status": "queued", "needs_approval": false,
+     "approval_expires_at": null, "cost": null},
+    {"id": 2, "pipeline_id": 1, "depends_on": 1, "kind": "draft", "draft": "",
+     "status": "queued", "frontend_status": "queued", "needs_approval": false,
+     "approval_expires_at": null, "cost": null},
+    {"id": 3, "pipeline_id": 1, "depends_on": 2, "kind": "render", "draft": "A",
+     "status": "queued", "frontend_status": "queued", "needs_approval": false,
+     "approval_expires_at": null, "cost": null},
+    {"id": 4, "pipeline_id": 1, "depends_on": 2, "kind": "render", "draft": "B",
+     "status": "queued", "frontend_status": "queued", "needs_approval": false,
+     "approval_expires_at": null, "cost": null}
+  ]
+}
+```
+
+`PipelineView.status` (từ mọi job của chuỗi, theo từ vựng của giao diện): `error` nếu có job
+lỗi/hủy → `awaiting_approval` nếu đang chờ duyệt → `running` (đang chạy, hoặc đang ở giữa hai job) →
+`queued` (chưa job nào chạy) → `qa_review` (đã xong nhưng có bản QC chưa đạt) → `done`.
+
+**Một dự án chỉ có một pipeline hoạt động.** Nếu dự án đã có job đang chờ, đang chạy hoặc chờ
+duyệt (bất kể loại), server trả **409** và **không ghi gì** (kể cả `options.json`):
+
+```json
+{
+  "error": {
+    "code": "pipeline_active",
+    "message": "Dự án 'Xuong GANI' đang có job #1 chạy hoặc chờ (pipeline #1). Chờ nó xong hoặc hủy nó rồi tạo lại.",
+    "pipeline_id": 1,
+    "job_id": 1
+  }
+}
+```
+
+`pipeline_id` là `null` khi job đang chạy là một job dựng lẻ (`POST /api/jobs`). Muốn đổi cấu
+hình: `POST /api/jobs/{id}/cancel` cho các job cũ (job đang chờ bị hủy ngay; job phụ thuộc vào
+nó bị hủy theo), rồi tạo lại.
+
+### `GET /api/pipelines/{id}`
+
+Trả `PipelineView` như trên (các job theo thứ tự tạo). `404` nếu không có pipeline, hoặc
+thư mục dự án của nó nằm ngoài `GANI_DV_ALLOWED_ROOTS`.
+
+### Job `draft` đang chờ duyệt
+
+`GET /api/jobs/{id}` (rút gọn):
+
+```json
+{
+  "id": 2,
+  "pipeline_id": 1,
+  "depends_on": 1,
+  "kind": "draft",
+  "draft": "",
+  "title": "Xuong GANI — kịch bản",
+  "status": "awaiting_approval",
+  "frontend_status": "awaiting_approval",
+  "stage": "cho_duyet",
+  "needs_approval": true,
+  "approval_expires_at": "2026-09-30T09:31:00Z",
+  "cost": {
+    "input_tokens": 1678,
+    "worst_call_vnd": 4165.58,
+    "cap_vnd": 20000.0,
+    "approved_vnd": null,
+    "spent_vnd": null
+  }
+}
+```
+
+`cost` chỉ có ở job `draft` đã có ước tính (còn lại là `null`). `worst_call_vnd` là một lần gọi
+Claude ở trường hợp xấu nhất (job có thể gọi tối đa vài vòng nhưng luôn dưới `cap_vnd` và dưới
+`approved_vnd`); `spent_vnd` là số thật đọc lại từ `edit/ai_log.jsonl` khi job kết thúc.
+
+### `POST /api/jobs/{id}/approve`
+
+```json
+{"max_vnd": 6000, "estimate_vnd": 4166}
+```
+
+- `max_vnd`: số đồng **tối đa** cho phép tiêu cho job này (> 0, hữu hạn). Không được nhỏ hơn một
+  lần gọi tệ nhất, không được vượt `cost.cap_vnd`.
+- `estimate_vnd`: ước tính một lần gọi mà người dùng đã thấy (phải khớp số job đang giữ).
+- Trả `200` + `JobView` của job (giờ `status = "queued"`, `cost.approved_vnd = 6000.0`).
+- `400 bad_request`: thiếu trường, số âm/không hữu hạn/không phải số, trường thừa.
+- `404`: không có job. `409 conflict`: job không phải job `draft`.
+- `409 approval_refused`: job không còn chờ duyệt, đã hết hạn duyệt, ước tính lệch, `max_vnd`
+  quá thấp/quá cao, hoặc vượt **hạn mức ngày** (`daily_budget_vnd` trong `rules.json`: đã tiêu 24
+  giờ + đã đặt cọc + số duyệt mới). Thông báo tiếng Việt nói rõ lý do; không có gì thay đổi:
+
+```json
+{
+  "error": {
+    "code": "approval_refused",
+    "message": "Ước tính bạn nhập (3.000đ) không khớp ước tính hiện tại của job (4.166đ): ước tính đã đổi hoặc nhập sai; xem lại rồi duyệt."
+  }
+}
+```
+
+### Hành vi cần biết
+
+- **Thử lại từng job** (`POST /api/jobs/{id}/retry`): không có thử lại cả pipeline. Job phân tích
+  lỗi thì các job sau nó bị hủy dây chuyền; thử lại job phân tích **không** tự khôi phục các job
+  đã hủy — giao diện thử lại từng job theo thứ tự (`analyze`, `draft`, `render`). Thử lại job
+  `draft` luôn quay về bước ước tính và **cần duyệt lại chi phí**; job `draft` không bao giờ tự
+  thử lại.
+- **Hủy**: job đang chờ hủy ngay và kéo theo các job chờ nó; job đang chạy nhận cờ dừng. Hủy job
+  `draft` đang chờ duyệt không tốn đồng nào.
+- `GET /api/jobs` mặc định **không lọc** theo loại; `?kind=render|draft|analyze` để lọc. Thẻ
+  job `analyze`/`draft` có `draft = ""`, `size = "preview"` (giữ nguyên hợp đồng, giao diện dựa
+  vào `kind`). `steps` của các job này cho cùng 8 `id`: job `analyze` chạy trên `nhan_dang`, job
+  `draft` chạy trên `plan_compile` → `pick` → `ai_draft`; bước ở trạng thái chờ duyệt có
+  `detail = "Chờ duyệt chi phí"`.
+- `GET /api/health` có thêm `ai_key_configured` và `budget`: `limit_vnd` (`null` = không giới hạn
+  ngày), `spent_24h_vnd`, `reserved_vnd` (đã duyệt nhưng chưa tiêu).
+
 ## 5. Ánh xạ sang `RenderJob` của frontend
 
 ### Trạng thái (`frontend_status` đã tính sẵn)
@@ -167,6 +356,7 @@ từ `plan.json` của dự án, không gửi lại.
 | `status` (SQLite) | `result` | `JobStatus` của frontend |
 |---|---|---|
 | `queued` | — | `queued` |
+| `awaiting_approval` | — | `awaiting_approval` (giá trị **mới**: hiện hộp thoại duyệt chi phí) |
 | `processing` | — | `running` |
 | `completed` | `passed` | `done` |
 | `completed` | `qc_failed` | `qa_review` |
@@ -209,9 +399,10 @@ là `final`). Bước lỗi kèm `detail` là thông báo lỗi.
    dữ liệu thật**: kết quả V1–V9 không được lưu theo từng kiểm tra (chỉ còn ghi chú V3/V6 trong
    `drafts.json`). API chỉ trả kiểm tra kỹ thuật T1–T8. Giao diện nên hiện phần V ở dạng "chưa
    có dữ liệu" thay vì bịa số.
-2. **Wizard "tải footage rồi chạy cả 8 bước" chưa dùng được với backend thật** cho tới
-   Giai đoạn 6c (job `analyze`, `draft`). Hiện giao diện chọn một **dự án đã sẵn sàng** và
-   xếp job dựng; các bước trước `render` chỉ hiển thị trạng thái.
+2. **Wizard chạy cả chuỗi** dùng được từ 6c (`POST /api/pipelines`, mục 4b), nhưng footage vẫn
+   phải nằm sẵn trên máy dựng (không tải lên qua HTTP). `frontend_status = "awaiting_approval"` là
+   giá trị **mới** — giao diện phải xử lý (mở hộp thoại duyệt chi phí), backend không sửa nhánh
+   giao diện.
 3. `cover.jpg` và `phude.srt` dùng chung một tên cho mọi lần dựng của cùng một bản nháp: nếu
    dựng lại (nháp rồi cuối), chúng là của lần dựng **gần nhất**.
 4. `qc_report.json` cũng dùng chung theo bản nháp: API chỉ trả `qa` nếu tệp được ghi trong

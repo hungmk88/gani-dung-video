@@ -20,6 +20,7 @@ import pytest
 from gani_dung_video import cli
 from gani_dung_video.application import api_service
 from gani_dung_video.application.api_service import ApiContext
+from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.infrastructure.config_files import load_rules
@@ -598,3 +599,149 @@ def test_cli_serve_exits_2_when_the_port_is_taken(
 ) -> None:
     monkeypatch.setenv("GANI_DV_QUEUE_DIR", str(tmp_path / "qdir"))
     assert cli.main(["serve", "--port", str(api.port)]) == 2
+
+
+# ─────────────── 6c-3: pipelines, approval and job kinds over real HTTP ───────────────
+
+WIZARD = {"phong_cach": "ke_chuyen_nghe", "muc_dich": "gioi_thieu_xuong", "do_dai_giay": 15,
+          "so_ban_nhap": 2, "nhac": "khong_nhac"}  # fmt: skip
+
+
+def new_pipeline(api: Api, name: str = "fresh", **body: Any) -> dict[str, Any]:
+    (Path(api.ctx.settings.gani_dv_allowed_roots or "") / name).mkdir(exist_ok=True)
+    status, data = api.json(
+        "POST", "/api/pipelines", {"project_id": f"0/{name}", "options": WIZARD, **body}
+    )
+    assert status == 201, data
+    return dict(data)
+
+
+def hold_draft(api: Api, view: dict[str, Any]) -> int:
+    analyze, draft = view["jobs"][0]["id"], view["jobs"][1]["id"]
+    assert api.ctx.db.claim(time.time(), 1).id == analyze  # type: ignore[union-attr]
+    api.ctx.db.finish(analyze, time.time(), "completed", "passed", 0, None, None)
+    assert api.ctx.db.claim(time.time(), 1).id == draft  # type: ignore[union-attr]
+    est = Estimate(model="m", input_tokens=1678, input_only_vnd=85.58, worst_call_vnd=4165.58,
+                   cap_vnd=20000.0, max_attempts=3)  # fmt: skip
+    api.ctx.db.hold_for_approval(draft, time.time(), est, 86_400.0)
+    return draft
+
+
+def test_posting_a_pipeline_answers_201_with_the_whole_chain(api: Api) -> None:
+    view = new_pipeline(api)
+    assert [j["kind"] for j in view["jobs"]] == ["analyze", "draft", "render", "render"]
+    assert view["status"] == "queued" and view["needs_approval"] is False
+    got, again = api.json("GET", f"/api/pipelines/{view['id']}")
+    assert got == 200 and [j["id"] for j in again["jobs"]] == [j["id"] for j in view["jobs"]]
+
+
+def test_a_second_pipeline_on_the_same_project_is_409_with_the_running_pipeline_id(
+    api: Api,
+) -> None:
+    first = new_pipeline(api)
+    status, body = api.json("POST", "/api/pipelines", {"project_id": "0/fresh", "options": WIZARD})
+    assert status == 409 and body["error"]["code"] == "pipeline_active"
+    assert body["error"]["pipeline_id"] == first["id"]
+    assert body["error"]["job_id"] == first["jobs"][0]["id"]
+    assert "message" in body["error"] and "\\" not in body["error"]["message"]
+
+
+def test_bad_pipeline_requests_are_400_and_write_nothing(api: Api) -> None:
+    root = Path(api.ctx.settings.gani_dv_allowed_roots or "")
+    (root / "fresh").mkdir()
+    for body in ({"project_id": "0/fresh"}, {"project_id": "0/fresh", "options": []},
+                 {"project_id": "0/fresh", "options": {**WIZARD, "phong_cach": "sai"}},
+                 {"project_id": "0/fresh", "options": WIZARD, "draft": "Z"},
+                 {"project_id": "0/fresh", "options": WIZARD, "extra": 1}):  # fmt: skip
+        status, data = api.json("POST", "/api/pipelines", body)
+        assert status == 400 and data["error"]["code"] == "bad_request", body
+    assert not (root / "fresh" / "edit").exists() and api.ctx.db.list_jobs() == []
+
+
+def test_pipeline_routes_keep_the_json_only_rules(api: Api) -> None:
+    (Path(api.ctx.settings.gani_dv_allowed_roots or "") / "fresh").mkdir()
+    status, _h, _b = api.call("POST", "/api/pipelines", raw=b"project_id=0/fresh",
+                              headers={"Content-Type": "text/plain"})  # fmt: skip
+    assert status == 415
+    status, _h, _b = api.call(
+        "POST", "/api/pipelines", raw=b"x" * (RULES["api"]["max_body_bytes"] + 10)
+    )
+    assert status == 413
+    status, _h, _b = api.call("GET", "/api/pipelines")
+    assert status in (404, 405)
+    body = {"project_id": "0/fresh", "options": WIZARD}
+    status, _h, _b = api.call("POST", "/api/pipelines", body,
+                              headers={"Origin": "http://evil.com"})  # fmt: skip
+    assert status == 403
+
+
+def test_an_unknown_pipeline_is_404(api: Api) -> None:
+    status, body = api.json("GET", "/api/pipelines/999")
+    assert status == 404 and body["error"]["code"] == "not_found"
+
+
+def test_the_waiting_draft_job_shows_its_cost_over_http(api: Api) -> None:
+    draft = hold_draft(api, new_pipeline(api))
+    status, job = api.json("GET", f"/api/jobs/{draft}")
+    assert status == 200 and job["frontend_status"] == "awaiting_approval"
+    assert job["needs_approval"] is True and job["cost"]["worst_call_vnd"] == 4165.58
+    assert job["cost"]["approved_vnd"] is None and job["approval_expires_at"].endswith("Z")
+
+
+def test_approving_over_http(api: Api) -> None:
+    draft = hold_draft(api, new_pipeline(api))
+    status, job = api.json(
+        "POST", f"/api/jobs/{draft}/approve", {"max_vnd": 6000, "estimate_vnd": 4166}
+    )
+    assert status == 200 and job["status"] == "queued" and job["cost"]["approved_vnd"] == 6000.0
+
+
+def test_a_refused_approval_is_409_and_bad_numbers_are_400(api: Api) -> None:
+    draft = hold_draft(api, new_pipeline(api))
+    status, body = api.json(
+        "POST", f"/api/jobs/{draft}/approve", {"max_vnd": 6000, "estimate_vnd": 100}
+    )
+    assert status == 409 and body["error"]["code"] == "approval_refused"
+    for bad in ({"max_vnd": 6000}, {"max_vnd": -1, "estimate_vnd": 4166},
+                {"max_vnd": "6000", "estimate_vnd": 4166}, {}):  # fmt: skip
+        status, body = api.json("POST", f"/api/jobs/{draft}/approve", bad)
+        assert status == 400 and body["error"]["code"] == "bad_request", bad
+    assert api.ctx.db.get(draft).status == "awaiting_approval"  # type: ignore[union-attr]
+
+
+def test_approve_is_post_only_and_unknown_jobs_are_404(api: Api) -> None:
+    status, _h, _b = api.call("GET", "/api/jobs/1/approve")
+    assert status == 405
+    status, body = api.json("POST", "/api/jobs/999/approve", {"max_vnd": 6000, "estimate_vnd": 1})
+    assert status == 404 and body["error"]["code"] == "not_found"
+
+
+def test_the_job_list_takes_a_kind_filter(api: Api) -> None:
+    new_pipeline(api)
+    status, every = api.json("GET", "/api/jobs")
+    assert status == 200 and len(every) == 4
+    status, drafts = api.json("GET", "/api/jobs?kind=draft")
+    assert status == 200 and [j["kind"] for j in drafts] == ["draft"]
+    status, body = api.json("GET", "/api/jobs?kind=video")
+    assert status == 400 and body["error"]["code"] == "bad_request"
+
+
+def test_health_tells_the_ui_whether_a_key_exists_but_never_shows_it(api: Api) -> None:
+    status, h = api.json("GET", "/api/health")
+    assert status == 200 and h["ai_key_configured"] is False
+    assert h["budget"] == {"limit_vnd": None, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0}
+
+
+def test_a_refused_body_is_read_out_before_closing_so_the_answer_is_not_lost(api: Api) -> None:
+    """Closing a socket that still holds unread bytes makes the OS reset the connection, and the
+    client loses the 415 (seen on Windows under load). The server lets the client finish first."""
+    body = b"x" * 40_000
+    for _ in range(40):
+        status, _h, data = api.call(
+            "POST",
+            "/api/pipelines",
+            raw=body,
+            headers={"Content-Type": "text/plain"},
+            json_type=False,
+        )
+        assert status == 415 and json.loads(data)["error"]["code"] == "content_type_no"

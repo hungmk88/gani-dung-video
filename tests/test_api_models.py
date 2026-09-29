@@ -7,8 +7,13 @@ from pydantic import ValidationError
 
 from gani_dung_video.application.render_service import _video_name
 from gani_dung_video.domain.api_models import (
+    ApproveRequest,
     Artifacts,
+    CostView,
+    HealthView,
     JobCreate,
+    JobView,
+    PipelineCreate,
     PreflightRequest,
     RunInfo,
     derive_steps,
@@ -18,6 +23,7 @@ from gani_dung_video.domain.api_models import (
     make_project_id,
     media_file_name,
     parse_project_id,
+    pipeline_status,
     qa_checks,
 )
 from gani_dung_video.domain.qc import Finding
@@ -250,3 +256,145 @@ def test_a_finished_step_carries_no_stale_stage_text() -> None:
     running = derive_steps(ALL, RunInfo(size="preview", status="processing", result=None,
                                         stage="dung", error_msg=None))  # fmt: skip
     assert next(s for s in running if s.id == "render_preview").detail == "dung"
+
+
+# ─────────────── 6c-3: pipelines, approval, cost ───────────────
+
+OPTS = {"phong_cach": "ke_chuyen_nghe", "muc_dich": "gioi_thieu_xuong", "do_dai_giay": 15,
+        "so_ban_nhap": 2, "nhac": "khong_nhac"}  # fmt: skip
+
+
+def test_pipeline_create_defaults_and_normalisation() -> None:
+    p = PipelineCreate(project_id="0/x", options=OPTS)
+    assert (p.draft, p.final, p.no_asr, p.force_analyze) == ("all", False, False, False)
+    assert PipelineCreate(project_id="0/x", options=OPTS, draft="c").draft == "C"
+
+
+@pytest.mark.parametrize("body", [
+    {"project_id": "0/x"},  # no options
+    {"options": OPTS},  # no project
+    {"project_id": "0/../x", "options": OPTS},
+    {"project_id": "0/x", "options": "phong_cach: x"},
+    {"project_id": "0/x", "options": [OPTS]},
+    {"project_id": "0/x", "options": OPTS, "draft": "D"},
+    {"project_id": "0/x", "options": OPTS, "force_analyze": "yes"},
+    {"project_id": "0/x", "options": OPTS, "options_file": "x"},  # unknown field
+])  # fmt: skip
+def test_bad_pipeline_requests_are_refused(body: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        PipelineCreate.model_validate(body)
+
+
+def test_an_approval_needs_two_positive_finite_numbers() -> None:
+    a = ApproveRequest(max_vnd=6000, estimate_vnd=4207.3)
+    assert (a.max_vnd, a.estimate_vnd) == (6000.0, 4207.3)
+
+
+@pytest.mark.parametrize("body", [
+    {"max_vnd": 6000},  # the estimate must be echoed
+    {"estimate_vnd": 4207},
+    {"max_vnd": 0, "estimate_vnd": 4207},
+    {"max_vnd": -5, "estimate_vnd": 4207},
+    {"max_vnd": float("nan"), "estimate_vnd": 4207},
+    {"max_vnd": float("inf"), "estimate_vnd": 4207},
+    {"max_vnd": 6000, "estimate_vnd": float("nan")},
+    {"max_vnd": 6000, "estimate_vnd": -1},
+    {"max_vnd": "6000", "estimate_vnd": 4207},
+    {"max_vnd": True, "estimate_vnd": 4207},
+    {"max_vnd": 6000, "estimate_vnd": 4207, "note": "x"},
+])  # fmt: skip
+def test_bad_approvals_are_refused_before_any_logic(body: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        ApproveRequest.model_validate(body)
+
+
+@pytest.mark.parametrize(
+    "jobs,expected",
+    [([], "queued"),
+     ([("queued", None)] * 3, "queued"),
+     ([("completed", "passed"), ("queued", None)], "running"),  # between two jobs
+     ([("processing", None), ("queued", None)], "running"),
+     ([("awaiting_approval", None), ("queued", None)], "awaiting_approval"),
+     ([("completed", "passed")] * 2, "done"),
+     ([("completed", "passed"), ("completed", "qc_failed")], "qa_review"),
+     ([("failed", None), ("cancelled", None)], "error"),
+     ([("completed", "passed"), ("cancelled", None), ("queued", None)], "error"),
+     ([("completed", "qc_failed"), ("processing", None)], "running")],
+)  # fmt: skip
+def test_a_pipeline_status_is_read_from_its_jobs(jobs: list[tuple[str, str | None]],
+                                                 expected: str) -> None:  # fmt: skip
+    assert pipeline_status(jobs) == expected
+
+
+def kind_steps(art: Artifacts, kind: str, **kw: object) -> dict[str, str]:
+    base: dict[str, object] = {"size": "preview", "status": "queued", "result": None,
+                               "stage": None, "error_msg": None, "kind": kind}  # fmt: skip
+    got = derive_steps(art, RunInfo(**{**base, **kw}))  # type: ignore[arg-type]
+    return {s.id: s.status for s in got}
+
+
+NOTHING = Artifacts(inventory=False, scenes=False, speech=False, plan=False, pick=False,
+                    drafts=False, preview_video=False)  # fmt: skip
+
+
+def test_a_running_analysis_sits_on_the_recognition_step_and_never_touches_render_steps() -> None:
+    art = NOTHING.model_copy(update={"inventory": True})
+    got = kind_steps(art, "analyze", status="processing", stage="transcribe")
+    assert got["inventory"] == "done" and got["nhan_dang"] == "running"
+    later = ("plan_compile", "pick", "ai_draft", "render_preview", "qc_verify", "final_export")
+    assert {got[k] for k in later} == {"queued"}
+
+
+def test_an_analysis_that_fails_marks_the_step_it_was_in() -> None:
+    art = NOTHING.model_copy(update={"inventory": True})
+    got = derive_steps(art, RunInfo(size="preview", status="failed", result=None, stage="scenes",
+                                    error_msg="Hết bộ nhớ", kind="analyze"))  # fmt: skip
+    by = {s.id: s for s in got}
+    assert by["nhan_dang"].status == "error" and by["nhan_dang"].detail == "Hết bộ nhớ"
+    assert by["inventory"].status == "done"
+
+
+def test_a_running_draft_job_walks_plan_pick_then_the_ai_step() -> None:
+    art = NOTHING.model_copy(update={"inventory": True, "scenes": True, "speech": True})
+    assert kind_steps(art, "draft", status="processing", stage="plan")["plan_compile"] == "running"
+    assert kind_steps(art, "draft", status="processing", stage="pick")["pick"] == "running"
+    for stage in ("phrases", "estimate", "draft"):
+        assert kind_steps(art, "draft", status="processing", stage=stage)["ai_draft"] == "running"
+
+
+def test_a_draft_waiting_for_approval_says_so_and_is_not_running() -> None:
+    art = NOTHING.model_copy(update={"inventory": True, "plan": True, "pick": True})
+    got = derive_steps(art, RunInfo(size="preview", status="awaiting_approval", result=None,
+                                    stage="cho_duyet", error_msg=None, kind="draft"))  # fmt: skip
+    by = {s.id: s for s in got}
+    assert by["ai_draft"].status == "queued" and "duyệt" in (by["ai_draft"].detail or "")
+    assert by["plan_compile"].status == "done" and by["pick"].status == "done"
+
+
+def test_a_finished_draft_job_has_the_ai_step_done_and_no_render_yet() -> None:
+    art = NOTHING.model_copy(update={"plan": True, "pick": True, "drafts": True})
+    got = kind_steps(art, "draft", status="completed", result="passed")
+    assert got["ai_draft"] == "done" and got["render_preview"] == "queued"
+
+
+def test_a_cancelled_draft_errors_on_its_current_step_with_the_reason() -> None:
+    got = derive_steps(NOTHING, RunInfo(size="preview", status="cancelled", result=None,
+                                        stage="cho_duyet", error_msg="Hết hạn duyệt chi phí",
+                                        kind="draft"))  # fmt: skip
+    by = {s.id: s for s in got}
+    assert by["ai_draft"].status == "error" and by["ai_draft"].detail == "Hết hạn duyệt chi phí"
+
+
+def test_render_steps_are_unchanged_by_the_new_kind_field() -> None:
+    got = derive_steps(ALL, RunInfo(size="preview", status="processing", result=None, stage="dung",
+                                    error_msg=None))  # fmt: skip
+    assert {s.id: s.status for s in got}["render_preview"] == "running"
+
+
+def test_the_cost_block_and_the_new_job_fields_are_part_of_the_view() -> None:
+    cost = CostView(input_tokens=1678, worst_call_vnd=4165.58, cap_vnd=20000.0, approved_vnd=None,
+                    spent_vnd=None)  # fmt: skip
+    assert cost.model_dump()["approved_vnd"] is None
+    wanted = {"pipeline_id", "depends_on", "needs_approval", "approval_expires_at", "cost"}
+    assert wanted <= set(JobView.model_fields)
+    assert {"ai_key_configured", "budget"} <= set(HealthView.model_fields)

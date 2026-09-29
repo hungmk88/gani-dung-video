@@ -9,7 +9,7 @@ never take the same job. All values go in as query parameters, never spliced int
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -132,6 +132,14 @@ class NewJob(BaseModel):
     pipeline_id: int | None = None
     depends_on: int | None = None  # job that must complete (passed) first
     force: bool = False  # analyze: ignore the analysis stamp
+
+
+class FolderBusyError(QueueDbError):
+    """A pipeline was refused because the folder already has an active job."""
+
+    def __init__(self, job_id: int, pipeline_id: int | None) -> None:
+        super().__init__(f"Thư mục đang có job #{job_id} chạy hoặc chờ.")
+        self.job_id, self.pipeline_id = job_id, pipeline_id
 
 
 class JobEvent(BaseModel):
@@ -316,22 +324,77 @@ class QueueDb:
 
     # ─────────────── jobs ───────────────
 
-    def enqueue(self, job: NewJob, now: float) -> int:
+    @staticmethod
+    def _insert(con: sqlite3.Connection, job: NewJob, now: float) -> int:
         priority = job.priority if job.priority is not None else KIND_PRIORITY[job.kind]
+        dep = job.depends_on
+        if dep is not None and con.execute("SELECT 1 FROM jobs WHERE id = ?",
+                                           (dep,)).fetchone() is None:  # fmt: skip
+            raise QueueDbError(f"Job phụ thuộc #{dep} không tồn tại.")
+        cur = con.execute(
+            "INSERT INTO jobs (kind, project_dir, options_file, draft, final, no_asr, "
+            "max_attempts, priority, created_at, pipeline_id, depends_on, force) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (job.kind, job.project_dir, job.options_file, job.draft, int(job.final),
+             int(job.no_asr), job.max_attempts, priority, now, job.pipeline_id,
+             job.depends_on, int(job.force)),
+        )  # fmt: skip
+        return int(cur.lastrowid or 0)
+
+    def enqueue(self, job: NewJob, now: float) -> int:
         with self._write() as con:
-            dep = job.depends_on
-            if dep is not None and con.execute("SELECT 1 FROM jobs WHERE id = ?",
-                                               (dep,)).fetchone() is None:  # fmt: skip
-                raise QueueDbError(f"Job phụ thuộc #{dep} không tồn tại.")
-            cur = con.execute(
-                "INSERT INTO jobs (kind, project_dir, options_file, draft, final, no_asr, "
-                "max_attempts, priority, created_at, pipeline_id, depends_on, force) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (job.kind, job.project_dir, job.options_file, job.draft, int(job.final),
-                 int(job.no_asr), job.max_attempts, priority, now, job.pipeline_id,
-                 job.depends_on, int(job.force)),
-            )  # fmt: skip
-            return int(cur.lastrowid or 0)
+            return self._insert(con, job, now)
+
+    def enqueue_chain(
+        self, steps: Sequence[tuple[NewJob, int | None]], now: float, *,
+        guard_folder: str | None = None, before_insert: Callable[[], None] | None = None,
+    ) -> tuple[int, list[int]]:  # fmt: skip
+        """Create a pipeline: every job of the chain in ONE transaction, or none at all.
+
+        Each step is (job, index of the earlier step it waits for, or None). All jobs get one
+        new pipeline id. With `guard_folder`, the chain is refused while any job of that
+        folder waits, runs or awaits approval. `before_insert` runs after that check and
+        inside the transaction (a caller writes the options file there: if it raises, nothing
+        is queued, and a refused chain never touches the file).
+
+        Returns:
+            (pipeline id, job ids in step order).
+
+        Raises:
+            QueueDbError: empty chain, or a step waiting for one that is not before it.
+            FolderBusyError: `guard_folder` has an active job.
+        """
+        if not steps:
+            raise QueueDbError("Chuỗi job rỗng.")
+        for i, (_, after) in enumerate(steps):
+            if after is not None and not 0 <= after < i:
+                raise QueueDbError(f"Bước {i + 1} của chuỗi phụ thuộc vào một bước không đứng "
+                                   "trước nó.")  # fmt: skip
+        with self._write() as con:
+            if guard_folder is not None:
+                busy = con.execute(
+                    "SELECT id, pipeline_id FROM jobs WHERE project_dir = ? AND status IN "
+                    "('queued', 'processing', 'awaiting_approval') ORDER BY id LIMIT 1",
+                    (guard_folder,)).fetchone()  # fmt: skip
+                if busy is not None:
+                    raise FolderBusyError(int(busy["id"]), busy["pipeline_id"])
+            if before_insert is not None:
+                before_insert()
+            pipeline = int(con.execute("SELECT COALESCE(MAX(pipeline_id), 0) + 1 FROM jobs"
+                                       ).fetchone()[0])  # fmt: skip
+            ids: list[int] = []
+            for job, after in steps:
+                link = {"pipeline_id": pipeline, "depends_on": ids[after] if after is not None
+                        else None}  # fmt: skip
+                ids.append(self._insert(con, job.model_copy(update=link), now))
+        return pipeline, ids
+
+    def jobs_of_pipeline(self, pipeline_id: int) -> list[Job]:
+        """The jobs of one pipeline in creation order (empty for an unknown pipeline)."""
+        with self._conn() as con:
+            rows = con.execute("SELECT * FROM jobs WHERE pipeline_id = ? ORDER BY id",
+                               (pipeline_id,)).fetchall()  # fmt: skip
+        return [_job(r) for r in rows]
 
     def next_pipeline_id(self) -> int:
         with self._conn() as con:

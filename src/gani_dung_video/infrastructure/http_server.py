@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import socket
 import sys
+import time
 from collections.abc import Callable, Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Literal, cast
@@ -24,9 +26,16 @@ from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application import api_service
 from gani_dung_video.application.api_service import ApiContext, ApiError
-from gani_dung_video.domain.api_models import JobCreate, PreflightRequest
+from gani_dung_video.domain.api_models import (
+    ApproveRequest,
+    JobCreate,
+    PipelineCreate,
+    PreflightRequest,
+)
 
 logger = logging.getLogger(__name__)
+_LINGER_BYTES = 1 << 20  # most unread body we will drain before closing a refused request
+_LINGER_SEC = 2.0
 _LOOPBACK = "127.0.0.1"
 _ID = r"(\d{1,9})"
 # (path pattern, methods, handler name); HEAD is served wherever GET is.
@@ -40,6 +49,9 @@ _ROUTES: list[tuple[re.Pattern[str], tuple[str, ...], str]] = [
         (rf"^/api/jobs/{_ID}/events$", ("GET",), "events"),
         (rf"^/api/jobs/{_ID}/cancel$", ("POST",), "cancel"),
         (rf"^/api/jobs/{_ID}/retry$", ("POST",), "retry"),
+        (rf"^/api/jobs/{_ID}/approve$", ("POST",), "approve"),
+        (r"^/api/pipelines$", ("POST",), "pipelines"),
+        (rf"^/api/pipelines/{_ID}$", ("GET",), "pipeline"),
         (r"^/api/preflight$", ("POST",), "preflight"),
         (rf"^/media/{_ID}/([a-z]{{1,10}})$", ("GET",), "media"),
     ]
@@ -213,8 +225,10 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
             self._send_bytes(status, data, "application/json; charset=utf-8", extra)
 
         def _send_error(self, status: int, code: str, message: str,
-                        extra: Sequence[tuple[str, str]] = ()) -> None:  # fmt: skip
-            self._send_json(status, {"error": {"code": code, "message": message}}, extra)
+                        extra: Sequence[tuple[str, str]] = (),
+                        fields: Mapping[str, Any] | None = None) -> None:  # fmt: skip
+            body = {"code": code, "message": message, **(fields or {})}
+            self._send_json(status, {"error": body}, extra)
 
         # ─────────────── the gate ───────────────
 
@@ -274,8 +288,10 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
                 if e.close:
                     self.close_connection = True  # an unread body must not poison the socket
                 self._send_error(e.status, e.code, e.message)
+                if e.close:
+                    self._linger()
             except ApiError as e:
-                self._send_error(e.status, e.code, e.message)
+                self._send_error(e.status, e.code, e.message, fields=e.extra)
             except (BrokenPipeError, ConnectionError, TimeoutError):
                 self.close_connection = True  # the client left; nothing to tell it
             except Exception:
@@ -285,6 +301,21 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
                 with_body = self.command != "HEAD"
                 if with_body:
                     self._send_error(500, "loi_may_chu", "Máy chủ gặp lỗi; xem log của lệnh serve.")
+
+        def _linger(self) -> None:
+            """Let the client finish sending before the socket closes. Closing with unread bytes
+            makes the OS reset the connection, and the client would lose the answer just sent."""
+            try:
+                self.connection.shutdown(socket.SHUT_WR)  # the answer is complete: say so
+                deadline, left = time.monotonic() + _LINGER_SEC, _LINGER_BYTES
+                while left > 0 and (wait := deadline - time.monotonic()) > 0:
+                    self.connection.settimeout(wait)
+                    data = self.connection.recv(min(65536, left))
+                    if not data:
+                        return
+                    left -= len(data)
+            except OSError:
+                return  # the client left or stalled: nothing more to do
 
         def _route(self) -> None:
             parts = urlsplit(self.path)
@@ -343,7 +374,7 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
                 raise ApiError(400, "bad_request", "limit phải là số từ 1 đến 200.")
             self._send_json(200, api_service.list_jobs(
                 ctx, self._one(query, "status"), self._one(query, "project_id"),
-                int(raw_limit) if raw_limit else 50))  # fmt: skip
+                int(raw_limit) if raw_limit else 50, self._one(query, "kind")))  # fmt: skip
 
         def _r_job(self, query: Mapping[str, list[str]], job_id: str) -> None:
             self._send_json(200, api_service.get_job(ctx, int(job_id)))
@@ -361,6 +392,23 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
         def _r_retry(self, query: Mapping[str, list[str]], job_id: str) -> None:
             self._read_json()
             self._send_json(200, api_service.retry(ctx, int(job_id)))
+
+        def _r_pipelines(self, query: Mapping[str, list[str]]) -> None:
+            try:
+                req = PipelineCreate.model_validate(self._read_json())
+            except ValidationError as e:
+                raise _HttpError(400, "bad_request", _validation_text(e)) from e
+            self._send_json(201, api_service.create_pipeline(ctx, req))
+
+        def _r_pipeline(self, query: Mapping[str, list[str]], pipeline_id: str) -> None:
+            self._send_json(200, api_service.get_pipeline(ctx, int(pipeline_id)))
+
+        def _r_approve(self, query: Mapping[str, list[str]], job_id: str) -> None:
+            try:
+                req = ApproveRequest.model_validate(self._read_json())
+            except ValidationError as e:
+                raise _HttpError(400, "bad_request", _validation_text(e)) from e
+            self._send_json(200, api_service.approve(ctx, int(job_id), req))
 
         def _r_preflight(self, query: Mapping[str, list[str]]) -> None:
             try:

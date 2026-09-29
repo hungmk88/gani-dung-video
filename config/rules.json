@@ -429,6 +429,7 @@
   "QUEUE_NO_PLAN": "Dự án chưa có edit/plan.json — chạy lệnh `plan` (rồi `pick`, `draft`) trước khi đưa vào hàng đợi.",
   "QUEUE_NO_DRAFTS": "Dự án chưa có edit/{file} — chạy lệnh `draft` trước khi đưa vào hàng đợi.",
   "QUEUE_NO_DEPENDENCY": "Không có job #{job} để chờ (`--after`).",
+  "PIPELINE_BUSY": "Dự án '{folder}' đang có job #{job} chạy hoặc chờ{pipeline}. Chờ nó xong hoặc hủy nó rồi tạo lại.",
   "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
   "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }

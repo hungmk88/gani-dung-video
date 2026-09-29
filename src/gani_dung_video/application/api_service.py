@@ -21,19 +21,29 @@ from pydantic import ValidationError
 
 from gani_dung_video.application.qc_service import QcReport
 from gani_dung_video.application.queue_service import (
+    ApprovalRefused,
     NotReadyError,
+    PipelineBusyError,
+    ai_key_configured,
     allowed_roots,
+    approve_job,
     cancel_job,
+    enqueue_pipeline,
     enqueue_project_render,
     retry_job,
 )
 from gani_dung_video.domain.api_models import (
+    ApproveRequest,
     Artifacts,
+    BudgetView,
+    CostView,
     EventView,
     HealthView,
     JobCreate,
     JobDetail,
     JobView,
+    PipelineCreate,
+    PipelineView,
     PreflightRequest,
     ProjectView,
     QaView,
@@ -45,9 +55,10 @@ from gani_dung_video.domain.api_models import (
     make_project_id,
     media_file_name,
     parse_project_id,
+    pipeline_status,
     qa_checks,
 )
-from gani_dung_video.domain.jobs import STATUSES, Job
+from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.infrastructure.config_files import ConfigError
@@ -55,6 +66,7 @@ from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.queue_db import QueueDb
 from gani_dung_video.infrastructure.settings import Settings
 
+JOB_KINDS = ("render", "draft", "analyze")
 _REPORT_SLACK_SEC = 2.0  # file systems round modification times
 _MEDIA_TYPES = {"video": "video/mp4", "cover": "image/jpeg", "srt": "text/plain; charset=utf-8"}
 _MAX_PROJECTS_PER_ROOT = 200
@@ -63,9 +75,10 @@ _MAX_PROJECTS_PER_ROOT = 200
 class ApiError(Exception):
     """A request the API refuses; `status` is the HTTP status, `message` is Vietnamese."""
 
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(self, status: int, code: str, message: str, **extra: Any) -> None:
         super().__init__(message)
         self.status, self.code, self.message = status, code, message
+        self.extra: dict[str, Any] = extra  # more fields for the error body (e.g. pipeline_id)
 
 
 @dataclass(frozen=True)
@@ -104,10 +117,15 @@ def _inside(path: Path, root: Path) -> bool:
 
 def health(ctx: ApiContext) -> HealthView:
     st = ctx.db.daemon_status(ctx.clock(), float(ctx.rules["queue"]["daemon_stale_sec"]))
+    spent, reserved = ctx.db.spend_summary(ctx.clock())
+    limit = ctx.rules["queue"].get("daily_budget_vnd")
     return HealthView(ok=True, rules_version=str(ctx.rules["rules_version"]),
                       daemon_online=st.online, daemon_pid=st.pid if st.online else None,
                       daemon_stopping=st.stop_request if st.online else None,
-                      jobs=ctx.db.counts(), allowed_roots_configured=bool(ctx.roots))  # fmt: skip
+                      jobs=ctx.db.counts(), allowed_roots_configured=bool(ctx.roots),
+                      ai_key_configured=ai_key_configured(ctx.settings),
+                      budget=BudgetView(limit_vnd=float(limit) if limit is not None else None,
+                                        spent_24h_vnd=spent, reserved_vnd=reserved))  # fmt: skip
 
 
 def _flags(folder: Path) -> tuple[bool, bool, bool]:
@@ -239,10 +257,33 @@ def _media_path(ctx: ApiContext, job: Job, kind: str) -> Path | None:
     return path
 
 
+def _expected_sec(ctx: ApiContext, job: Job) -> float:
+    """Expected run time of a job, only for its % / ETA."""
+    cfg = ctx.rules["queue"]
+    stages = cfg["stage_expected_sec"]
+    if job.kind == "analyze":
+        return float(sum(stages[s] for s in ANALYZE_STAGES))
+    if job.kind == "draft":
+        names = ("estimate", "draft") if job.phase == "paid" else ("plan", "pick", "phrases",
+                                                                    "estimate")  # fmt: skip
+        return float(sum(stages[s] for s in names))
+    return float(cfg["expected_sec"]["render_final" if job.final else "render_preview"])
+
+
+def _cost_view(job: Job) -> CostView | None:
+    if job.kind != "draft" or job.cost_worst_call_vnd is None:
+        return None
+    return CostView(input_tokens=job.cost_input_tokens or 0,
+                    worst_call_vnd=job.cost_worst_call_vnd, cap_vnd=job.cost_cap_vnd or 0.0,
+                    approved_vnd=job.approved_vnd, spent_vnd=job.spent_vnd)  # fmt: skip
+
+
+_KIND_TITLE = {"analyze": "phân tích footage", "draft": "kịch bản"}
+
+
 def _view(ctx: ApiContext, job: Job) -> JobView:
     folder = Path(job.project_dir)
     size = _job_size(job)
-    kind = "render_final" if job.final else "render_preview"
     inv, plan, drafts = _flags(folder)
     edit = folder / EDIT_DIR
     arts = Artifacts(
@@ -254,19 +295,24 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
     )  # fmt: skip
     error = _scrub(ctx, job.project_dir, job.error_msg)
     run = RunInfo(size=size, status=job.status, result=job.result, stage=job.stage,
-                  error_msg=error)  # fmt: skip
+                  error_msg=error, kind=job.kind)  # fmt: skip
     urls = {k: (f"/media/{job.id}/{k}" if _media_path(ctx, job, k) else None)
             for k in ("video", "cover", "srt")}  # fmt: skip
     report = _read_qc(folder / EDIT_DIR / "render" / job.draft, job) if urls["video"] else None
     label = "cuối" if job.final else "nháp"
+    what = _KIND_TITLE.get(job.kind) or f"bản {job.draft} ({label})"
     return JobView(
-        id=job.id, project_id=_project_id_of(ctx, folder), project_name=folder.name,
-        title=f"{folder.name} — bản {job.draft} ({label})", kind=job.kind, draft=job.draft,
+        id=job.id, pipeline_id=job.pipeline_id, depends_on=job.depends_on,
+        needs_approval=job.kind == "draft" and job.status == "awaiting_approval",
+        approval_expires_at=(iso(job.approval_expires_at)
+                             if job.approval_expires_at is not None else None),
+        cost=_cost_view(job),
+        project_id=_project_id_of(ctx, folder), project_name=folder.name,
+        title=f"{folder.name} — {what}", kind=job.kind, draft=job.draft,
         size=size, status=job.status, result=job.result,
         frontend_status=frontend_status(job.status, job.result), attempts=job.attempts,
         max_attempts=job.max_attempts, progress_pct=job.progress_pct, stage=job.stage,
-        eta_sec=eta_sec(job.status, job.started_at,
-                        float(ctx.rules["queue"]["expected_sec"][kind]), ctx.clock()),
+        eta_sec=eta_sec(job.status, job.started_at, _expected_sec(ctx, job), ctx.clock()),
         created_at=iso(job.created_at),
         started_at=iso(job.started_at) if job.started_at is not None else None,
         finished_at=iso(job.finished_at) if job.finished_at is not None else None,
@@ -278,10 +324,9 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
 
 
 def _need(ctx: ApiContext, job_id: int) -> Job:
-    """A render job by id. Analysis and draft jobs join the API in phase 6c-3; until then they
-    are invisible here, as if they did not exist."""
+    """A job (of any kind) by id, or a 404."""
     job = ctx.db.get(job_id)
-    if job is None or job.kind != "render":
+    if job is None:
         raise _not_found(f"job #{job_id}")
     return job
 
@@ -301,11 +346,13 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
 
 
 def list_jobs(ctx: ApiContext, status: str | None = None, project_id: str | None = None,
-              limit: int = 50) -> list[JobView]:  # fmt: skip
+              limit: int = 50, kind: str | None = None) -> list[JobView]:  # fmt: skip
     if status is not None and status not in STATUSES:
         raise ApiError(400, "bad_request", f"Trạng thái phải là một trong: {', '.join(STATUSES)}.")
+    if kind is not None and kind not in JOB_KINDS:
+        raise ApiError(400, "bad_request", f"Loại job phải là một trong: {', '.join(JOB_KINDS)}.")
     folder = str(resolve_project(ctx, project_id)) if project_id else None
-    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind="render")
+    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind=kind)
     return [_view(ctx, j) for j in jobs]
 
 
@@ -326,6 +373,7 @@ def get_job(ctx: ApiContext, job_id: int) -> JobDetail:
 def cancel(ctx: ApiContext, job_id: int) -> JobView:
     _need(ctx, job_id)
     cancel_job(ctx.db, job_id, ctx.clock())
+    ctx.db.cascade_blocked(ctx.clock())  # jobs waiting for this one can never run: say so now
     return _view(ctx, _need(ctx, job_id))
 
 
@@ -334,6 +382,59 @@ def retry(ctx: ApiContext, job_id: int) -> JobView:
     if not retry_job(ctx.db, job_id):
         raise ApiError(409, "conflict", f"Job #{job.id} đang '{job.status}': chỉ thử lại được job "
                                         "lỗi, đã hủy hoặc QC không đạt.")  # fmt: skip
+    return _view(ctx, _need(ctx, job_id))
+
+
+def _pipeline_view(ctx: ApiContext, pipeline_id: int, jobs: list[Job]) -> PipelineView:
+    views = [_view(ctx, j) for j in jobs]
+    folder = Path(jobs[0].project_dir)
+    return PipelineView(
+        id=pipeline_id, project_id=_project_id_of(ctx, folder), project_name=folder.name,
+        status=pipeline_status([(j.status, j.result) for j in jobs]),
+        needs_approval=any(v.needs_approval for v in views), jobs=views)  # fmt: skip
+
+
+def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
+    """Save the wizard's options and queue analyze → draft → render for the project.
+
+    Raises:
+        ApiError: 400 options blocked (nothing was written), 404 project, 409 the project already
+            has an active job (the body names its pipeline).
+    """
+    folder = resolve_project(ctx, req.project_id)
+    try:
+        result = enqueue_pipeline(
+            req.options, folder, ctx.db, draft=req.draft, final=req.final, no_asr=req.no_asr,
+            force_analyze=req.force_analyze, rules=ctx.rules, settings=ctx.settings,
+            now=ctx.clock())  # fmt: skip
+    except PipelineBusyError as e:
+        raise ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id,
+                       job_id=e.job_id) from e  # fmt: skip
+    except ConfigError as e:
+        raise ApiError(400, "bad_request", str(e)) from e
+    return _pipeline_view(ctx, result.pipeline_id, ctx.db.jobs_of_pipeline(result.pipeline_id))
+
+
+def get_pipeline(ctx: ApiContext, pipeline_id: int) -> PipelineView:
+    jobs = ctx.db.jobs_of_pipeline(pipeline_id)
+    roots = ctx.roots
+    if not jobs or not all(any(_inside(Path(j.project_dir).resolve(), r) for r in roots)
+                           for j in jobs):  # fmt: skip
+        raise _not_found(f"pipeline #{pipeline_id}")
+    return _pipeline_view(ctx, pipeline_id, jobs)
+
+
+def approve(ctx: ApiContext, job_id: int, req: ApproveRequest) -> JobView:
+    """Approve the cost of a waiting draft job (the same check as `queue approve`)."""
+    job = _need(ctx, job_id)
+    if job.kind != "draft":
+        raise ApiError(409, "conflict", f"Job #{job.id} là job {job.kind}: không có chi phí để "
+                                        "duyệt.")  # fmt: skip
+    try:
+        approve_job(ctx.db, job_id, req.max_vnd, req.estimate_vnd, rules=ctx.rules,
+                    now=ctx.clock())  # fmt: skip
+    except ApprovalRefused as e:
+        raise ApiError(409, "approval_refused", str(e)) from e
     return _view(ctx, _need(ctx, job_id))
 
 

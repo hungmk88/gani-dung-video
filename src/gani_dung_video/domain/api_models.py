@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from gani_dung_video.domain.qc import Finding
 
@@ -79,6 +79,43 @@ class JobCreate(BaseModel):
         raise ValueError("Bản nháp phải là A, B, C hoặc all.")
 
 
+class PipelineCreate(BaseModel):
+    """POST /api/pipelines body: the wizard's options and what to build from them."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    project_id: str
+    options: dict[str, Any]  # Any: arbitrary options JSON, judged by domain.preflight
+    draft: str = "all"  # A | B | C | all (which drafts to render)
+    final: bool = False
+    no_asr: bool = False
+    force_analyze: bool = False  # analyse the footage again even if it looks unchanged
+
+    @field_validator("project_id")
+    @classmethod
+    def _project(cls, v: str) -> str:
+        parse_project_id(v)
+        return v
+
+    @field_validator("draft")
+    @classmethod
+    def _draft(cls, v: str) -> str:
+        if v.lower() == "all":
+            return "all"
+        if len(v) == 1 and v.upper() in _LETTERS:
+            return v.upper()
+        raise ValueError("Bản nháp phải là A, B, C hoặc all.")
+
+
+class ApproveRequest(BaseModel):
+    """POST /api/jobs/{id}/approve body: the most to spend, and the estimate the person saw."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    max_vnd: float = Field(gt=0, allow_inf_nan=False)
+    estimate_vnd: float = Field(ge=0, allow_inf_nan=False)
+
+
 class PreflightRequest(BaseModel):
     """POST /api/preflight body: the options as the wizard collects them."""
 
@@ -132,8 +169,23 @@ class QaView(BaseModel):
     checks: list[QaCheckView]
 
 
+class CostView(BaseModel):
+    """What a draft job may cost (Claude is the only thing in the pipeline that spends money)."""
+
+    input_tokens: int
+    worst_call_vnd: float  # one call, worst case
+    cap_vnd: float  # ceiling for this video length
+    approved_vnd: float | None  # what a person allowed, once approved
+    spent_vnd: float | None  # what ai_log.jsonl says was really spent
+
+
 class JobView(BaseModel):
     id: int
+    pipeline_id: int | None = None
+    depends_on: int | None = None
+    needs_approval: bool = False  # a draft job waiting for a cost approval
+    approval_expires_at: str | None = None
+    cost: CostView | None = None
     project_id: str | None  # None when the job's folder is not a direct project of a root
     project_name: str
     title: str
@@ -165,6 +217,25 @@ class JobDetail(JobView):
     events: list[EventView]
 
 
+class PipelineView(BaseModel):
+    """One wizard run: its jobs in creation order and a status for the whole chain."""
+
+    id: int
+    project_id: str | None
+    project_name: str
+    status: (
+        str  # the UI's vocabulary (queued | running | awaiting_approval | qa_review | done | error)
+    )
+    needs_approval: bool
+    jobs: list[JobView]
+
+
+class BudgetView(BaseModel):
+    limit_vnd: float | None  # None: no daily limit configured
+    spent_24h_vnd: float
+    reserved_vnd: float  # approved but not yet spent by jobs that are waiting or running
+
+
 class HealthView(BaseModel):
     ok: bool
     rules_version: str
@@ -173,6 +244,8 @@ class HealthView(BaseModel):
     daemon_stopping: str | None
     jobs: dict[str, int]
     allowed_roots_configured: bool
+    ai_key_configured: bool  # yes or no, never the key
+    budget: BudgetView
 
 
 class ErrorBody(BaseModel):
@@ -194,6 +267,20 @@ def frontend_status(status: str, result: str | None) -> str:
     if status == "completed":
         return "done" if result == "passed" else "qa_review"
     return "error"  # failed, cancelled
+
+
+def pipeline_status(jobs: Sequence[tuple[str, str | None]]) -> str:
+    """One status for a chain of (queue status, result) pairs, in the UI's vocabulary."""
+    seen = {frontend_status(s, r) for s, r in jobs}
+    if not seen:
+        return "queued"
+    if "error" in seen:
+        return "error"
+    if "awaiting_approval" in seen:
+        return "awaiting_approval"
+    if seen & {"queued", "running"}:
+        return "queued" if seen == {"queued"} else "running"
+    return "qa_review" if "qa_review" in seen else "done"
 
 
 def iso(ts: float) -> str:
@@ -241,6 +328,7 @@ class RunInfo(BaseModel):
     result: str | None
     stage: str | None
     error_msg: str | None
+    kind: str = "render"  # render | analyze | draft
 
 
 STEP_LABELS: dict[str, str] = {
@@ -267,8 +355,40 @@ def _run_status(status: str) -> StepStatus:
     return _RUN_STATUS.get(status, "error")
 
 
+# The step a job stage belongs to (analyze and draft jobs).
+_STAGE_STEP = {"inventory": "inventory", "transcribe": "nhan_dang", "scenes": "nhan_dang",
+               "semantics": "nhan_dang", "plan": "plan_compile", "pick": "pick",
+               "phrases": "ai_draft", "estimate": "ai_draft", "draft": "ai_draft",
+               "cho_duyet": "ai_draft"}  # fmt: skip
+_OWN_STEPS = {"analyze": ("inventory", "nhan_dang"), "draft": ("plan_compile", "pick", "ai_draft")}
+
+
+def _steps_before_render(art: Artifacts, run: RunInfo) -> list[StepView]:
+    """Steps of an analyze or draft job: files say what is done, the stage says what runs."""
+    status: dict[str, StepStatus] = {
+        "inventory": _done(art.inventory), "nhan_dang": _done(art.scenes and art.speech),
+        "plan_compile": _done(art.plan), "pick": _done(art.pick), "ai_draft": _done(art.drafts),
+        "render_preview": "queued", "qc_verify": "queued", "final_export": "queued",
+    }  # fmt: skip
+    details: dict[str, str | None] = {}
+    active = _STAGE_STEP.get(run.stage or "")
+    own = _OWN_STEPS.get(run.kind, ())
+    if run.status == "processing" and active:
+        status[active], details[active] = "running", run.stage
+    elif run.status == "awaiting_approval":
+        status["ai_draft"], details["ai_draft"] = "queued", "Chờ duyệt chi phí"
+    elif run.status in ("failed", "cancelled"):
+        target = active or next((s for s in own if status[s] != "done"), own[-1] if own else None)
+        if target:
+            status[target], details[target] = "error", run.error_msg
+    return [StepView(id=k, label=STEP_LABELS[k], status=v, detail=details.get(k))
+            for k, v in status.items()]  # fmt: skip
+
+
 def derive_steps(art: Artifacts, run: RunInfo) -> list[StepView]:
     """The frontend's eight pipeline steps from real files and the job's state."""
+    if run.kind != "render":
+        return _steps_before_render(art, run)
     render = _run_status(run.status)
     detail = run.error_msg if render == "error" else (run.stage if render == "running" else None)
     qc: StepStatus = "queued"

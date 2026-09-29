@@ -13,12 +13,14 @@ import pytest
 from gani_dung_video.application.queue_service import (
     ApprovalRefused,
     NotReadyError,
+    PipelineBusyError,
     ai_key_configured,
     allowed_roots,
     approve_job,
     cancel_job,
     enqueue_analyze,
     enqueue_draft,
+    enqueue_pipeline,
     enqueue_project_render,
     enqueue_render,
     music_dir,
@@ -621,3 +623,133 @@ def test_cli_approve_success_and_refusals(env: Path, capsys: pytest.CaptureFixtu
 
 def test_cli_approving_a_job_that_is_not_waiting_exits_2(env: Path) -> None:
     assert main(["queue", "approve", "99", "--max-vnd", "6000", "--estimate", "4207"]) == 2
+
+
+# ─────────────── 6c-3: pipelines (analyze → draft → render in one go) ───────────────
+
+
+def pipe(db: QueueDb, root: Path, folder: str = "footage", options: Any = None, **kw: Any) -> Any:
+    return enqueue_pipeline(options if options is not None else OPTS, root / folder, db,
+                            rules=RULES, settings=cfg(root), **kw)  # fmt: skip
+
+
+def test_a_pipeline_queues_analyze_then_draft_then_one_render_per_draft(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root)
+    jobs = db.jobs_of_pipeline(r.pipeline_id)
+    assert [j.kind for j in jobs] == ["analyze", "draft", "render", "render"]
+    assert [j.draft for j in jobs] == ["", "", "A", "B"]
+    assert r.analyze_id == jobs[0].id and r.draft_id == jobs[1].id
+    assert r.render_ids == [jobs[2].id, jobs[3].id] and r.drafts == ["A", "B"]
+    assert [j.depends_on for j in jobs] == [None, jobs[0].id, jobs[1].id, jobs[1].id]
+    assert all(j.project_dir == str((root / "footage").resolve()) for j in jobs)
+
+
+def test_the_draft_job_never_retries_but_the_others_use_the_normal_limit(
+    db: QueueDb, root: Path
+) -> None:
+    a, d, ra, _ = db.jobs_of_pipeline(pipe(db, root).pipeline_id)
+    assert d.max_attempts == 1
+    assert a.max_attempts == ra.max_attempts == int(RULES["queue"]["max_attempts"])
+
+
+def test_options_are_saved_next_to_the_project_edit_files_and_every_job_points_at_them(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root)
+    saved = root / "footage" / "edit" / "options.json"
+    assert json.loads(saved.read_text(encoding="utf-8")) == OPTS
+    assert not list((root / "footage" / "edit").glob("*.tmp"))  # written atomically
+    _, d, ra, _ = db.jobs_of_pipeline(r.pipeline_id)
+    assert Path(d.options_file) == saved.resolve() and Path(ra.options_file) == saved.resolve()
+
+
+def test_vietnamese_text_in_options_is_stored_readable(db: QueueDb, root: Path) -> None:
+    pipe(db, root, options={**OPTS, "ghi_chu": "Xưởng sạch, viên bò tròn đều"})
+    text = (root / "footage" / "edit" / "options.json").read_text(encoding="utf-8")
+    assert "Xưởng sạch" in text
+
+
+def test_a_single_draft_letter_or_final_size_and_no_asr_are_carried_to_the_renders(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root, draft="b", final=True, no_asr=True)
+    assert r.drafts == ["B"]
+    *_, render = db.jobs_of_pipeline(r.pipeline_id)
+    assert (render.draft, render.final, render.no_asr) == ("B", True, True)
+
+
+def test_force_analyze_is_carried_to_the_analysis(db: QueueDb, root: Path) -> None:
+    (root / "two").mkdir()
+    forced, *_ = db.jobs_of_pipeline(pipe(db, root, force_analyze=True).pipeline_id)
+    plain, *_ = db.jobs_of_pipeline(pipe(db, root, folder="two").pipeline_id)
+    assert forced.force is True and plain.force is False
+
+
+def test_a_draft_letter_the_options_do_not_have_is_refused_and_nothing_is_written(
+    db: QueueDb, root: Path
+) -> None:
+    with pytest.raises(ConfigError, match="C"):
+        pipe(db, root, draft="C")  # so_ban_nhap is 2
+    assert db.list_jobs() == [] and not (root / "footage" / "edit" / "options.json").exists()
+
+
+def test_options_that_fail_preflight_write_and_queue_nothing(db: QueueDb, root: Path) -> None:
+    bad = {**OPTS, "phong_cach": "khong_co_phong_cach_nay"}
+    with pytest.raises(ConfigError, match="chặn"):
+        pipe(db, root, options=bad)
+    assert db.list_jobs() == [] and not (root / "footage" / "edit").exists()
+
+
+def test_a_project_outside_the_allowed_roots_or_missing_is_refused(
+    db: QueueDb, root: Path, tmp_path: Path
+) -> None:
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        enqueue_pipeline(OPTS, tmp_path / "elsewhere", db, rules=RULES, settings=cfg(root))
+    with pytest.raises(ConfigError):
+        pipe(db, root, folder="no-such-folder")
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        enqueue_pipeline(OPTS, root / "footage", db, rules=RULES, settings=cfg(None))
+    assert db.list_jobs() == []
+
+
+def test_a_busy_project_gets_a_conflict_that_names_the_pipeline_and_keeps_its_options(
+    db: QueueDb, root: Path
+) -> None:
+    first = pipe(db, root)
+    saved = root / "footage" / "edit" / "options.json"
+    before = saved.read_text(encoding="utf-8")
+    with pytest.raises(PipelineBusyError) as caught:
+        pipe(db, root, options={**OPTS, "do_dai_giay": 30})
+    assert caught.value.pipeline_id == first.pipeline_id
+    assert caught.value.job_id == first.analyze_id
+    assert saved.read_text(encoding="utf-8") == before  # the running pipeline's options survive
+    assert len(db.list_jobs()) == 4
+
+
+def test_a_plain_render_job_in_the_folder_also_blocks_a_pipeline(db: QueueDb, root: Path,
+                                                                   opt: Path) -> None:  # fmt: skip
+    add(db, opt, root / "footage", root, ban="A")
+    with pytest.raises(PipelineBusyError) as caught:
+        pipe(db, root)
+    assert caught.value.pipeline_id is None  # that render was not part of any pipeline
+
+
+def test_once_everything_ended_a_new_pipeline_may_start(db: QueueDb, root: Path) -> None:
+    first = pipe(db, root)
+    for jid in [first.analyze_id, first.draft_id, *first.render_ids]:
+        cancel_job(db, jid)
+    second = pipe(db, root, options={**OPTS, "do_dai_giay": 30})
+    assert second.pipeline_id == first.pipeline_id + 1
+    saved = json.loads((root / "footage" / "edit" / "options.json").read_text(encoding="utf-8"))
+    assert saved["do_dai_giay"] == 30
+
+
+def test_a_cancelled_analysis_takes_its_waiting_dependents_down_with_it(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root)
+    cancel_job(db, r.analyze_id)
+    assert db.cascade_blocked(time.time()) != []
+    assert {j.status for j in db.jobs_of_pipeline(r.pipeline_id)} == {"cancelled"}

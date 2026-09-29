@@ -10,7 +10,12 @@ from pathlib import Path
 import pytest
 
 from gani_dung_video.domain.jobs import Estimate
-from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb, QueueDbError
+from gani_dung_video.infrastructure.queue_db import (
+    FolderBusyError,
+    NewJob,
+    QueueDb,
+    QueueDbError,
+)
 
 T0 = 1_000_000.0
 
@@ -1093,3 +1098,111 @@ def test_the_stage_vocabulary_of_drafting_is_accepted(db: QueueDb) -> None:
     for stage in ("plan", "pick", "phrases", "estimate"):
         db.mark_stage_done(jid, stage)
     assert db.get(jid).stages_done == ["plan", "pick", "phrases", "estimate"]  # type: ignore[union-attr]
+
+
+# ─────────────── 6c-3: atomic job chains ───────────────
+
+
+def chain_jobs(folder: str = "E:/footage") -> list[tuple[NewJob, int | None]]:
+    """analyze → draft → two renders: the shape of a web pipeline."""
+    return [
+        (new_job("", kind="analyze", project_dir=folder), None),
+        (new_job("", kind="draft", project_dir=folder, max_attempts=1), 0),
+        (new_job("A", project_dir=folder), 1),
+        (new_job("B", project_dir=folder), 1),
+    ]
+
+
+def test_a_chain_is_created_in_order_with_one_pipeline_and_real_dependencies(db: QueueDb) -> None:
+    pid, ids = db.enqueue_chain(chain_jobs(), T0)
+    jobs = [db.get(i) for i in ids]
+    assert all(j is not None for j in jobs) and ids == sorted(ids) and len(ids) == 4
+    a, d, ra, rb = (j for j in jobs if j is not None)
+    assert {j.pipeline_id for j in (a, d, ra, rb)} == {pid}
+    assert (a.depends_on, d.depends_on, ra.depends_on, rb.depends_on) == (None, a.id, d.id, d.id)
+    assert (a.kind, d.kind, ra.kind, rb.kind) == ("analyze", "draft", "render", "render")
+    assert all(j.status == "queued" for j in (a, d, ra, rb))
+
+
+def test_each_chain_gets_its_own_pipeline_number(db: QueueDb) -> None:
+    first, _ = db.enqueue_chain(chain_jobs("E:/a"), T0)
+    second, _ = db.enqueue_chain(chain_jobs("E:/b"), T0)
+    assert second == first + 1
+
+
+def test_a_chain_step_may_only_wait_for_an_earlier_step(db: QueueDb) -> None:
+    for bad in (2, 1, 9, -1):
+        jobs = chain_jobs()
+        jobs[1] = (jobs[1][0], bad)
+        with pytest.raises(QueueDbError, match="phụ thuộc"):
+            db.enqueue_chain(jobs, T0)
+    assert db.counts()["queued"] == 0  # nothing got in
+
+
+def test_an_empty_chain_is_refused(db: QueueDb) -> None:
+    with pytest.raises(QueueDbError):
+        db.enqueue_chain([], T0)
+
+
+def test_a_failure_while_creating_a_chain_leaves_nothing_behind(db: QueueDb) -> None:
+    def boom() -> None:
+        raise RuntimeError("disk full")
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        db.enqueue_chain(chain_jobs(), T0, before_insert=boom)
+    assert db.counts()["queued"] == 0
+    assert db.list_jobs() == []
+    pid, _ = db.enqueue_chain(chain_jobs(), T0)  # and the queue still works
+    assert pid == 1
+
+
+def test_the_hook_runs_once_after_the_folder_check_and_before_the_first_insert(db: QueueDb) -> None:
+    seen: list[int] = []
+
+    def hook() -> None:
+        seen.append(len(db.list_jobs()))  # a second connection sees the committed state only
+
+    db.enqueue_chain(chain_jobs(), T0, guard_folder="E:/footage", before_insert=hook)
+    assert seen == [0]
+
+
+def busy_chain(db: QueueDb, status: str) -> tuple[int, list[int]]:
+    """A one-step chain (a draft job) in the given active status."""
+    pid, ids = db.enqueue_chain([(new_job("", kind="draft", max_attempts=1), None)], T0)
+    if status != "queued":
+        assert db.claim(T0 + 1, 1) is not None  # processing
+    if status == "awaiting_approval":
+        est = Estimate(model="m", input_tokens=1, input_only_vnd=1, worst_call_vnd=2, cap_vnd=3,
+                       max_attempts=3)  # fmt: skip
+        db.hold_for_approval(ids[0], T0 + 2, est, 86_400.0)
+    assert db.get(ids[0]).status == status  # type: ignore[union-attr]
+    return pid, ids
+
+
+@pytest.mark.parametrize("status", ["queued", "processing", "awaiting_approval"])
+def test_a_busy_folder_refuses_a_second_chain_and_names_the_running_one(
+    db: QueueDb, status: str
+) -> None:
+    pid, ids = busy_chain(db, status)
+    called: list[int] = []
+    with pytest.raises(FolderBusyError) as caught:
+        db.enqueue_chain(chain_jobs(), T0 + 3, guard_folder="E:/footage",
+                         before_insert=lambda: called.append(1))  # fmt: skip
+    assert caught.value.pipeline_id == pid and caught.value.job_id == ids[0]
+    assert called == []  # the hook (which writes options.json) never ran
+    assert len(db.list_jobs()) == 1  # nothing was added
+
+
+def test_finished_jobs_and_other_folders_do_not_block_a_chain(db: QueueDb) -> None:
+    _, ids = db.enqueue_chain(chain_jobs("E:/old"), T0, guard_folder="E:/old")
+    for jid in ids:
+        db.request_cancel(jid, T0 + 1)
+    db.enqueue_chain(chain_jobs("E:/old"), T0 + 2, guard_folder="E:/old")  # all ended: fine
+    db.enqueue_chain(chain_jobs("E:/other"), T0 + 2, guard_folder="E:/other")  # another project
+
+
+def test_the_jobs_of_a_pipeline_come_back_in_creation_order(db: QueueDb) -> None:
+    pid, ids = db.enqueue_chain(chain_jobs(), T0)
+    db.enqueue_chain(chain_jobs("E:/other"), T0)
+    assert [j.id for j in db.jobs_of_pipeline(pid)] == ids
+    assert db.jobs_of_pipeline(999) == []

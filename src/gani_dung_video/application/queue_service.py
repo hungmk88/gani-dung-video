@@ -8,6 +8,7 @@ job that is already waiting instead of rendering it twice.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Mapping
@@ -19,14 +20,19 @@ from pydantic import BaseModel, ValidationError
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.domain.jobs import ApprovalError, BudgetState, Job, validate_approval
 from gani_dung_video.domain.plan import Plan
-from gani_dung_video.domain.preflight import Rules
+from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.infrastructure.config_files import (
     CONFIG_DIR,
     ConfigError,
     load_rules,
     read_options_file,
 )
-from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb, QueueDbError
+from gani_dung_video.infrastructure.queue_db import (
+    FolderBusyError,
+    NewJob,
+    QueueDb,
+    QueueDbError,
+)
 from gani_dung_video.infrastructure.settings import Settings, load_settings
 
 QUEUE_FILE = "queue.db"
@@ -39,6 +45,22 @@ class NotReadyError(ConfigError):
 
 class ApprovalRefused(ConfigError):
     """A cost approval that was refused (nothing changed; the message says why)."""
+
+
+class PipelineBusyError(ConfigError):
+    """The project already has an active job, so a new pipeline would collide with it (409)."""
+
+    def __init__(self, message: str, job_id: int, pipeline_id: int | None) -> None:
+        super().__init__(message)
+        self.job_id, self.pipeline_id = job_id, pipeline_id
+
+
+class PipelineResult(BaseModel):
+    pipeline_id: int
+    analyze_id: int
+    draft_id: int
+    render_ids: list[int]  # one per draft letter, in the order of `drafts`
+    drafts: list[str]
 
 
 class EnqueueResult(BaseModel):
@@ -280,6 +302,85 @@ def enqueue_draft(
                depends_on=after, max_attempts=1),  # one chance: code never retries a paid job
         now if now is not None else time.time())  # fmt: skip
     return EnqueueResult(job_id=jid, draft="", duplicate=False)
+
+
+def _write_options(folder: Path, options: Mapping[str, Any]) -> None:
+    """edit/options.json next to the project's other files, written atomically."""
+    edit = folder / "edit"
+    edit.mkdir(parents=True, exist_ok=True)
+    target = edit / "options.json"
+    tmp = edit / "options.json.tmp"
+    try:
+        tmp.write_text(json.dumps(options, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def enqueue_pipeline(
+    options: Mapping[str, Any], folder: Path, db: QueueDb, *, draft: str = "all",
+    final: bool = False, no_asr: bool = False, force_analyze: bool = False,
+    rules: Rules | None = None, settings: Settings | None = None, now: float | None = None,
+) -> PipelineResult:  # fmt: skip
+    """Queue a whole build: analyse the footage, write the drafts, render them, in that order.
+
+    The options are judged by preflight first (nothing is written or queued if they block),
+    saved as <folder>/edit/options.json, and the chain analyze → draft → one render per draft
+    letter is created in one transaction. The draft job stops at a cost approval; the renders
+    wait for it. A project with any waiting or running job refuses a new pipeline, so options
+    of a running one are never overwritten.
+
+    Raises:
+        ConfigError: no allow-list, folder outside it or missing, options blocked by preflight,
+            or a draft letter the options do not have.
+        PipelineBusyError: the project has an active job.
+    """
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    project = folder.expanduser().resolve()
+    if not _inside(project, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=project))
+    if not project.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=project))
+    check = preflight_check(options, rules)
+    if not check["valid"]:
+        first = check["errors"][0] if check["errors"] else {"code": "?", "msg": check["error_msg"]}
+        raise ConfigError(msgs["QUEUE_PREFLIGHT_BLOCKED"].format(code=first["code"],
+                                                                   msg=first["msg"]))  # fmt: skip
+    count = int(options.get("so_ban_nhap", 1))
+    letters = list(LETTERS[:count])
+    if draft.lower() == "all":
+        chosen = letters
+    elif draft.upper() in letters:
+        chosen = [draft.upper()]
+    else:
+        raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=draft.upper(), count=count,
+                                                         letters=", ".join(letters)))  # fmt: skip
+    where, tries = str(project), int(rules["queue"]["max_attempts"])
+    saved = str(project / "edit" / "options.json")
+    steps: list[tuple[NewJob, int | None]] = [
+        (NewJob(kind="analyze", project_dir=where, options_file="", draft="", force=force_analyze,
+                max_attempts=tries), None),
+        (NewJob(kind="draft", project_dir=where, options_file=saved, draft="",
+                max_attempts=1), 0),  # one chance: code never retries a paid job
+        *((NewJob(kind="render", project_dir=where, options_file=saved, draft=letter,
+                  final=final, no_asr=no_asr, max_attempts=tries), 1) for letter in chosen),
+    ]  # fmt: skip
+    try:
+        pipeline, ids = db.enqueue_chain(
+            steps, now if now is not None else time.time(), guard_folder=where,
+            before_insert=lambda: _write_options(project, options))  # fmt: skip
+    except FolderBusyError as e:
+        suffix = f" (pipeline #{e.pipeline_id})" if e.pipeline_id is not None else ""
+        raise PipelineBusyError(
+            msgs["PIPELINE_BUSY"].format(folder=project.name, job=e.job_id, pipeline=suffix),
+            e.job_id, e.pipeline_id) from e  # fmt: skip
+    return PipelineResult(pipeline_id=pipeline, analyze_id=ids[0], draft_id=ids[1],
+                          render_ids=ids[2:], drafts=chosen)  # fmt: skip
 
 
 def approve_job(db: QueueDb, job_id: int, max_vnd: float, estimate_vnd: float, *,
