@@ -284,6 +284,20 @@
    "span_margin_sec": 0.3
   }
  },
+  "_ghi_chu_queue": "Hàng đợi dựng (GĐ6a, chốt 29/09/2026, đặc tả §8.3.1 Option B). Daemon hỏi hàng đợi mỗi poll_sec giây, mỗi job là một tiến trình con gọi lệnh render của CLI (tuần tự, một job một lúc). Job tự thử lại tối đa max_attempts lần (kể cả lần đầu), chờ retry_delay_sec giữa các lần; QC không đạt KHÔNG thử lại; job tốn phí API (draft) không bao giờ tự thử lại. shutdown_grace_sec: dừng nhẹ nhàng chờ job đang chạy xong tối đa từng ấy giây rồi trả job về hàng đợi (--now: trả ngay). stall_sec: tiến trình con im lặng (không dòng nào, không file nào trong thư mục render đổi) quá từng ấy giây bị kill (spec ghi 5 phút, quá ngắn cho QC/Whisper trên CPU). daemon_stale_sec: nhịp tim daemon cũ hơn thì coi là đã chết. job_stale_sec: job đang chạy mà nhịp tim cũ hơn thì coi là mồ côi. leftover_kill_max_age_sec: sau sập, chỉ kill tiến trình con còn sót nếu nhịp tim cuối chưa cũ quá (tránh kill nhầm khi pid bị tái dùng sau khi máy khởi động lại). expected_sec: thời gian dựng dự kiến, chỉ để ước tính % tiến độ.",
+ "queue": {
+  "poll_sec": 2,
+  "max_attempts": 2,
+  "retry_delay_sec": 30,
+  "shutdown_grace_sec": 600,
+  "stall_sec": 600,
+  "daemon_stale_sec": 15,
+  "job_stale_sec": 120,
+  "leftover_kill_max_age_sec": 1200,
+  "timeout_sec": {"render_preview": 1800, "render_final": 5400},
+  "expected_sec": {"render_preview": 60, "render_final": 300},
+  "max_events_per_job": 500
+ },
  "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
  "speech_edit": {
   "sentence_end": ".?!…",
@@ -387,6 +401,11 @@
   "SPEECH_DRAFT_NO_PHRASES": "Chưa có edit/phrases.json — chạy lệnh `phrases` trước.",
   "SPEECH_DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",
   "SPEECH_DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
+  "QUEUE_NO_ROOTS": "Chưa đặt GANI_DV_ALLOWED_ROOTS trong .env — danh sách thư mục footage được phép đưa vào hàng đợi (nhiều thư mục thì ngăn cách bằng dấu chấm phẩy trên Windows, dấu hai chấm trên Mac). Chép từ .env.example rồi điền.",
+  "QUEUE_OUTSIDE_ROOTS": "Thư mục '{folder}' không nằm trong GANI_DV_ALLOWED_ROOTS nên không được đưa vào hàng đợi. Thêm thư mục cha vào .env nếu đây là footage của anh.",
+  "QUEUE_NO_FOLDER": "Không thấy thư mục footage '{folder}'.",
+  "QUEUE_PREFLIGHT_BLOCKED": "Tùy chọn bị chặn ở bước kiểm tra trước [{code}]: {msg}",
+  "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
   "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }
 }

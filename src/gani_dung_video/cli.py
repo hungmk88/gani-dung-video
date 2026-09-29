@@ -24,6 +24,14 @@ python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 python -m gani_dung_video phrases <yeu-cau.md|options.json> <thu_muc_footage>
     exit 0 = đã ghi edit/phrases.json, 2 = phong cách không dẫn nhịp theo lời / chưa transcribe
+python -m gani_dung_video queue add <yeu-cau.md|options.json> <thu_muc_footage> \
+    [--ban A|all] [--final] [--no-asr]
+python -m gani_dung_video queue list | show ID | cancel ID | retry ID | stop [--now]
+    hàng đợi dựng (GĐ6a); exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
+    sách cho phép, hoặc không có job đó
+python -m gani_dung_video daemon
+    chạy nền lấy job từ hàng đợi; Ctrl+C = dừng sau khi job đang chạy xong, Ctrl+C lần 2 =
+    dừng ngay (trả job về hàng đợi); exit 2 = đã có daemon khác đang chạy
 """
 
 from __future__ import annotations
@@ -32,16 +40,25 @@ import argparse
 import io
 import json
 import logging
+import signal
 import sys
+import time
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from gani_dung_video.application.daemon import Daemon, DaemonError
 from gani_dung_video.application.draft_service import DraftError, DraftsFile, DryRun, build_drafts
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
+from gani_dung_video.application.queue_service import (
+    cancel_job,
+    enqueue_render,
+    open_queue,
+    retry_job,
+)
 from gani_dung_video.application.render_service import build_render, recheck
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
@@ -52,15 +69,18 @@ from gani_dung_video.application.speech_draft_service import (
 )
 from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
+from gani_dung_video.domain.jobs import Job
 from gani_dung_video.domain.plan import Plan, PlanError
+from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.infrastructure.claude_client import AiError
 from gani_dung_video.infrastructure.clip_model import SemanticError
-from gani_dung_video.infrastructure.config_files import ConfigError
+from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import RenderError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.media_probe import ProbeFailed
 from gani_dung_video.infrastructure.music_analysis import MusicError
+from gani_dung_video.infrastructure.queue_db import QueueDb, QueueDbError
 from gani_dung_video.infrastructure.settings import SettingsError
 from gani_dung_video.infrastructure.whisper_asr import AsrError
 
@@ -116,7 +136,113 @@ def _build_parser() -> argparse.ArgumentParser:
     qc.add_argument(
         "--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8) ở bản cuối chế độ lời"
     )
+    q = sub.add_parser("queue", help="Hàng đợi dựng video (chạy nền bằng lệnh daemon)")
+    qsub = q.add_subparsers(dest="qcmd", required=True)
+    qa = qsub.add_parser("add", help="Đưa các bản nháp cần dựng vào hàng đợi")
+    qa.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
+    qa.add_argument("folder", type=Path, help="Thư mục footage (trong GANI_DV_ALLOWED_ROOTS)")
+    qa.add_argument("--ban", default="all", help="Một bản (A, B, C) hoặc all (mặc định)")
+    qa.add_argument("--final", action="store_true", help="Dựng bản cuối 1080×1920 (mặc định: nháp)")
+    qa.add_argument("--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8)")
+    ql = qsub.add_parser("list", help="Xem hàng đợi")
+    ql.add_argument("--status", help="Chỉ hiện trạng thái này (queued, processing, …)")
+    ql.add_argument("--limit", type=int, default=30)
+    for name, text in (
+        ("show", "Chi tiết một job"),
+        ("cancel", "Hủy một job"),
+        ("retry", "Đưa job lỗi/đã hủy/QC không đạt vào hàng đợi lại"),
+    ):
+        qs = qsub.add_parser(name, help=text)
+        qs.add_argument("id", type=int)
+    qst = qsub.add_parser("stop", help="Yêu cầu daemon dừng")
+    qst.add_argument("--now", action="store_true", help="Dừng ngay, trả job đang chạy về hàng đợi")
+    sub.add_parser("daemon", help="Chạy nền: lấy job từ hàng đợi và dựng lần lượt")
     return ap
+
+
+def _job_line(j: Job) -> str:
+    result = f"/{j.result}" if j.result else ""
+    size = "cuối" if j.final else "nháp"
+    return (f"#{j.id} bản {j.draft} ({size}) {j.status}{result} {j.progress_pct:.0f}% — "
+            f"{Path(j.project_dir).name}")  # fmt: skip
+
+
+def _daemon_line(db: QueueDb, rules: Rules) -> str:
+    st = db.daemon_status(time.time(), float(rules["queue"]["daemon_stale_sec"]))
+    if st.online:
+        stopping = f", đang dừng ({st.stop_request})" if st.stop_request else ""
+        return f"Daemon: đang chạy (pid {st.pid}){stopping}"
+    return (
+        "Daemon: KHÔNG chạy — job sẽ nằm chờ. Mở cửa sổ khác và chạy: "
+        "python -m gani_dung_video daemon"
+    )
+
+
+def _run_queue(args: argparse.Namespace) -> int:
+    rules = load_rules()
+    db = open_queue()
+    cmd = args.qcmd
+    if cmd == "add":
+        out = enqueue_render(args.file, args.folder, db, ban=args.ban, final=args.final,
+                             no_asr=args.no_asr, rules=rules)  # fmt: skip
+        lines = [
+            f"Bản {r.draft}: đã có trong hàng đợi (job #{r.job_id})"
+            if r.duplicate
+            else f"Đã đưa vào hàng đợi: job #{r.job_id} — bản {r.draft}"
+            for r in out
+        ]
+        lines.append(_daemon_line(db, rules))
+    elif cmd == "list":
+        jobs = db.list_jobs(args.status, args.limit)
+        lines = [_daemon_line(db, rules), *(_job_line(j) for j in jobs)]
+        if not jobs:
+            lines.append("Hàng đợi trống.")
+    elif cmd == "show":
+        job = db.get(args.id)
+        if job is None:
+            raise ConfigError(f"Không có job #{args.id}.")
+        lines = [_job_line(job), f"  Thư mục: {job.project_dir}",
+                 f"  Lần thử: {job.attempts}/{job.max_attempts}"]  # fmt: skip
+        if job.stage:
+            lines.append(f"  Giai đoạn: {job.stage}")
+        if job.output_path:
+            lines.append(f"  Video: {job.output_path}")
+        if job.error_msg:
+            lines.append(f"  Lỗi: {job.error_msg}")
+        lines += [f"  | {e.text}" for e in db.events(job.id)[-20:]]
+    elif cmd == "cancel":
+        lines = [f"Job #{args.id}: {cancel_job(db, args.id)}"]
+    elif cmd == "retry":
+        ok = retry_job(db, args.id)
+        lines = [
+            f"Job #{args.id}: đã đưa vào hàng đợi lại."
+            if ok
+            else f"Job #{args.id}: không thể thử lại (không có, đang chạy, hoặc đã dựng đạt)."
+        ]
+    else:  # stop
+        sent = db.set_stop_request("now" if args.now else "graceful")
+        lines = [
+            "Đã gửi yêu cầu dừng cho daemon." if sent else "Hiện không có daemon nào đang chạy."
+        ]
+    sys.stdout.write("\n".join(lines) + "\n")
+    return 0
+
+
+def _run_daemon() -> int:
+    rules = load_rules()
+    daemon = Daemon(open_queue(), rules)
+
+    def on_signal(signum: int, frame: object) -> None:
+        daemon.request_stop()  # the first signal is gentle, the second stops now
+        sys.stdout.write("Đang dừng… (nhấn Ctrl+C lần nữa để dừng ngay)\n")
+
+    for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
+        if (sig := getattr(signal, name, None)) is not None:
+            signal.signal(sig, on_signal)
+    sys.stdout.write("Daemon hàng đợi đang chạy. Ctrl+C: dừng sau khi job đang dựng xong.\n")
+    daemon.run()
+    sys.stdout.write("Daemon đã dừng.\n")
+    return 0
 
 
 def _run_scenes(folder: Path) -> int:
@@ -348,6 +474,10 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as e:  # argparse already printed usage
         return 2 if e.code else 0
     try:
+        if args.cmd == "queue":
+            return _run_queue(args)
+        if args.cmd == "daemon":
+            return _run_daemon()
         if args.cmd == "inventory":
             return _run_inventory(args.folder)
         if args.cmd == "transcribe":
@@ -379,6 +509,8 @@ def main(argv: list[str] | None = None) -> int:
         AiError,
         RenderError,
         ProbeFailed,
+        DaemonError,
+        QueueDbError,
     ) as e:
         logger.error("LỖI: %s", e)
         return 2

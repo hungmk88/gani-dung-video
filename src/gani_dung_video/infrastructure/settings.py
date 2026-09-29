@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     anthropic_api_key: SecretStr | None = None
     gani_dv_claude_model: str | None = None  # overrides rules.json ai.model on this machine
+    # Phase 6 (job queue): where footage may be queued from (paths separated by the OS path
+    # separator: ";" on Windows, ":" on Mac) and where queue.db lives (default: <project>/jobs).
+    gani_dv_allowed_roots: str | None = None
+    gani_dv_queue_dir: str | None = None
 
 
 def load_settings(env_file: Path | None = ENV_FILE) -> Settings:
