@@ -9,6 +9,7 @@ import type {
   ApiHealth,
   ApiJob,
   ApiJobDetail,
+  ApiPipeline,
   ApiPreflightIssue,
   ApiPreflightResult,
   ApiProject,
@@ -22,9 +23,12 @@ import {
   STYLE_IDS,
 } from '../types/rules.ts';
 import type {
+  ApprovalInfo,
   ConsoleLine,
+  DraftOutput,
   HealthInfo,
   JobStatus,
+  PipelineJobInfo,
   PipelineStep,
   PipelineStepId,
   PreflightIssue,
@@ -39,7 +43,14 @@ import type {
 // rules.json → qc.max_rounds; the API does not echo it, so it is mirrored here.
 const QC_MAX_ROUNDS = 3;
 
-const JOB_STATUSES: readonly JobStatus[] = ['queued', 'running', 'qa_review', 'done', 'error'];
+const JOB_STATUSES: readonly JobStatus[] = [
+  'queued',
+  'running',
+  'awaiting_approval',
+  'qa_review',
+  'done',
+  'error',
+];
 const STEP_IDS: readonly string[] = PIPELINE_STEPS;
 
 export function basename(path: string): string {
@@ -64,6 +75,12 @@ export function toHealthInfo(h: ApiHealth): HealthInfo {
     rulesVersion: h.rules_version,
     jobs: h.jobs,
     allowedRootsConfigured: h.allowed_roots_configured,
+    aiKeyConfigured: h.ai_key_configured,
+    budget: {
+      limitVnd: h.budget.limit_vnd,
+      spent24hVnd: h.budget.spent_24h_vnd,
+      reservedVnd: h.budget.reserved_vnd,
+    },
   };
 }
 
@@ -190,6 +207,205 @@ export function groupLatest(jobs: ApiJob[]): RenderJob[] {
   return [...byKey.values()]
     .map((group) => toRenderJob(group.sort((a, b) => b.id - a.id)[0], group))
     .sort((a, b) => Number(b.id) - Number(a.id));
+}
+
+/* ───────────────────────── pipelines (phase 6c) ───────────────────────── */
+
+const PIPELINE_PREFIX = 'p:';
+
+export function pipelineCardId(pipelineId: number): string {
+  return `${PIPELINE_PREFIX}${pipelineId}`;
+}
+
+/** `p:7` → 7; anything else → null (a plain job id). */
+export function parsePipelineCardId(id: string): number | null {
+  if (!id.startsWith(PIPELINE_PREFIX)) return null;
+  const n = Number(id.slice(PIPELINE_PREFIX.length));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** Which job kind actually runs each pipeline step (docs/api-jobs.md §4b, "steps"). */
+const STEP_OWNER: Record<PipelineStepId, string> = {
+  inventory: 'analyze',
+  nhan_dang: 'analyze',
+  plan_compile: 'draft',
+  pick: 'draft',
+  ai_draft: 'draft',
+  render_preview: 'render',
+  qc_verify: 'render',
+  final_export: 'render',
+};
+
+/** One stepper for the whole chain: each step is judged only by the jobs that own it. */
+export function mergeSteps(jobs: ApiJob[]): PipelineStep[] {
+  return PIPELINE_STEPS.map((id) => {
+    const owners = jobs.filter((j) => j.kind === STEP_OWNER[id]);
+    const seen = (owners.length > 0 ? owners : jobs).flatMap((j) =>
+      j.steps.filter((s) => s.id === id).map((s) => ({ ...s })),
+    );
+    const pick = (status: PipelineStep['status']) => seen.find((s) => s.status === status);
+    const failed = pick('error');
+    const running = pick('running');
+    const status: PipelineStep['status'] = failed
+      ? 'error'
+      : running
+        ? 'running'
+        : seen.length > 0 && seen.every((s) => s.status === 'done')
+          ? 'done'
+          : 'queued';
+    const detail = (failed ?? running ?? seen.find((s) => s.detail !== null))?.detail;
+    return { id, label: seen[0]?.label ?? id, status, detail: detail ?? undefined };
+  });
+}
+
+/** Whole-chain status in the UI's vocabulary — same order as `PipelineView.status`. */
+export function pipelineStatus(jobs: ApiJob[]): string {
+  const of = (s: string) => jobs.some((j) => j.frontend_status === s);
+  if (of('error')) return 'error';
+  if (of('awaiting_approval')) return 'awaiting_approval';
+  if (of('running')) return 'running';
+  if (jobs.every((j) => j.frontend_status === 'queued')) return 'queued';
+  if (of('queued')) return 'running'; // between two jobs
+  if (of('qa_review')) return 'qa_review';
+  return 'done';
+}
+
+function toApproval(jobs: ApiJob[]): ApprovalInfo | undefined {
+  const j = jobs.find((x) => x.kind === 'draft' && x.needs_approval && x.cost);
+  if (!j?.cost) return undefined;
+  return {
+    jobId: String(j.id),
+    inputTokens: j.cost.input_tokens,
+    worstCallVnd: j.cost.worst_call_vnd,
+    capVnd: j.cost.cap_vnd,
+    expiresAt: j.approval_expires_at ?? null,
+  };
+}
+
+function toJobInfo(j: ApiJob): PipelineJobInfo {
+  const status = toStatus(j.frontend_status);
+  return {
+    id: String(j.id),
+    kind: j.kind,
+    draft: j.draft,
+    status,
+    errorMsg: j.error_msg,
+    retryable: status === 'error' || status === 'qa_review',
+    spentVnd: j.cost?.spent_vnd ?? null,
+  };
+}
+
+function toOutputs(jobs: ApiJob[]): DraftOutput[] {
+  const renders = jobs.filter((j) => j.kind === 'render');
+  const letters = [...new Set(renders.map((j) => j.draft))].sort();
+  return letters.map((draft) => {
+    const own = renders.filter((j) => j.draft === draft);
+    const withQa = own
+      .filter((j) => j.qa !== null && j.status === 'completed')
+      .sort((a, b) => (a.size === b.size ? b.id - a.id : a.size === 'final' ? -1 : 1))[0];
+    return {
+      draft,
+      previewUrl: newestUrl(own, 'preview'),
+      finalUrl: newestUrl(own, 'final'),
+      qa: withQa?.qa ? toQaReport(withQa.qa) : null,
+    };
+  });
+}
+
+const KIND_TAG: Record<string, string> = { analyze: 'phân tích', draft: 'kịch bản', render: 'dựng' };
+const MAX_LOG_LINES = 400;
+
+function pipelineLog(details: ApiJobDetail[]): ConsoleLine[] {
+  return details
+    .flatMap((d) =>
+      d.events.map((e) => ({
+        key: `${e.ts}|${String(d.id).padStart(8, '0')}|${String(e.id).padStart(8, '0')}`,
+        line: {
+          ...toConsoleLine(e),
+          text: `[${KIND_TAG[d.kind] ?? d.kind}${d.draft ? ` ${d.draft}` : ''}] ${e.text}`,
+        },
+      })),
+    )
+    .sort((a, b) => (a.key < b.key ? -1 : 1))
+    .slice(-MAX_LOG_LINES)
+    .map((x) => x.line);
+}
+
+/**
+ * One UI card for a whole analyze → draft → render chain. `details` (optional) carry the
+ * console lines; the list view passes none and gets an empty log.
+ */
+export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): RenderJob {
+  const jobs = [...p.jobs].sort((a, b) => a.id - b.id);
+  const outputs = toOutputs(jobs);
+  const first = outputs[0];
+  const planJob = jobs.find((j) => Object.keys(j.options).length > 0);
+  return {
+    id: pipelineCardId(p.id),
+    pipelineId: p.id,
+    projectId: p.project_id ?? undefined,
+    title: `${p.project_name} — pipeline #${p.id}`,
+    options: optionsFromApi(planJob?.options ?? {}),
+    status: toStatus(p.status),
+    createdAt: jobs[0]?.created_at ?? '',
+    etaSec: jobs.find((j) => j.frontend_status === 'running')?.eta_sec ?? null,
+    steps: mergeSteps(jobs),
+    logLines: pipelineLog(details),
+    approval: toApproval(jobs),
+    jobs: jobs.map(toJobInfo),
+    outputs,
+    previewUrl: first?.previewUrl ?? null,
+    finalUrl: first?.finalUrl ?? null,
+    qa: first?.qa ?? null,
+  };
+}
+
+// Newest first by the highest server job id a card contains.
+function sortKey(c: RenderJob): number {
+  const ids = (c.jobs ?? []).map((j) => Number(j.id));
+  return ids.length > 0 ? Math.max(...ids) : Number(c.id);
+}
+
+/** The queue list: pipeline chains as one card each, lone jobs as before (newest first). */
+export function buildCards(jobs: ApiJob[]): RenderJob[] {
+  const chains = new Map<number, ApiJob[]>();
+  const lone: ApiJob[] = [];
+  for (const j of jobs) {
+    if (j.pipeline_id != null) chains.set(j.pipeline_id, [...(chains.get(j.pipeline_id) ?? []), j]);
+    else lone.push(j);
+  }
+  const cards: RenderJob[] = [];
+  for (const [id, group] of chains) {
+    const head = group[0];
+    cards.push(
+      toPipelineCard({
+        id,
+        project_id: head.project_id,
+        project_name: head.project_name,
+        status: pipelineStatus(group),
+        needs_approval: group.some((j) => j.needs_approval === true),
+        jobs: group,
+      }),
+    );
+  }
+  cards.push(...groupLatest(lone.filter((j) => j.kind === 'render')));
+  cards.push(...lone.filter((j) => j.kind !== 'render').map((j) => toRenderJob(j, [])));
+  return cards.sort((a, b) => sortKey(b) - sortKey(a));
+}
+
+/** Body of POST /api/pipelines: `options` share the preflight shape, plus the run switches. */
+export function pipelineBody(
+  o: VideoOptions,
+  run: { projectId: string; draft: string; final: boolean; noAsr: boolean; forceAnalyze: boolean },
+): Record<string, unknown> {
+  return {
+    project_id: run.projectId,
+    options: preflightBody(o).options,
+    draft: run.draft,
+    final: run.final,
+    no_asr: run.noAsr,
+    force_analyze: run.forceAnalyze,
+  };
 }
 
 /* ───────────────────────── preflight ───────────────────────── */

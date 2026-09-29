@@ -1,7 +1,8 @@
-import { Ban, Clock3, Inbox } from 'lucide-react';
+import { Ban, Clock3, Coins, Inbox, RotateCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
-import type { JobStatus, RenderJob } from '../../types/rules';
+import type { JobStatus, PipelineJobInfo, RenderJob } from '../../types/rules';
+import { ApprovalDialog } from './ApprovalDialog';
 import { ConsoleLog } from './ConsoleLog';
 import { PipelineStepper } from './PipelineStepper';
 import { PlanModal } from './PlanModal';
@@ -10,10 +11,14 @@ import { VideoPlayerWithQA } from './VideoPlayerWithQA';
 const STATUS_LABEL: Record<JobStatus, { label: string; cls: string }> = {
   queued: { label: 'Chờ xử lý', cls: 'bg-slate-700 text-slate-200' },
   running: { label: 'Đang chạy', cls: 'bg-amber-500/20 text-amber-300' },
+  awaiting_approval: { label: 'Chờ duyệt chi phí', cls: 'bg-amber-500 text-slate-950' },
   qa_review: { label: 'Đang soát', cls: 'bg-amber-500/20 text-amber-300' },
   done: { label: 'Hoàn tất', cls: 'bg-emerald-500/20 text-emerald-300' },
   error: { label: 'Lỗi', cls: 'bg-rose-500/20 text-rose-300' },
 };
+
+const KIND_LABEL: Record<string, string> = { analyze: 'Phân tích', draft: 'Kịch bản', render: 'Dựng' };
+const LIVE: JobStatus[] = ['queued', 'running', 'awaiting_approval'];
 
 export function JobQueue({
   selectedJobId,
@@ -25,14 +30,19 @@ export function JobQueue({
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const [activeJob, setActiveJob] = useState<RenderJob | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [showApproval, setShowApproval] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Poll the job list (mock daemon has no list-change push — real WS in GĐ6 would).
+  // Poll the job list (neither the mock nor the server pushes list changes).
   useEffect(() => {
     let cancelled = false;
     async function tick() {
-      const list = await api.listJobs();
-      if (!cancelled) setJobs(list);
+      try {
+        const list = await api.listJobs();
+        if (!cancelled) setJobs(list);
+      } catch {
+        // Server offline: keep the last list, the header badge already says so.
+      }
     }
     void tick();
     const t = setInterval(tick, 2000);
@@ -111,8 +121,36 @@ export function JobQueue({
                 {actionError}
               </p>
             )}
+
+            {/* Keyed on the approval itself, not the chain status: after a draft retry the chain can still
+                read "error" (a cancelled render) while the draft waits for a fresh approval. */}
+            {displayedJob.approval && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-600/60 bg-amber-950/20 px-4 py-3">
+                <p className="flex items-center gap-2 text-xs text-amber-200">
+                  <Coins className="h-4 w-4 shrink-0 text-amber-400" />
+                  Kịch bản đã sẵn sàng gọi Claude — cần bạn duyệt chi phí trước khi chạy tiếp. Chưa có
+                  đồng nào được chi.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowApproval(true)}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:brightness-110"
+                >
+                  Xem & duyệt chi phí
+                </button>
+              </div>
+            )}
+
             <PipelineStepper steps={displayedJob.steps} etaSec={displayedJob.etaSec} />
-            {(displayedJob.status === 'queued' || displayedJob.status === 'running') && (
+
+            {displayedJob.jobs && displayedJob.jobs.length > 0 && (
+              <PipelineJobs
+                jobs={displayedJob.jobs}
+                onRetry={(id) => void run(() => api.retryJob(id))}
+              />
+            )}
+
+            {(LIVE.includes(displayedJob.status) || displayedJob.jobs?.some((j) => LIVE.includes(j.status))) && (
               <button
                 type="button"
                 onClick={() => void run(() => api.cancelJob(displayedJob.id))}
@@ -122,6 +160,7 @@ export function JobQueue({
                 Hủy tác vụ
               </button>
             )}
+
             <VideoPlayerWithQA
               job={displayedJob}
               // plan.json is only shown as a real sample in mock mode; the API has no route for it.
@@ -139,6 +178,54 @@ export function JobQueue({
       </div>
 
       {showPlan && <PlanModal onClose={() => setShowPlan(false)} />}
+      {showApproval && displayedJob?.approval && (
+        <ApprovalDialog
+          // A new estimate is a new decision: remounting drops any earlier tick.
+          key={`${displayedJob.approval.jobId}|${displayedJob.approval.worstCallVnd}|${displayedJob.approval.capVnd}`}
+          job={displayedJob}
+          onClose={() => setShowApproval(false)}
+          onApproved={(next) => {
+            setActiveJob(next);
+            setShowApproval(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jobId: string) => void }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+      <h3 className="mb-2 text-xs font-semibold text-slate-300">Các công việc trong chuỗi</h3>
+      <ul className="divide-y divide-slate-800/70">
+        {jobs.map((j) => (
+          <li key={j.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-xs">
+            <span className="w-24 font-medium text-slate-200">
+              {KIND_LABEL[j.kind] ?? j.kind}
+              {j.draft ? ` ${j.draft}` : ''}
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
+              {STATUS_LABEL[j.status].label}
+            </span>
+            {j.spentVnd !== null && (
+              <span className="text-slate-500">đã chi {j.spentVnd.toLocaleString('vi-VN')}đ</span>
+            )}
+            {j.errorMsg && <span className="min-w-0 flex-1 truncate text-rose-400" title={j.errorMsg}>{j.errorMsg}</span>}
+            {j.retryable && (
+              <button
+                type="button"
+                onClick={() => onRetry(j.id)}
+                title={j.kind === 'draft' ? 'Thử lại kịch bản cần duyệt lại chi phí' : undefined}
+                className="ml-auto flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-amber-500 hover:text-amber-300"
+              >
+                <RotateCw className="h-3 w-3" />
+                Thử lại{j.kind === 'draft' ? ' (duyệt lại)' : ''}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

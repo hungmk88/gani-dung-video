@@ -177,10 +177,53 @@ export interface PipelineStep {
   detail?: string;
 }
 
-export type JobStatus = 'queued' | 'running' | 'qa_review' | 'done' | 'error';
+export type JobStatus =
+  | 'queued'
+  | 'running'
+  | 'awaiting_approval'
+  | 'qa_review'
+  | 'done'
+  | 'error';
+
+/** A Claude call waiting for a person's cost approval (draft job, phase 6c). */
+export interface ApprovalInfo {
+  /** Server id of the draft job to approve. */
+  jobId: string;
+  inputTokens: number;
+  /** One call, worst case — what the person is asked to accept. */
+  worstCallVnd: number;
+  /** Ceiling for this video length. */
+  capVnd: number;
+  expiresAt: string | null;
+}
+
+/** One server job inside a pipeline card (analyze / draft / render). */
+export interface PipelineJobInfo {
+  id: string;
+  kind: string;
+  draft: string;
+  status: JobStatus;
+  errorMsg: string | null;
+  /** failed / cancelled / QC-failed: `POST /api/jobs/{id}/retry` accepts it. */
+  retryable: boolean;
+  spentVnd: number | null;
+}
+
+/** Playable result of one draft (A/B/C) of a pipeline. */
+export interface DraftOutput {
+  draft: string;
+  previewUrl: string | null;
+  finalUrl: string | null;
+  qa: QaReport | null;
+}
 
 export interface RenderJob {
   id: string;
+  /** Real API: set for a whole analyze → draft → render chain (`id` is then `p:<n>`). */
+  pipelineId?: number;
+  approval?: ApprovalInfo;
+  jobs?: PipelineJobInfo[];
+  outputs?: DraftOutput[];
   /** Real API only: the project/draft/size this job renders (needed to re-render). */
   projectId?: string;
   draft?: string;
@@ -244,6 +287,8 @@ export interface HealthInfo {
   rulesVersion: string | null;
   jobs: Record<string, number>;
   allowedRootsConfigured: boolean;
+  aiKeyConfigured: boolean;
+  budget: { limitVnd: number | null; spent24hVnd: number; reservedVnd: number };
 }
 
 export type DraftChoice = 'A' | 'B' | 'C' | 'all';
@@ -254,7 +299,11 @@ export interface SubmitRequest {
   options: VideoOptions;
   footage: FootageFile[];
   projectId?: string;
+  /** 'pipeline': POST /api/pipelines (analyze → draft → render). 'render': POST /api/jobs on a
+   *  project that already has plan + drafts. Ignored by the mock. */
+  mode?: 'pipeline' | 'render';
   draft?: DraftChoice;
   final?: boolean;
   noAsr?: boolean;
+  forceAnalyze?: boolean;
 }

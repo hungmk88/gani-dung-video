@@ -11,6 +11,7 @@
  */
 
 import { RULES } from '../data/rules';
+import { validateMax } from '../lib/approval';
 import { runPreflight } from '../lib/preflight';
 import { PIPELINE_STEPS } from '../types/rules';
 import type {
@@ -123,7 +124,14 @@ interface JobRecord {
   job: RenderJob;
   timer: ReturnType<typeof setTimeout> | null;
   footage: SubmitRequest['footage'];
+  /** Set once a person approved the (simulated) Claude cost. */
+  approved: boolean;
 }
+
+// Reference sample from a real dry run (docs/api-jobs.md §4b): 1.678 input tokens, worst
+// case one call 4.165,58đ, ceiling 20.000đ for a video up to 60s. Illustrative in the mock.
+const MOCK_COST = { inputTokens: 1678, worstCallVnd: 4165.58, capVnd: 20000 };
+const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 
 const store = new Map<string, JobRecord>();
 const listeners = new Map<string, Set<(job: RenderJob) => void>>();
@@ -166,9 +174,23 @@ function advance(id: string): void {
   }
 
   job.steps[nextIdx].status = 'running';
-  job.status = 'running';
   job.etaSec = Math.max(0, (job.steps.length - nextIdx) * 6);
   job.logLines.push(log('info', `▶ Bắt đầu: ${job.steps[nextIdx].label}`));
+
+  // The Claude step never starts spending on its own: park until a person approves.
+  if (job.steps[nextIdx].id === 'ai_draft' && !rec.approved) {
+    job.status = 'awaiting_approval';
+    job.steps[nextIdx].detail = 'Chờ duyệt chi phí';
+    job.approval = {
+      jobId: job.id,
+      ...MOCK_COST,
+      expiresAt: new Date(Date.now() + APPROVAL_TTL_MS).toISOString(),
+    };
+    job.logLines.push(log('warn', 'Đã có ước tính chi phí gọi Claude — chờ bạn duyệt (không tự chi tiền).'));
+    notify(id);
+    return;
+  }
+  job.status = 'running';
   notify(id);
 
   rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
@@ -190,6 +212,8 @@ export const mockApi: StudioApi = {
       rulesVersion: RULES.rules_version,
       jobs: {},
       allowedRootsConfigured: true,
+      aiKeyConfigured: true,
+      budget: { limitVnd: null, spent24hVnd: 0, reservedVnd: 0 },
     };
   },
 
@@ -218,7 +242,7 @@ export const mockApi: StudioApi = {
       finalUrl: null,
       qa: null,
     };
-    const rec: JobRecord = { job, timer: null, footage };
+    const rec: JobRecord = { job, timer: null, footage, approved: false };
     store.set(id, rec);
     rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
     return job;
@@ -250,6 +274,25 @@ export const mockApi: StudioApi = {
     rec.job.status = 'error';
     rec.job.logLines.push(log('warn', 'Đã huỷ theo yêu cầu.'));
     notify(id);
+  },
+
+  async retryJob(): Promise<void> {
+    // Mock jobs never fail on their own; nothing to retry.
+  },
+
+  async approve(job: RenderJob, maxVnd: number): Promise<RenderJob> {
+    const rec = store.get(job.id);
+    const ap = rec?.job.approval;
+    if (!rec || !ap) throw new Error('Tác vụ này không có gì đang chờ duyệt chi phí.');
+    const bad = validateMax(maxVnd, ap.worstCallVnd, ap.capVnd);
+    if (bad) throw new Error(bad);
+    rec.approved = true;
+    rec.job.approval = undefined;
+    rec.job.status = 'running';
+    rec.job.logLines.push(log('info', `Đã duyệt: tối đa ${maxVnd.toLocaleString('vi-VN')}đ cho lần gọi Claude (mô phỏng, không tốn tiền thật).`));
+    rec.timer = setTimeout(() => advance(job.id), STEP_TICK_MS);
+    notify(job.id);
+    return { ...rec.job };
   },
 
   async rerender(job: RenderJob): Promise<RenderJob> {
