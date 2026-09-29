@@ -16,13 +16,35 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.jobs import STATUSES, Job, can_transition, may_retry
+from gani_dung_video.domain.jobs import (
+    ANALYZE_STAGES,
+    KIND_PRIORITY,
+    STATUSES,
+    Job,
+    blocked_reason,
+    can_transition,
+    dependency_state,
+    join_stages,
+    may_retry,
+    parse_stages,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STOP_MODES = ("graceful", "now")
 
-_SCHEMA = """
-CREATE TABLE jobs (
+_STATUS_LIST = "'queued', 'processing', 'awaiting_approval', 'completed', 'failed', 'cancelled'"
+_V1_COLUMNS = (
+    "id, kind, project_dir, options_file, draft, final, no_asr, status, result, attempts, "
+    "max_attempts, priority, not_before, created_at, started_at, finished_at, worker_pid, "
+    "child_pid, heartbeat_at, stage, progress_pct, output_path, error_msg, exit_code, "
+    "cancel_requested"
+)
+
+
+def _jobs_ddl(name: str) -> str:
+    """The jobs table (v2). SQLite cannot alter a CHECK, so the v1 → v2 upgrade builds this
+    under another name, copies the rows and renames it."""
+    return f"""CREATE TABLE {name} (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT NOT NULL CHECK (kind IN ('render', 'draft', 'analyze')),
   project_dir TEXT NOT NULL,
@@ -30,8 +52,7 @@ CREATE TABLE jobs (
   draft TEXT NOT NULL,
   final INTEGER NOT NULL DEFAULT 0,
   no_asr INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')),
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ({_STATUS_LIST})),
   result TEXT CHECK (result IN ('passed', 'qc_failed')),
   attempts INTEGER NOT NULL DEFAULT 0,
   max_attempts INTEGER NOT NULL CHECK (max_attempts >= 1),
@@ -48,27 +69,45 @@ CREATE TABLE jobs (
   output_path TEXT,
   error_msg TEXT,
   exit_code INTEGER,
-  cancel_requested INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX idx_jobs_claim ON jobs (status, priority DESC, id);
-CREATE TABLE job_events (
+  cancel_requested INTEGER NOT NULL DEFAULT 0,
+  pipeline_id INTEGER,
+  depends_on INTEGER REFERENCES jobs (id) ON DELETE SET NULL,
+  phase TEXT CHECK (phase IN ('estimate', 'paid')),
+  stages_done TEXT NOT NULL DEFAULT '',
+  force INTEGER NOT NULL DEFAULT 0,
+  cost_input_tokens INTEGER,
+  cost_worst_call_vnd REAL,
+  cost_cap_vnd REAL,
+  approved_vnd REAL,
+  approved_at REAL,
+  spent_vnd REAL
+)"""
+
+
+_JOBS_INDEXES = [
+    "CREATE INDEX idx_jobs_claim ON jobs (status, priority DESC, id)",
+    "CREATE INDEX idx_jobs_depends ON jobs (depends_on)",
+    "CREATE INDEX idx_jobs_pipeline ON jobs (pipeline_id)",
+]
+_OTHER_TABLES = [
+    """CREATE TABLE job_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
   ts REAL NOT NULL,
   level TEXT NOT NULL,
   text TEXT NOT NULL
-);
-CREATE INDEX idx_events_job ON job_events (job_id, id);
-CREATE TABLE daemon (
+)""",
+    "CREATE INDEX idx_events_job ON job_events (job_id, id)",
+    """CREATE TABLE daemon (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   pid INTEGER NOT NULL,
   started_at REAL NOT NULL,
   heartbeat_at REAL NOT NULL,
   stop_request TEXT CHECK (stop_request IN ('graceful', 'now'))
-);
-"""
+)""",
+]
 
-_BOOLS = ("final", "no_asr", "cancel_requested")
+_BOOLS = ("final", "no_asr", "cancel_requested", "force")
 
 
 class QueueDbError(RuntimeError):
@@ -87,7 +126,10 @@ class NewJob(BaseModel):
     final: bool = False
     no_asr: bool = False
     max_attempts: int = 2
-    priority: int = 0
+    priority: int | None = None  # None: by kind (render before draft before analyze)
+    pipeline_id: int | None = None
+    depends_on: int | None = None  # job that must complete (passed) first
+    force: bool = False  # analyze: ignore the analysis stamp
 
 
 class JobEvent(BaseModel):
@@ -118,6 +160,7 @@ def _job(row: sqlite3.Row) -> Job:
     data: dict[str, Any] = dict(row)
     for k in _BOOLS:
         data[k] = bool(data[k])
+    data["stages_done"] = parse_stages(data["stages_done"])
     return Job(**data)
 
 
@@ -160,29 +203,72 @@ class QueueDb:
             con.execute("COMMIT")
 
     def _open_or_create(self) -> None:
-        hint = (
-            f"Không đọc được {self.path.name}: nếu file hỏng, đổi tên nó (hoặc dùng bản "
-            f"{self.path.name}.bak) rồi chạy lại."
-        )
+        hint = (f"Không đọc được {self.path.name}: nếu file hỏng, đổi tên nó (hoặc dùng bản "
+                f"{self.path.name}.bak) rồi chạy lại.")  # fmt: skip
         try:
             with self._conn() as con:
                 version = int(con.execute("PRAGMA user_version").fetchone()[0])
-                if version > SCHEMA_VERSION:
-                    raise QueueDbError(
-                        f"{self.path.name} thuộc phiên bản mới hơn ({version}) chương trình này "
-                        f"biết ({SCHEMA_VERSION}); cập nhật chương trình."
-                    )
-                if version == 0:
-                    con.execute("PRAGMA journal_mode = WAL")
-                    con.execute("BEGIN IMMEDIATE")
-                    if int(con.execute("PRAGMA user_version").fetchone()[0]) == 0:
-                        for stmt in _SCHEMA.split(";\n"):
-                            if stmt.strip():
-                                con.execute(stmt)
-                        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-                    con.execute("COMMIT")
+            if version > SCHEMA_VERSION:
+                raise QueueDbError(
+                    f"{self.path.name} thuộc phiên bản mới hơn ({version}) chương trình này "
+                    f"biết ({SCHEMA_VERSION}); cập nhật chương trình."
+                )
+            if version == 0:
+                self._create()
+            elif version == 1:
+                self._migrate_1_to_2()
         except sqlite3.DatabaseError as e:
             raise QueueDbError(f"{hint} ({e})") from e
+
+    def _create(self) -> None:
+        with self._conn() as con:
+            con.execute("PRAGMA journal_mode = WAL")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                if int(con.execute("PRAGMA user_version").fetchone()[0]) == 0:  # not raced
+                    for stmt in [_jobs_ddl("jobs"), *_JOBS_INDEXES, *_OTHER_TABLES]:
+                        con.execute(stmt)
+                    con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+
+    def _migrate_1_to_2(self) -> None:
+        """Phase 6c: rebuild `jobs` with the new columns and the awaiting_approval status.
+
+        SQLite procedure for changing a table with foreign keys pointing at it: foreign keys
+        OFF (so dropping the old table does not cascade-delete every event), one exclusive
+        transaction, copy, drop, rename, integrity check. A copy of the old file is kept first
+        (queue.db.v1.bak), and a process that loses the race finds version 2 and does nothing.
+        """
+        con = sqlite3.connect(self.path, timeout=self._busy_ms / 1000, isolation_level=None)
+        try:
+            con.execute("PRAGMA foreign_keys = OFF")
+            con.execute(f"PRAGMA busy_timeout = {int(self._busy_ms)}")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                if int(con.execute("PRAGMA user_version").fetchone()[0]) != 1:
+                    con.execute("ROLLBACK")  # another process already upgraded it
+                    return
+                self.backup(self.path.with_name(self.path.name + ".v1.bak"))
+                con.execute(_jobs_ddl("jobs_v2"))
+                con.execute(f"INSERT INTO jobs_v2 ({_V1_COLUMNS}) SELECT {_V1_COLUMNS} FROM jobs")
+                con.execute("DROP TABLE jobs")
+                con.execute("ALTER TABLE jobs_v2 RENAME TO jobs")
+                for stmt in _JOBS_INDEXES:
+                    con.execute(stmt)
+                if con.execute("PRAGMA foreign_key_check").fetchall():
+                    raise QueueDbError(
+                        "Nâng cấp queue.db bị hủy: dữ liệu cũ không khớp khóa ngoại."
+                    )
+                con.execute("PRAGMA user_version = 2")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+        finally:
+            con.close()
 
     def schema_version(self) -> int:
         with self._conn() as con:
@@ -191,14 +277,26 @@ class QueueDb:
     # ─────────────── jobs ───────────────
 
     def enqueue(self, job: NewJob, now: float) -> int:
+        priority = job.priority if job.priority is not None else KIND_PRIORITY[job.kind]
         with self._write() as con:
+            dep = job.depends_on
+            if dep is not None and con.execute("SELECT 1 FROM jobs WHERE id = ?",
+                                               (dep,)).fetchone() is None:  # fmt: skip
+                raise QueueDbError(f"Job phụ thuộc #{dep} không tồn tại.")
             cur = con.execute(
                 "INSERT INTO jobs (kind, project_dir, options_file, draft, final, no_asr, "
-                "max_attempts, priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "max_attempts, priority, created_at, pipeline_id, depends_on, force) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (job.kind, job.project_dir, job.options_file, job.draft, int(job.final),
-                 int(job.no_asr), job.max_attempts, job.priority, now),
+                 int(job.no_asr), job.max_attempts, priority, now, job.pipeline_id,
+                 job.depends_on, int(job.force)),
             )  # fmt: skip
             return int(cur.lastrowid or 0)
+
+    def next_pipeline_id(self) -> int:
+        with self._conn() as con:
+            return int(con.execute("SELECT COALESCE(MAX(pipeline_id), 0) + 1 FROM jobs"
+                                   ).fetchone()[0])  # fmt: skip
 
     def find_active(self, kind: str, project_dir: str, draft: str, final: bool) -> int | None:
         """Id of a waiting or running job for the same render, if any (no duplicates)."""
@@ -214,8 +312,10 @@ class QueueDb:
             row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _job(row) if row else None
 
-    def list_jobs(self, status: str | None = None, limit: int = 100,
-                  project_dir: str | None = None) -> list[Job]:  # fmt: skip
+    def list_jobs(
+        self, status: str | None = None, limit: int = 100, project_dir: str | None = None,
+        kind: str | None = None,
+    ) -> list[Job]:  # fmt: skip
         where, args = [], []
         if status:
             where.append("status = ?")
@@ -223,6 +323,9 @@ class QueueDb:
         if project_dir is not None:
             where.append("project_dir = ?")
             args.append(project_dir)
+        if kind is not None:
+            where.append("kind = ?")
+            args.append(kind)
         sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         with self._conn() as con:
             rows = con.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
@@ -240,8 +343,10 @@ class QueueDb:
         """Take the next runnable job (highest priority, then oldest) or None."""
         with self._write() as con:
             row = con.execute(
-                "SELECT id FROM jobs WHERE status = 'queued' AND not_before <= ? "
-                "ORDER BY priority DESC, id LIMIT 1", (now,)).fetchone()  # fmt: skip
+                "SELECT j.id FROM jobs j LEFT JOIN jobs d ON d.id = j.depends_on "
+                "WHERE j.status = 'queued' AND j.not_before <= ? AND (j.depends_on IS NULL OR "
+                "(d.status = 'completed' AND (d.result IS NULL OR d.result = 'passed'))) "
+                "ORDER BY j.priority DESC, j.id LIMIT 1", (now,)).fetchone()  # fmt: skip
             if row is None:
                 return None
             con.execute(
@@ -347,6 +452,45 @@ class QueueDb:
                 "heartbeat_at = NULL, stage = NULL, progress_pct = 0, output_path = NULL, "
                 "cancel_requested = 0 WHERE id = ?", (job_id,))  # fmt: skip
             return True
+
+    # ─────────────── phase 6c: dependencies and stages ───────────────
+
+    def cascade_blocked(self, now: float) -> list[int]:
+        """Cancel jobs that can never run because the job they wait for failed, was cancelled
+        or needs QC review — and, in turn, the jobs waiting for those. Returns their ids."""
+        changed: list[int] = []
+        with self._write() as con:
+            while True:
+                rows = con.execute(
+                    "SELECT j.id, d.id AS did, d.status AS dstatus, d.result AS dresult "
+                    "FROM jobs j JOIN jobs d ON d.id = j.depends_on "
+                    "WHERE j.status IN ('queued', 'awaiting_approval')").fetchall()  # fmt: skip
+                blocked = [
+                    r for r in rows if dependency_state(r["dstatus"], r["dresult"]) == "blocked"
+                ]
+                if not blocked:
+                    return changed
+                for r in blocked:
+                    msg = blocked_reason(int(r["did"]), str(r["dstatus"]), r["dresult"])
+                    con.execute("UPDATE jobs SET status = 'cancelled', finished_at = ?, "
+                                "error_msg = ? WHERE id = ?", (now, msg, r["id"]))  # fmt: skip
+                    changed.append(int(r["id"]))
+
+    def mark_stage_done(self, job_id: int, stage: str) -> None:
+        """Record a finished stage of a running multi-stage job (a retry resumes after it)."""
+        if stage not in ANALYZE_STAGES:
+            raise QueueDbError(f"Giai đoạn '{stage}' không hợp lệ.")
+        with self._write() as con:
+            row = con.execute("SELECT status, stages_done FROM jobs WHERE id = ?",
+                              (job_id,)).fetchone()  # fmt: skip
+            if row is None:
+                raise QueueDbError(f"Không có job {job_id}.")
+            if row["status"] != "processing":
+                raise QueueDbError(f"Job {job_id} đang '{row['status']}', không phải processing.")
+            done = parse_stages(row["stages_done"])
+            if stage not in done:
+                con.execute("UPDATE jobs SET stages_done = ? WHERE id = ?",
+                            (join_stages([*done, stage]), job_id))  # fmt: skip
 
     # ─────────────── events ───────────────
 

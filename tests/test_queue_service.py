@@ -14,6 +14,7 @@ from gani_dung_video.application.queue_service import (
     NotReadyError,
     allowed_roots,
     cancel_job,
+    enqueue_analyze,
     enqueue_project_render,
     enqueue_render,
     queue_dir,
@@ -305,3 +306,76 @@ def test_project_render_keeps_the_allow_list_rules(db: QueueDb, root: Path, tmp_
     (other / "edit").mkdir(parents=True)
     with pytest.raises(ConfigError, match="không nằm trong"):
         by_project(db, other, root)
+
+
+# ─────────────── analysis jobs and dependencies (6c-1) ───────────────
+
+
+def analyse(db: QueueDb, folder: Path, root: Path | None, **kw: Any) -> Any:
+    return enqueue_analyze(folder, db, rules=RULES, settings=cfg(root), **kw)
+
+
+def test_an_analysis_is_queued_with_the_lowest_priority(db: QueueDb, root: Path) -> None:
+    r = analyse(db, root / "footage", root)
+    job = db.get(r.job_id)
+    assert job is not None and not r.duplicate
+    assert (job.kind, job.status, job.priority, job.force) == ("analyze", "queued", 10, False)
+    assert job.project_dir == str((root / "footage").resolve()) and job.draft == ""
+    assert job.max_attempts == RULES["queue"]["max_attempts"]
+
+
+def test_force_is_kept_and_a_second_request_returns_the_first_job(db: QueueDb,
+                                                                  root: Path) -> None:  # fmt: skip
+    first = analyse(db, root / "footage", root, force=True)
+    again = analyse(db, root / "footage", root)
+    assert again.duplicate and again.job_id == first.job_id
+    assert db.get(first.job_id).force  # type: ignore[union-attr]
+
+
+def test_an_analysis_keeps_the_allow_list_rules(db: QueueDb, root: Path, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        analyse(db, root / "footage", None)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with pytest.raises(ConfigError, match="không nằm trong"):
+        analyse(db, elsewhere, root)
+    with pytest.raises(ConfigError, match="Không thấy thư mục"):
+        analyse(db, root / "gone", root)
+    assert db.list_jobs() == []
+
+
+def test_a_render_can_wait_for_an_analysis(db: QueueDb, opt: Path, root: Path) -> None:
+    a = analyse(db, root / "footage", root)
+    out = add(db, opt, root / "footage", root, ban="A", after=a.job_id)
+    assert db.get(out[0].job_id).depends_on == a.job_id  # type: ignore[union-attr]
+    project = ready_project(root)
+    by = by_project(db, project, root, draft="B", after=a.job_id)
+    assert db.get(by[0].job_id).depends_on == a.job_id  # type: ignore[union-attr]
+
+
+def test_waiting_for_a_job_that_does_not_exist_is_refused(db: QueueDb, opt: Path,
+                                                         root: Path) -> None:  # fmt: skip
+    with pytest.raises(ConfigError, match="99"):
+        add(db, opt, root / "footage", root, ban="A", after=99)
+    assert db.list_jobs() == []
+
+
+def test_cli_queue_analyze_and_after(env: Path, opt: Path, root: Path,
+                                     capsys: pytest.CaptureFixture[str]) -> None:  # fmt: skip
+    folder = str(root / "footage")
+    assert main(["queue", "analyze", folder, "--force"]) == 0
+    assert "phân tích" in capsys.readouterr().out.lower()
+    assert main(["queue", "add", str(opt), folder, "--ban", "A", "--after", "1"]) == 0
+    capsys.readouterr()
+    assert main(["queue", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "phân tích" in out.lower() and "#2" in out and "sau job #1" in out
+    assert main(["queue", "show", "1"]) == 0
+    assert "phân tích" in capsys.readouterr().out.lower()
+    assert QueueDb(env).get(2).depends_on == 1  # type: ignore[union-attr]
+
+
+def test_cli_queue_analyze_outside_the_allow_list_exits_2(env: Path, tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    assert main(["queue", "analyze", str(elsewhere)]) == 2

@@ -57,9 +57,14 @@ def _clip_times(scenes: Sequence[Scene]) -> list[float]:
 
 
 def _clip_vectors(
-    folder: Path, clip: str, times: list[float], backend: ClipBackend, width: int, grab: Grabber
-) -> dict[float, Vectors]:
-    """Vector per time; reuses edit/clip/<clip>.npz when file, model and width are unchanged."""
+    folder: Path, clip: str, times: list[float], backend: ClipBackend, width: int, grab: Grabber,
+    position: tuple[int, int] = (1, 1), batch: int = 8,
+) -> dict[float, Vectors]:  # fmt: skip
+    """Vector per time; reuses edit/clip/<clip>.npz when file, model and width are unchanged.
+
+    Frames are embedded `batch` at a time and each batch logs "[clip N/M] name: nhúng khung
+    a/b": the job daemon (phase 6c) watches this output, and CLIP can otherwise stay silent
+    for minutes on a slow CPU."""
     src, cache = folder / clip, folder / EDIT_DIR / CLIP_DIR / f"{clip}.npz"
     st = src.stat()
     key = f"{st.st_size}-{st.st_mtime_ns}-{backend.name}-{width}"
@@ -71,7 +76,14 @@ def _clip_vectors(
     todo = [t for t in times if t not in known]
     if todo:
         logger.info("Đang nhúng CLIP: %s (%d khung)", clip, len(todo))
-        known.update(zip(todo, backend.embed_images(grab(src, todo, width)), strict=True))
+        frames = grab(src, todo, width)
+        step = max(1, batch)
+        rows: list[Vectors] = []
+        for i in range(0, len(frames), step):
+            rows.extend(backend.embed_images(frames[i : i + step]))
+            logger.info("[clip %d/%d] %s: nhúng khung %d/%d", position[0], position[1], clip,
+                        min(i + step, len(frames)), len(frames))  # fmt: skip
+        known.update(zip(todo, rows, strict=True))
         ts = sorted(known)
         tmp = cache.with_name(cache.name + ".tmp.npz")
         np.savez(tmp, key=np.array(key), times=np.array(ts), vecs=np.stack([known[t] for t in ts]))
@@ -145,10 +157,11 @@ def build_semantics(
         by_clip.setdefault(sc.clip, []).append(sc)
     scenes: list[Scene] = []
     similar: list[SimilarPair] = []
-    for clip, group in by_clip.items():
+    for n, (clip, group) in enumerate(by_clip.items(), start=1):
         try:
             vec = _clip_vectors(folder, clip, _clip_times(group), backend,
-                                int(cfg["frame_width"]), grab)  # fmt: skip
+                                int(cfg["frame_width"]), grab, (n, len(by_clip)),
+                                int(cfg.get("progress_batch", 8)))  # fmt: skip
         except VisionError as e:
             logger.warning("Bỏ qua %s: %s", clip, e)
             scenes.extend(group)

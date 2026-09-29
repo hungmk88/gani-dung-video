@@ -278,8 +278,10 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
 
 
 def _need(ctx: ApiContext, job_id: int) -> Job:
+    """A render job by id. Analysis and draft jobs join the API in phase 6c-3; until then they
+    are invisible here, as if they did not exist."""
     job = ctx.db.get(job_id)
-    if job is None:
+    if job is None or job.kind != "render":
         raise _not_found(f"job #{job_id}")
     return job
 
@@ -303,7 +305,7 @@ def list_jobs(ctx: ApiContext, status: str | None = None, project_id: str | None
     if status is not None and status not in STATUSES:
         raise ApiError(400, "bad_request", f"Trạng thái phải là một trong: {', '.join(STATUSES)}.")
     folder = str(resolve_project(ctx, project_id)) if project_id else None
-    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder)
+    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind="render")
     return [_view(ctx, j) for j in jobs]
 
 

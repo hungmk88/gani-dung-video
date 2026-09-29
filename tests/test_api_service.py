@@ -426,3 +426,33 @@ def test_console_lines_and_errors_never_carry_absolute_paths(ctx: ApiContext, ro
     for leak in (folder, slash, str(root), str(root).replace("\\", "/"), "allowed"):
         assert leak not in text, leak
     assert "QC: ĐẠT" in text and "footage" in text  # the useful part stays
+
+
+# ─────────────── phase 6c-1: analysis jobs are not part of the render API yet ───────────────
+
+
+def analysis_job(ctx: ApiContext, root: Path) -> int:
+    make_project(root)
+    folder = str((root / "footage").resolve())
+    job = NewJob(kind="analyze", project_dir=folder, options_file="", draft="", max_attempts=2)
+    return ctx.db.enqueue(job, time.time())
+
+
+def test_analysis_jobs_are_hidden_from_the_render_job_api_until_6c3(ctx: ApiContext,
+                                                                   root: Path) -> None:  # fmt: skip
+    jid = analysis_job(ctx, root)
+    queue_one(ctx, root)
+    assert [v.kind for v in list_jobs(ctx)] == ["render"]
+    for call in (lambda: get_job(ctx, jid), lambda: job_events(ctx, jid, 0),
+                 lambda: cancel(ctx, jid), lambda: retry(ctx, jid)):  # fmt: skip
+        with pytest.raises(ApiError) as e:
+            call()
+        assert e.value.status == 404
+    assert health(ctx).jobs["queued"] == 2  # the counts are of every kind
+
+
+def test_media_of_an_analysis_job_is_a_404(ctx: ApiContext, root: Path) -> None:
+    jid = analysis_job(ctx, root)
+    with pytest.raises(ApiError) as e:
+        resolve_media(ctx, jid, "video")
+    assert e.value.status == 404

@@ -59,6 +59,7 @@ from gani_dung_video.application.plan_service import PreflightBlocked, build_pla
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.queue_service import (
     cancel_job,
+    enqueue_analyze,
     enqueue_render,
     open_queue,
     retry_job,
@@ -149,6 +150,12 @@ def _build_parser() -> argparse.ArgumentParser:
     qa.add_argument("--ban", default="all", help="Một bản (A, B, C) hoặc all (mặc định)")
     qa.add_argument("--final", action="store_true", help="Dựng bản cuối 1080×1920 (mặc định: nháp)")
     qa.add_argument("--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8)")
+    qa.add_argument(
+        "--after", type=int, help="Chỉ chạy sau khi job này xong (ví dụ một job phân tích)"
+    )
+    qn = qsub.add_parser("analyze", help="Phân tích footage (inventory, Whisper, scenes, CLIP)")
+    qn.add_argument("folder", type=Path, help="Thư mục footage (trong GANI_DV_ALLOWED_ROOTS)")
+    qn.add_argument("--force", action="store_true", help="Phân tích lại dù footage không đổi")
     ql = qsub.add_parser("list", help="Xem hàng đợi")
     ql.add_argument("--status", help="Chỉ hiện trạng thái này (queued, processing, …)")
     ql.add_argument("--limit", type=int, default=30)
@@ -169,9 +176,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _job_line(j: Job) -> str:
     result = f"/{j.result}" if j.result else ""
-    size = "cuối" if j.final else "nháp"
-    return (f"#{j.id} bản {j.draft} ({size}) {j.status}{result} {j.progress_pct:.0f}% — "
-            f"{Path(j.project_dir).name}")  # fmt: skip
+    what = (
+        "phân tích"
+        if j.kind == "analyze"
+        else f"bản {j.draft} ({'cuối' if j.final else 'nháp'})"
+        if j.kind == "render"
+        else j.kind
+    )
+    after = f" — sau job #{j.depends_on}" if j.depends_on else ""
+    return (f"#{j.id} {what} {j.status}{result} {j.progress_pct:.0f}% — "
+            f"{Path(j.project_dir).name}{after}")  # fmt: skip
 
 
 def _daemon_line(db: QueueDb, rules: Rules) -> str:
@@ -191,7 +205,7 @@ def _run_queue(args: argparse.Namespace) -> int:
     cmd = args.qcmd
     if cmd == "add":
         out = enqueue_render(args.file, args.folder, db, ban=args.ban, final=args.final,
-                             no_asr=args.no_asr, rules=rules)  # fmt: skip
+                             no_asr=args.no_asr, rules=rules, after=args.after)  # fmt: skip
         lines = [
             f"Bản {r.draft}: đã có trong hàng đợi (job #{r.job_id})"
             if r.duplicate
@@ -199,6 +213,11 @@ def _run_queue(args: argparse.Namespace) -> int:
             for r in out
         ]
         lines.append(_daemon_line(db, rules))
+    elif cmd == "analyze":
+        r = enqueue_analyze(args.folder, db, force=args.force, rules=rules)
+        lines = [f"Job phân tích #{r.job_id} đã có trong hàng đợi." if r.duplicate
+                 else f"Đã đưa vào hàng đợi: job #{r.job_id} — phân tích footage",
+                 _daemon_line(db, rules)]  # fmt: skip
     elif cmd == "list":
         jobs = db.list_jobs(args.status, args.limit)
         lines = [_daemon_line(db, rules), *(_job_line(j) for j in jobs)]
@@ -237,7 +256,12 @@ def _run_queue(args: argparse.Namespace) -> int:
 
 def _run_daemon() -> int:
     rules = load_rules()
-    daemon = Daemon(open_queue(), rules)
+    settings = load_settings()
+    daemon = Daemon(
+        open_queue(settings),
+        rules,
+        whisper_model=(settings.gani_dv_whisper_model or "").strip() or None,
+    )
 
     def on_signal(signum: int, frame: object) -> None:
         daemon.request_stop()  # the first signal is gentle, the second stops now

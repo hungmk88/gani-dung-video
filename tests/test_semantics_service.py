@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import shutil
 import subprocess
 from collections.abc import Sequence
@@ -205,3 +206,23 @@ def test_cli_semantics_without_ai_extra(clips: Path, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(semantics_service, "load_clip_backend", missing)
     assert main(["semantics", str(clips)]) == 2
+
+
+def test_embedding_logs_a_progress_line_per_batch_for_the_job_watchdog(
+    clips: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Phase 6c: the daemon watches the child's output; CLIP is silent for minutes otherwise."""
+    fresh = tmp_path / "copy"
+    shutil.copytree(clips, fresh, ignore=shutil.ignore_patterns("clip"))  # no cached vectors
+    rules = {**RULES, "semantic": {**RULES["semantic"], "progress_batch": 2}}
+    calls: list[int] = []
+    with caplog.at_level(logging.INFO, logger=semantics_service.logger.name):
+        build_semantics(fresh, rules, fake_backend(calls))
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("[clip")]
+    assert lines and max(calls) <= 2  # embedded in batches of at most 2 frames
+    assert lines[0].startswith("[clip 1/2] ") and any(x.startswith("[clip 2/2] ") for x in lines)
+    for clip_no in (1, 2):
+        mine = [x for x in lines if x.startswith(f"[clip {clip_no}/2]")]
+        counts = [tuple(int(n) for n in x.rsplit(" ", 1)[1].split("/")) for x in mine]
+        assert counts == sorted(counts) and counts[-1][0] == counts[-1][1]  # ends at n/n
+        assert all("nhúng khung" in x for x in mine)

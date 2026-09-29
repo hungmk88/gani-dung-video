@@ -120,7 +120,7 @@
   "segment_gap_sec": 3.0,
   "max_segments_per_clip": 3
  },
- "_ghi_chu_semantic": "Ngữ nghĩa hình (GĐ3c, chốt 28/09/2026). CLIP ViT-L/14 trọng số OpenAI + bộ chấm thẩm mỹ LAION v2 — anh chấp nhận dùng cho công cụ nội bộ. File LAION phải khớp aesthetic_sha256 (đã đối chiếu mã blob GitHub) mới được nạp, nạp bằng weights_only. device auto = GPU Apple (MPS) nếu có, không thì CPU. Nhãn: mỗi nhãn 3 câu tiếng Anh (CLIP chỉ hiểu tiếng Anh), gắn khi xác suất ≥ label_min_prob. Cảnh báo 2 đoạn cùng clip giống nhau khi độ tương đồng ≥ similar_warn = 0,95 (đo 29/09/2026 trên footage GANI: cùng clip trung vị 0,95, hai clip xưởng khác nhau p95 0,89, nên 0,85 của đặc tả §7.1 báo giả quá nhiều); mỗi cặp hai thời điểm báo một lần, kèm danh sách phong cách chọn chúng. Nhãn khac (màn chữ, màn kết mạng xã hội, logo) không phải footage: đoạn có nhãn đầu là khac không được tính là đoạn dùng được. Câu mô tả và ngưỡng là giá trị khởi đầu, hiệu chỉnh trên footage GANI.",
+ "_ghi_chu_semantic": "Ngữ nghĩa hình (GĐ3c, chốt 28/09/2026). CLIP ViT-L/14 trọng số OpenAI + bộ chấm thẩm mỹ LAION v2 — anh chấp nhận dùng cho công cụ nội bộ. File LAION phải khớp aesthetic_sha256 (đã đối chiếu mã blob GitHub) mới được nạp, nạp bằng weights_only. device auto = GPU Apple (MPS) nếu có, không thì CPU. Nhãn: mỗi nhãn 3 câu tiếng Anh (CLIP chỉ hiểu tiếng Anh), gắn khi xác suất ≥ label_min_prob. Cảnh báo 2 đoạn cùng clip giống nhau khi độ tương đồng ≥ similar_warn = 0,95 (đo 29/09/2026 trên footage GANI: cùng clip trung vị 0,95, hai clip xưởng khác nhau p95 0,89, nên 0,85 của đặc tả §7.1 báo giả quá nhiều); mỗi cặp hai thời điểm báo một lần, kèm danh sách phong cách chọn chúng. Nhãn khac (màn chữ, màn kết mạng xã hội, logo) không phải footage: đoạn có nhãn đầu là khac không được tính là đoạn dùng được. Câu mô tả và ngưỡng là giá trị khởi đầu, hiệu chỉnh trên footage GANI. progress_batch (GĐ6c-1): số khung nhúng mỗi lần, mỗi lần ghi một dòng log tiến độ `[clip N/M] …` để daemon (watchdog và thanh tiến độ) thấy CLIP còn sống.",
  "semantic": {
   "clip_model": "ViT-L-14-quickgelu",
   "clip_pretrained": "openai",
@@ -128,6 +128,7 @@
   "aesthetic_url": "https://github.com/christophschuhmann/improved-aesthetic-predictor/raw/main/sac%2Blogos%2Bava1-l14-linearMSE.pth",
   "aesthetic_sha256": "21dd590f3ccdc646f0d53120778b296013b096a035a2718c9cb0d511bff0f1e0",
   "device": "auto",
+  "progress_batch": 8,
   "frame_width": 360,
   "label_min_prob": 0.3,
   "similar_warn": 0.95,
@@ -284,7 +285,7 @@
    "span_margin_sec": 0.3
   }
  },
-  "_ghi_chu_queue": "Hàng đợi dựng (GĐ6a, chốt 29/09/2026, đặc tả §8.3.1 Option B). Daemon hỏi hàng đợi mỗi poll_sec giây, mỗi job là một tiến trình con gọi lệnh render của CLI (tuần tự, một job một lúc). Job tự thử lại tối đa max_attempts lần (kể cả lần đầu), chờ retry_delay_sec giữa các lần; QC không đạt KHÔNG thử lại; job tốn phí API (draft) không bao giờ tự thử lại. shutdown_grace_sec: dừng nhẹ nhàng chờ job đang chạy xong tối đa từng ấy giây rồi trả job về hàng đợi (--now: trả ngay). stall_sec: tiến trình con im lặng (không dòng nào, không file nào trong thư mục render đổi) quá từng ấy giây bị kill (spec ghi 5 phút, quá ngắn cho QC/Whisper trên CPU). daemon_stale_sec: nhịp tim daemon cũ hơn thì coi là đã chết. job_stale_sec: job đang chạy mà nhịp tim cũ hơn thì coi là mồ côi. leftover_kill_max_age_sec: sau sập, chỉ kill tiến trình con còn sót nếu nhịp tim cuối chưa cũ quá (tránh kill nhầm khi pid bị tái dùng sau khi máy khởi động lại). expected_sec: thời gian dựng dự kiến, chỉ để ước tính % tiến độ.",
+  "_ghi_chu_queue": "Hàng đợi dựng (GĐ6a, chốt 29/09/2026, đặc tả §8.3.1 Option B). Daemon hỏi hàng đợi mỗi poll_sec giây, mỗi job là một tiến trình con gọi lệnh render của CLI (tuần tự, một job một lúc). Job tự thử lại tối đa max_attempts lần (kể cả lần đầu), chờ retry_delay_sec giữa các lần; QC không đạt KHÔNG thử lại; job tốn phí API (draft) không bao giờ tự thử lại. shutdown_grace_sec: dừng nhẹ nhàng chờ job đang chạy xong tối đa từng ấy giây rồi trả job về hàng đợi (--now: trả ngay). stall_sec: tiến trình con im lặng (không dòng nào, không file nào trong thư mục render đổi) quá từng ấy giây bị kill (spec ghi 5 phút, quá ngắn cho QC/Whisper trên CPU). daemon_stale_sec: nhịp tim daemon cũ hơn thì coi là đã chết. job_stale_sec: job đang chạy mà nhịp tim cũ hơn thì coi là mồ côi. leftover_kill_max_age_sec: sau sập, chỉ kill tiến trình con còn sót nếu nhịp tim cuối chưa cũ quá (tránh kill nhầm khi pid bị tái dùng sau khi máy khởi động lại). expected_sec: thời gian dựng dự kiến, chỉ để ước tính % tiến độ. analyze_stall_sec / analyze_timeout_sec (GĐ6c-1, chốt 29/09/2026): job phân tích (inventory → transcribe → scenes → semantics, mỗi giai đoạn là một tiến trình con) có ngưỡng treo riêng 1800s và trần tổng 4 giờ, vì CLIP trên Dell chạy ~17 phút cho 9 clip; nhờ dòng log tiến độ `[clip N/M]` của semantics nên watchdog vẫn có tín hiệu. stage_expected_sec: thời gian dự kiến từng giai đoạn, chỉ để ước tính % tiến độ.",
  "queue": {
   "poll_sec": 2,
   "max_attempts": 2,
@@ -296,6 +297,9 @@
   "leftover_kill_max_age_sec": 1200,
   "timeout_sec": {"render_preview": 1800, "render_final": 5400},
   "expected_sec": {"render_preview": 60, "render_final": 300},
+  "analyze_stall_sec": 1800,
+  "analyze_timeout_sec": 14400,
+  "stage_expected_sec": {"inventory": 10, "transcribe": 300, "scenes": 100, "semantics": 590},
   "max_events_per_job": 500
  },
  "_ghi_chu_api": "API web cục bộ (GĐ6b, chốt 29/09/2026). Chỉ bind 127.0.0.1 (host bị từ chối nếu khác). Mọi yêu cầu phải có Host là 127.0.0.1 hoặc localhost cùng cổng (chặn DNS rebinding); yêu cầu POST phải có Content-Type application/json và, nếu có Origin, Origin phải nằm trong allowed_origins (mặc định: Vite dev server); Sec-Fetch-Site cross-site chỉ được nếu Origin hoặc Referer nằm trong allowed_origins. Thêm origin khác (bản triển khai thật) bằng cách sửa danh sách này. max_body_bytes: thân yêu cầu tối đa; socket_timeout_sec: chống kết nối treo; events_page: số dòng console cuối kèm trong chi tiết job; media_chunk_bytes: khối đọc khi phát video.",
@@ -417,6 +421,7 @@
   "QUEUE_PREFLIGHT_BLOCKED": "Tùy chọn bị chặn ở bước kiểm tra trước [{code}]: {msg}",
   "QUEUE_NO_PLAN": "Dự án chưa có edit/plan.json — chạy lệnh `plan` (rồi `pick`, `draft`) trước khi đưa vào hàng đợi.",
   "QUEUE_NO_DRAFTS": "Dự án chưa có edit/{file} — chạy lệnh `draft` trước khi đưa vào hàng đợi.",
+  "QUEUE_NO_DEPENDENCY": "Không có job #{job} để chờ (`--after`).",
   "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
   "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }

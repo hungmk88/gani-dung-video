@@ -84,7 +84,7 @@ def test_preflight_request_takes_an_options_object_only() -> None:
     "status,result,expected",
     [("queued", None, "queued"), ("processing", None, "running"), ("completed", "passed", "done"),
      ("completed", "qc_failed", "qa_review"), ("failed", None, "error"),
-     ("cancelled", None, "error")],
+     ("cancelled", None, "error"), ("awaiting_approval", None, "awaiting_approval")],
 )  # fmt: skip
 def test_frontend_status_mapping(status: str, result: str | None, expected: str) -> None:
     assert frontend_status(status, result) == expected

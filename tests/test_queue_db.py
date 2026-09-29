@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,7 @@ def alive_all(pid: int) -> bool:
 
 
 def test_schema_is_created_with_wal_and_a_version(db: QueueDb, tmp_path: Path) -> None:
-    assert db.schema_version() == 1
+    assert db.schema_version() == 2
     con = sqlite3.connect(tmp_path / "jobs" / "queue.db")
     try:
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -395,8 +396,8 @@ def test_counts_by_status_include_every_status(db: QueueDb) -> None:
     db.enqueue(new_job("B"), T0)
     db.claim(T0, 1)
     db.finish(a, T0 + 1, "failed", None, 2, "lỗi", None)
-    assert db.counts() == {"queued": 1, "processing": 0, "completed": 0, "failed": 1,
-                           "cancelled": 0}  # fmt: skip
+    assert db.counts() == {"queued": 1, "processing": 0, "awaiting_approval": 0, "completed": 0,
+                           "failed": 1, "cancelled": 0}  # fmt: skip
 
 
 def test_list_can_be_limited_to_one_project(db: QueueDb) -> None:
@@ -404,3 +405,314 @@ def test_list_can_be_limited_to_one_project(db: QueueDb) -> None:
     db.enqueue(new_job("A", project_dir="E:/two"), T0)
     assert [j.id for j in db.list_jobs(project_dir="E:/one")] == [mine]
     assert db.list_jobs(project_dir="E:/none") == []
+
+
+# ─────────────── 6c-1: schema v2 migration ───────────────
+
+_V1 = """
+CREATE TABLE jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL CHECK (kind IN ('render', 'draft', 'analyze')),
+  project_dir TEXT NOT NULL, options_file TEXT NOT NULL, draft TEXT NOT NULL,
+  final INTEGER NOT NULL DEFAULT 0, no_asr INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')),
+  result TEXT CHECK (result IN ('passed', 'qc_failed')),
+  attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL CHECK (max_attempts >= 1),
+  priority INTEGER NOT NULL DEFAULT 0, not_before REAL NOT NULL DEFAULT 0,
+  created_at REAL NOT NULL, started_at REAL, finished_at REAL, worker_pid INTEGER,
+  child_pid INTEGER, heartbeat_at REAL, stage TEXT, progress_pct REAL NOT NULL DEFAULT 0,
+  output_path TEXT, error_msg TEXT, exit_code INTEGER,
+  cancel_requested INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_jobs_claim ON jobs (status, priority DESC, id);
+CREATE TABLE job_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+  ts REAL NOT NULL, level TEXT NOT NULL, text TEXT NOT NULL
+);
+CREATE INDEX idx_events_job ON job_events (job_id, id);
+CREATE TABLE daemon (
+  id INTEGER PRIMARY KEY CHECK (id = 1), pid INTEGER NOT NULL, started_at REAL NOT NULL,
+  heartbeat_at REAL NOT NULL, stop_request TEXT CHECK (stop_request IN ('graceful', 'now'))
+);
+"""
+
+
+def make_v1(path: Path) -> None:
+    """A queue.db exactly as phase 6a/6b wrote it, with two jobs and three events."""
+    con = sqlite3.connect(path)
+    for stmt in _V1.split(";\n"):
+        if stmt.strip():
+            con.execute(stmt)
+    con.execute("PRAGMA journal_mode = WAL")
+    con.execute(
+        "INSERT INTO jobs (kind, project_dir, options_file, draft, final, status, result, "
+        "attempts, max_attempts, created_at, started_at, finished_at, progress_pct, output_path, "
+        "exit_code) VALUES ('render', 'E:/a', 'o', 'A', 1, 'completed', 'passed', 1, 2, 10, 11, "
+        "12, 100, 'E:/a/v.mp4', 0)")  # fmt: skip
+    con.execute(
+        "INSERT INTO jobs (kind, project_dir, options_file, draft, status, attempts, max_attempts,"
+        " created_at, started_at, worker_pid, heartbeat_at, stage) VALUES ('render', 'E:/b', 'o', "
+        "'B', 'processing', 1, 2, 20, 21, 99, 22, 'dung')")  # fmt: skip
+    for i in range(3):
+        con.execute("INSERT INTO job_events (job_id, ts, level, text) VALUES (1, ?, 'info', ?)",
+                    (30 + i, f"dòng {i}"))  # fmt: skip
+    con.execute("PRAGMA user_version = 1")
+    con.commit()
+    con.close()
+
+
+def test_a_v1_database_is_upgraded_with_every_job_and_event_kept(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    db = QueueDb(path)
+    assert db.schema_version() == 2
+    done, running = db.get(1), db.get(2)
+    assert done is not None and running is not None
+    assert (done.status, done.result, done.final, done.output_path) == ("completed", "passed", True,
+                                                                       "E:/a/v.mp4")  # fmt: skip
+    assert (running.status, running.worker_pid, running.stage) == ("processing", 99, "dung")
+    assert [e.text for e in db.events(1)] == ["dòng 0", "dòng 1", "dòng 2"]  # not cascaded away
+
+
+def test_upgraded_jobs_get_neutral_values_for_the_new_columns(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    job = QueueDb(path).get(1)
+    assert job is not None
+    assert (job.pipeline_id, job.depends_on, job.phase, job.stages_done, job.force) == (
+        None, None, None, [], False)  # fmt: skip
+    assert job.approved_vnd is None and job.spent_vnd is None and job.cost_cap_vnd is None
+
+
+def test_the_upgrade_keeps_a_copy_of_the_old_file_and_touches_it_only_once(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    QueueDb(path)
+    backup = tmp_path / "queue.db.v1.bak"
+    assert backup.is_file()
+    con = sqlite3.connect(backup)
+    try:
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 2
+    finally:
+        con.close()
+    stamp = backup.stat().st_mtime_ns
+    time.sleep(0.05)
+    QueueDb(path)  # already v2: nothing to do, the old copy is not replaced
+    assert backup.stat().st_mtime_ns == stamp
+
+
+def test_ids_keep_counting_after_the_upgrade(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    db = QueueDb(path)
+    assert db.enqueue(new_job("C"), T0) == 3
+
+
+def test_the_upgraded_table_knows_the_new_status_and_refuses_bad_ones(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    QueueDb(path)
+    con = sqlite3.connect(path)
+    try:
+        con.execute("UPDATE jobs SET status = 'awaiting_approval' WHERE id = 2")
+        with pytest.raises(sqlite3.IntegrityError):
+            con.execute("UPDATE jobs SET status = 'sleeping' WHERE id = 2")
+        assert con.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        con.close()
+
+
+def test_two_processes_opening_an_old_file_upgrade_it_once(tmp_path: Path) -> None:
+    path = tmp_path / "queue.db"
+    make_v1(path)
+    errors: list[BaseException] = []
+
+    def opener() -> None:
+        try:
+            QueueDb(path)
+        except BaseException as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=opener) for _ in range(6)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(timeout=60)
+    assert errors == []
+    db = QueueDb(path)
+    assert db.schema_version() == 2 and len(db.list_jobs()) == 2
+
+
+def test_a_fresh_database_starts_at_v2_without_any_backup(tmp_path: Path) -> None:
+    QueueDb(tmp_path / "queue.db")
+    assert not (tmp_path / "queue.db.v1.bak").exists()
+
+
+# ─────────────── 6c-1: dependencies and priorities ───────────────
+
+
+def analyze_job(**kw: object) -> NewJob:
+    return new_job("", **{"kind": "analyze", "priority": None, **kw})
+
+
+def test_a_job_waits_for_the_job_it_depends_on(db: QueueDb) -> None:
+    first = db.enqueue(analyze_job(), T0)
+    second = db.enqueue(new_job("A", depends_on=first, priority=None), T0)
+    got = db.claim(T0 + 1, 1)
+    assert got is not None and got.id == first
+    assert db.claim(T0 + 2, 1) is None  # the analysis is running: the render must wait
+    db.finish(first, T0 + 3, "completed", "passed", 0, None, None)
+    nxt = db.claim(T0 + 4, 1)
+    assert nxt is not None and nxt.id == second
+
+
+def test_a_job_is_never_claimed_after_its_dependency_failed(db: QueueDb) -> None:
+    first = db.enqueue(analyze_job(), T0)
+    db.enqueue(new_job("A", depends_on=first, priority=None), T0)
+    db.claim(T0, 1)
+    db.finish(first, T0 + 1, "failed", None, 2, "lỗi", None)
+    assert db.claim(T0 + 2, 1) is None
+
+
+def test_a_dependency_that_does_not_exist_is_refused(db: QueueDb) -> None:
+    with pytest.raises(QueueDbError, match="99"):
+        db.enqueue(new_job("A", depends_on=99), T0)
+
+
+def test_priority_follows_the_kind_unless_given(db: QueueDb) -> None:
+    slow = db.enqueue(analyze_job(), T0)  # queued first, but least urgent
+    paid = db.enqueue(new_job("A", kind="draft", priority=None), T0 + 1)
+    quick = db.enqueue(new_job("B", priority=None), T0 + 2)
+    order = [db.claim(T0 + 10, 1) for _ in range(3)]
+    assert [j.id for j in order if j] == [quick, paid, slow]
+    assert [j.priority for j in order if j] == [30, 20, 10]
+
+
+def test_an_explicit_priority_still_wins(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(priority=99), T0)
+    db.enqueue(new_job("B", priority=None), T0)
+    got = db.claim(T0, 1)
+    assert got is not None and got.id == a
+
+
+# ─────────────── 6c-1: cancelling what can never run ───────────────
+
+
+def test_cascade_cancels_a_whole_chain_behind_a_failed_job(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    b = db.enqueue(new_job("A", kind="draft", depends_on=a, priority=None), T0)
+    c = db.enqueue(new_job("A", depends_on=b, priority=None), T0)
+    db.claim(T0, 1)
+    db.finish(a, T0 + 1, "failed", None, 2, "lỗi", None)
+    assert sorted(db.cascade_blocked(T0 + 2)) == [b, c]
+    for jid in (b, c):
+        job = db.get(jid)
+        assert job is not None and job.status == "cancelled" and job.finished_at == T0 + 2
+        assert "Bị chặn" in (job.error_msg or "")
+    assert "#1" in (db.get(b).error_msg or "")  # type: ignore[union-attr]
+    assert db.cascade_blocked(T0 + 3) == []  # nothing left to do
+
+
+def test_cascade_leaves_jobs_whose_dependency_is_still_to_come(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    b = db.enqueue(new_job("A", depends_on=a, priority=None), T0)
+    assert db.cascade_blocked(T0) == []
+    db.claim(T0, 1)  # the analysis is running
+    assert db.cascade_blocked(T0) == []
+    job = db.get(b)
+    assert job is not None and job.status == "queued"
+
+
+def test_cascade_also_covers_a_dependency_that_was_cancelled_or_needs_qc_review(
+    db: QueueDb,
+) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    b = db.enqueue(new_job("A", depends_on=a, priority=None), T0)
+    db.request_cancel(a, T0 + 1)
+    assert db.cascade_blocked(T0 + 2) == [b]
+    assert "hủy" in (db.get(b).error_msg or "")  # type: ignore[union-attr]
+
+
+def test_cascade_never_touches_a_job_that_already_started(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    b = db.enqueue(new_job("A", depends_on=a, priority=None), T0)
+    db.claim(T0, 1)
+    db.finish(a, T0 + 1, "completed", "passed", 0, None, None)
+    got = db.claim(T0 + 2, 1)
+    assert got is not None and got.id == b
+    assert db.cascade_blocked(T0 + 3) == []
+
+
+# ─────────────── 6c-1: resumable stages, force, pipelines, kinds ───────────────
+
+
+def test_finished_stages_are_recorded_once_and_in_order(db: QueueDb) -> None:
+    jid = db.enqueue(analyze_job(), T0)
+    db.claim(T0, 1)
+    db.mark_stage_done(jid, "inventory")
+    db.mark_stage_done(jid, "transcribe")
+    db.mark_stage_done(jid, "transcribe")  # again: no duplicate
+    job = db.get(jid)
+    assert job is not None and job.stages_done == ["inventory", "transcribe"]
+
+
+def test_stages_survive_a_retry_a_stop_and_a_manual_retry(db: QueueDb) -> None:
+    jid = db.enqueue(analyze_job(), T0)
+    db.claim(T0, 1)
+    db.mark_stage_done(jid, "inventory")
+    db.requeue(jid, T0, "lỗi", consume_attempt=True)  # automatic retry
+    assert db.get(jid).stages_done == ["inventory"]  # type: ignore[union-attr]
+    db.claim(T0 + 1, 1)
+    db.requeue(jid, T0, "dừng", consume_attempt=False)  # a stop request
+    assert db.get(jid).stages_done == ["inventory"]  # type: ignore[union-attr]
+    db.claim(T0 + 2, 1)
+    db.finish(jid, T0 + 3, "failed", None, 2, "lỗi", None)
+    assert db.retry_manual(jid)  # a person retries: resume, do not redo
+    assert db.get(jid).stages_done == ["inventory"]  # type: ignore[union-attr]
+
+
+def test_marking_a_stage_of_a_job_that_is_not_running_is_refused(db: QueueDb) -> None:
+    jid = db.enqueue(analyze_job(), T0)
+    with pytest.raises(QueueDbError, match="processing"):
+        db.mark_stage_done(jid, "inventory")
+    db.claim(T0, 1)
+    with pytest.raises(QueueDbError, match="bogus"):
+        db.mark_stage_done(jid, "bogus")
+
+
+def test_the_force_flag_is_stored(db: QueueDb) -> None:
+    jid = db.enqueue(analyze_job(force=True), T0)
+    other = db.enqueue(analyze_job(), T0)
+    assert db.get(jid).force and not db.get(other).force  # type: ignore[union-attr]
+
+
+def test_pipeline_ids_count_up(db: QueueDb) -> None:
+    assert db.next_pipeline_id() == 1
+    db.enqueue(analyze_job(pipeline_id=1), T0)
+    assert db.next_pipeline_id() == 2
+
+
+def test_list_can_be_limited_to_one_kind(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    r = db.enqueue(new_job("A"), T0)
+    assert [j.id for j in db.list_jobs(kind="analyze")] == [a]
+    assert [j.id for j in db.list_jobs(kind="render")] == [r]
+    assert {j.id for j in db.list_jobs()} == {a, r}
+
+
+def test_find_active_works_for_an_analysis_of_a_project(db: QueueDb) -> None:
+    a = db.enqueue(analyze_job(), T0)
+    assert db.find_active("analyze", "E:/footage", "", False) == a
+    assert db.find_active("render", "E:/footage", "", False) is None
+
+
+def test_a_crashed_analysis_is_requeued_but_keeps_what_it_finished(db: QueueDb) -> None:
+    jid = db.enqueue(analyze_job(), T0)
+    db.claim(T0, 1)
+    db.mark_stage_done(jid, "inventory")
+    [r] = db.recover_orphans(T0 + 500, alive_none, stale_sec=120, retry_delay=30)
+    assert (r.job_id, r.action) == (jid, "requeued")
+    assert db.get(jid).stages_done == ["inventory"]  # type: ignore[union-attr]

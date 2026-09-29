@@ -64,10 +64,15 @@ def _inside(path: Path, roots: list[Path]) -> bool:
     return any(path == r or r in path.parents for r in roots)
 
 
+def _need_dependency(db: QueueDb, after: int | None, msgs: Mapping[str, Any]) -> None:
+    if after is not None and db.get(after) is None:
+        raise ConfigError(msgs["QUEUE_NO_DEPENDENCY"].format(job=after))
+
+
 def enqueue_render(
     options_file: Path, folder: Path, db: QueueDb, *, ban: str | None = None,
     final: bool = False, no_asr: bool = False, rules: Rules | None = None,
-    settings: Settings | None = None, now: float | None = None,
+    settings: Settings | None = None, now: float | None = None, after: int | None = None,
 ) -> list[EnqueueResult]:  # fmt: skip
     """Queue the render of one draft (`ban`), or of every draft the request asks for.
 
@@ -103,6 +108,7 @@ def enqueue_render(
     else:
         raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=ban.upper(), count=count,
                                                          letters=", ".join(letters)))  # fmt: skip
+    _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
     for letter in chosen:
@@ -112,7 +118,7 @@ def enqueue_render(
             continue
         jid = db.enqueue(
             NewJob(kind="render", project_dir=str(project), options_file=str(options),
-                   draft=letter, final=final, no_asr=no_asr,
+                   draft=letter, final=final, no_asr=no_asr, depends_on=after,
                    max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
         out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
     return out
@@ -131,7 +137,7 @@ def retry_job(db: QueueDb, job_id: int) -> bool:
 def enqueue_project_render(
     project: Path, db: QueueDb, *, draft: str = "all", final: bool = False,
     no_asr: bool = False, rules: Rules | None = None, settings: Settings | None = None,
-    now: float | None = None,
+    now: float | None = None, after: int | None = None,
 ) -> list[EnqueueResult]:  # fmt: skip
     """Queue renders of a project that is already planned and drafted (the web API's path).
 
@@ -172,6 +178,7 @@ def enqueue_project_render(
     else:
         raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=draft.upper(), count=count,
                                                          letters=", ".join(letters)))  # fmt: skip
+    _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
     for letter in chosen:
@@ -181,7 +188,40 @@ def enqueue_project_render(
             continue
         jid = db.enqueue(
             NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
-                   draft=letter, final=final, no_asr=no_asr,
+                   draft=letter, final=final, no_asr=no_asr, depends_on=after,
                    max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
         out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
     return out
+
+
+def enqueue_analyze(
+    project: Path, db: QueueDb, *, force: bool = False, rules: Rules | None = None,
+    settings: Settings | None = None, now: float | None = None,
+) -> EnqueueResult:  # fmt: skip
+    """Queue the analysis (inventory, Whisper, scenes, CLIP) of one project folder.
+
+    With `force` the daemon analyses even if the footage looks unchanged. Asking again while
+    an analysis of the same folder waits or runs returns that job.
+
+    Raises:
+        ConfigError: no allow-list, or the folder is outside it or missing.
+    """
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    folder = project.expanduser().resolve()
+    if not _inside(folder, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=folder))
+    if not folder.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=folder))
+    existing = db.find_active("analyze", str(folder), "", False)
+    if existing is not None:
+        return EnqueueResult(job_id=existing, draft="", duplicate=True)
+    jid = db.enqueue(
+        NewJob(kind="analyze", project_dir=str(folder), options_file="", draft="", force=force,
+               max_attempts=int(rules["queue"]["max_attempts"])),
+        now if now is not None else time.time())  # fmt: skip
+    return EnqueueResult(job_id=jid, draft="", duplicate=False)

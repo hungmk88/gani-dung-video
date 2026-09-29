@@ -25,6 +25,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from gani_dung_video.application.analyze_job import JobEnv, run_analyze
 from gani_dung_video.application.render_service import RENDER_DIR, _video_name
 from gani_dung_video.domain.jobs import (
     Job,
@@ -73,11 +74,13 @@ class Daemon:
         clock: Callable[[], float] = time.time, alive: Callable[[int], bool] = pid_alive,
         killer: Callable[[int], None] = kill_tree, pid: int | None = None,
         argv_base: Sequence[str] | None = None, log_dir: Path | None = None,
+        whisper_model: str | None = None,
     ) -> None:  # fmt: skip
-        self.db, self._cfg = db, rules["queue"]
+        self.db, self._cfg, self._rules = db, rules["queue"], rules
         self._runner, self._clock, self._alive, self._killer = runner, clock, alive, killer
         self._pid = pid if pid is not None else os.getpid()
         self._argv_base = argv_base
+        self._whisper_model = whisper_model
         self._log_dir = log_dir if log_dir is not None else db.path.parent / "logs"
         self._local_stop: str | None = None  # "graceful" | "now", from a signal
         self._grace_until: float | None = None
@@ -149,13 +152,30 @@ class Daemon:
 
     # ─────────────── one job ───────────────
 
+    def _child_env(self) -> dict[str, str]:
+        return {"PYTHONPATH": os.pathsep.join(
+            [str(_PACKAGE_PARENT), *filter(None, [os.environ.get("PYTHONPATH")])])}  # fmt: skip
+
+    def _job_env(self) -> JobEnv:
+        return JobEnv(db=self.db, rules=self._rules, runner=self._runner, clock=self._clock,
+                      pid=self._pid, argv_base=self._argv_base, log_dir=self._log_dir,
+                      child_env=self._child_env(), should_stop=self._should_stop,
+                      whisper_model=self._whisper_model)  # fmt: skip
+
     def process_next(self) -> bool:
         """Claim and run one job. False when nothing was runnable."""
+        for jid in self.db.cascade_blocked(self._clock()):  # jobs whose dependency ended badly
+            logger.warning("Job %d bị hủy vì job nó phụ thuộc không hoàn thành", jid)
         job = self.db.claim(self._clock(), self._pid)
         if job is None:
             return False
         try:
-            self._run_job(job)
+            if job.kind == "analyze":
+                run_analyze(self._job_env(), job)
+            elif job.kind == "render":
+                self._run_job(job)
+            else:
+                self._fail(job, f"Loại job '{job.kind}' chưa được hỗ trợ (giai đoạn 6c-2).")
         except Exception as e:  # a bug here must fail the job, never kill the daemon
             logger.exception("Job %d gặp lỗi bất ngờ", job.id)
             self._fail(job, f"Lỗi bất ngờ trong daemon: {type(e).__name__}: {e}")
@@ -223,8 +243,7 @@ class Daemon:
             on_start=lambda pid: self.db.set_child(job.id, pid),
             poll_sec=min(float(self._cfg["poll_sec"]), 0.5),
             log_path=self._log_dir / f"{job.id}.log",
-            env={"PYTHONPATH": os.pathsep.join(
-                [str(_PACKAGE_PARENT), *filter(None, [os.environ.get("PYTHONPATH")])])},
+            env=self._child_env(),
         )  # fmt: skip
         fresh, passed = self._report(out, video, wall_start)
         limit = (

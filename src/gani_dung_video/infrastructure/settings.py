@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # separator: ";" on Windows, ":" on Mac) and where queue.db lives (default: <project>/jobs).
     gani_dv_allowed_roots: str | None = None
     gani_dv_queue_dir: str | None = None
+    # Whisper model the queue's `transcribe` stage uses on this machine (rules.json's default,
+    # large-v3-turbo, is not on the Dell and is ~1.6 GB to download): e.g. "small".
+    gani_dv_whisper_model: str | None = None
 
 
 def load_settings(env_file: Path | None = ENV_FILE) -> Settings:
