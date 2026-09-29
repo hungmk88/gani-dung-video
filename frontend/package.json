@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:real": "vite --mode real",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test src/services/mappers.test.ts"
   },
   "dependencies": {
     "lucide-react": "^1.48.0",

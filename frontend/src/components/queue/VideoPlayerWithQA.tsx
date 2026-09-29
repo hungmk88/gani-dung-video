@@ -1,6 +1,6 @@
 import { CheckCircle2, Download, FileJson, RefreshCw, XCircle } from 'lucide-react';
 import { useState } from 'react';
-import type { QaCheck, QaReport, RenderJob } from '../../types/rules';
+import type { QaCheck, QaGroup as QaGroupData, QaReport, RenderJob } from '../../types/rules';
 
 function CheckRow({ c }: { c: QaCheck }) {
   return (
@@ -18,25 +18,34 @@ function CheckRow({ c }: { c: QaCheck }) {
   );
 }
 
-function QaGroup({ title, checks }: { title: string; checks: QaCheck[] }) {
-  const allPass = checks.every((c) => c.passed);
+function QaGroup({ group }: { group: QaGroupData }) {
+  const empty = group.checks.length === 0;
+  const allPass = !empty && group.checks.every((c) => c.passed);
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/30 p-3">
-      <div className="mb-1 flex items-center justify-between">
-        <h4 className="text-xs font-semibold text-slate-300">{title}</h4>
+      <div className="mb-1 flex items-start justify-between gap-2">
+        <h4 className="text-xs font-semibold text-slate-300">{group.title}</h4>
         <span
-          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-            allPass ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+            empty
+              ? 'bg-slate-700/40 text-slate-400'
+              : allPass
+                ? 'bg-emerald-500/15 text-emerald-300'
+                : 'bg-rose-500/15 text-rose-300'
           }`}
         >
-          {allPass ? 'ĐẠT' : 'LỖI'}
+          {empty ? 'CHƯA CÓ' : allPass ? 'ĐẠT' : 'LỖI'}
         </span>
       </div>
-      <ul className="divide-y divide-slate-800/60">
-        {checks.map((c, i) => (
-          <CheckRow key={i} c={c} />
-        ))}
-      </ul>
+      {empty ? (
+        <p className="py-1.5 text-[11px] text-slate-500">{group.emptyNote ?? 'Chưa có dữ liệu.'}</p>
+      ) : (
+        <ul className="divide-y divide-slate-800/60">
+          {group.checks.map((c, i) => (
+            <CheckRow key={i} c={c} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -45,15 +54,15 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-200">Soát chất lượng (verify.py, 3 nhóm)</h3>
+        <h3 className="text-sm font-semibold text-slate-200">Soát chất lượng</h3>
         <span className="text-[11px] text-slate-500">
           vòng {qa.rounds_used}/{qa.max_rounds}
         </span>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <QaGroup title="Pass 1 · Đồng bộ nhịp & hình ảnh (V2–V4, T1)" checks={qa.pass1_sync} />
-        <QaGroup title="Pass 2 · Từ khoá cấm / đối thủ (glossary.json, V7–V8)" checks={qa.pass2_glossary} />
-        <QaGroup title="Pass 3 · Cân bằng âm thanh (qc.T3)" checks={qa.pass3_audio} />
+        {qa.groups.map((g) => (
+          <QaGroup key={g.title} group={g} />
+        ))}
       </div>
     </div>
   );
@@ -66,9 +75,13 @@ export function VideoPlayerWithQA({
 }: {
   job: RenderJob;
   onRerender: () => void;
-  onShowPlan: () => void;
+  /** Omitted when there is nothing truthful to show (the real API has no plan.json route). */
+  onShowPlan?: () => void;
 }) {
-  const [tab, setTab] = useState<'preview' | 'final'>('preview');
+  const [chosenTab, setChosenTab] = useState<'preview' | 'final' | null>(null);
+  // Until the user picks a tab, show whichever file exists (a final-only job has no preview).
+  const tab = chosenTab ?? (job.previewUrl || !job.finalUrl ? 'preview' : 'final');
+  const setTab = setChosenTab;
   const src = tab === 'final' ? job.finalUrl : job.previewUrl;
   const res = tab === 'final' ? '1080×1920' : '540×960';
 
@@ -109,7 +122,7 @@ export function VideoPlayerWithQA({
 
       <div className="flex flex-wrap gap-2">
         <ActionButton icon={Download} label="Tải video final" disabled={!job.finalUrl} href={job.finalUrl ?? undefined} />
-        <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />
+        {onShowPlan && <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />}
         <ActionButton icon={RefreshCw} label="Render lại" onClick={onRerender} />
       </div>
 

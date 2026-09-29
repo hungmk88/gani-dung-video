@@ -32,3 +32,6 @@ public/audio/*
 !public/audio/.gitkeep
 public/preview/*
 !public/preview/.gitkeep
+
+# Non-secret mode switch for `npm run dev:real` (the root .gitignore blocks .env.* by default)
+!.env.real

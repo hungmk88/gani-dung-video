@@ -1,18 +1,25 @@
-import { AlertTriangle, CheckCircle2, ShieldAlert, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, ShieldAlert, Zap } from 'lucide-react';
 import type { PreflightResult } from '../../types/rules';
 
 export function PreflightValidator({
   result,
   incomplete,
+  checking,
+  error,
+  missingProject,
   submitting,
   onSubmit,
 }: {
-  result: PreflightResult;
+  result: PreflightResult | null;
   incomplete: boolean;
+  checking: boolean;
+  error: string | null;
+  missingProject: boolean;
   submitting: boolean;
   onSubmit: () => void;
 }) {
-  const disabled = incomplete || !result.valid || submitting;
+  const disabled =
+    incomplete || result === null || !result.valid || checking || missingProject || submitting;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -26,8 +33,13 @@ export function PreflightValidator({
         <p className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
           Chọn đủ phong cách, mục đích, thời lượng và chế độ nhạc để bắt đầu kiểm tra.
         </p>
+      ) : result === null ? (
+        <p className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
+          {error === null && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {error === null ? 'Đang kiểm tra…' : 'Chưa kiểm tra được.'}
+        </p>
       ) : (
-        <div className="space-y-2">
+        <div className={`space-y-2 ${checking ? 'opacity-60' : ''}`}>
           {result.errors.length === 0 && result.warnings.length === 0 && (
             <div className="flex items-center gap-2 rounded-lg border border-emerald-800/50 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-300">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -59,6 +71,19 @@ export function PreflightValidator({
             </div>
           ))}
 
+          {result.adjustments.map((a, i) => (
+            <div
+              key={`adj-${i}`}
+              className="flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs text-slate-300"
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span>
+                <span className="font-mono-studio font-semibold">{a.code} (tự xử lý):</span>{' '}
+                {a.message}
+              </span>
+            </div>
+          ))}
+
           {result.scenes_needed !== null && (
             <p className="pt-1 text-[11px] text-slate-500">
               Cần {result.scenes_needed} cảnh dùng được (bảng scenes_needed)
@@ -66,6 +91,16 @@ export function PreflightValidator({
             </p>
           )}
         </div>
+      )}
+
+      {error && (
+        <p className="mt-3 flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {error}
+        </p>
+      )}
+      {missingProject && !incomplete && (
+        <p className="mt-3 text-[11px] text-amber-400/90">Chọn một dự án ở mục 1 để gửi xử lý.</p>
       )}
 
       <button

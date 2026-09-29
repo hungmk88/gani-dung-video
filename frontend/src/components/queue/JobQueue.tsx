@@ -1,4 +1,4 @@
-import { Clock3, Inbox } from 'lucide-react';
+import { Ban, Clock3, Inbox } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import type { JobStatus, RenderJob } from '../../types/rules';
@@ -25,6 +25,7 @@ export function JobQueue({
   const [jobs, setJobs] = useState<RenderJob[]>([]);
   const [activeJob, setActiveJob] = useState<RenderJob | null>(null);
   const [showPlan, setShowPlan] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Poll the job list (mock daemon has no list-change push — real WS in GĐ6 would).
   useEffect(() => {
@@ -49,6 +50,15 @@ export function JobQueue({
   // Derived instead of reset via a second effect: avoids a stale job flashing while the
   // new subscription's first update is still in flight after switching selection.
   const displayedJob = activeJob && activeJob.id === selectedJobId ? activeJob : null;
+
+  async function run(action: () => Promise<unknown>) {
+    setActionError(null);
+    try {
+      await action();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[280px_1fr]">
@@ -96,13 +106,32 @@ export function JobQueue({
           </div>
         ) : (
           <>
+            {actionError && (
+              <p className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+                {actionError}
+              </p>
+            )}
             <PipelineStepper steps={displayedJob.steps} etaSec={displayedJob.etaSec} />
+            {(displayedJob.status === 'queued' || displayedJob.status === 'running') && (
+              <button
+                type="button"
+                onClick={() => void run(() => api.cancelJob(displayedJob.id))}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-rose-500 hover:text-rose-300"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                Hủy tác vụ
+              </button>
+            )}
             <VideoPlayerWithQA
               job={displayedJob}
-              onShowPlan={() => setShowPlan(true)}
-              onRerender={() => {
-                /* GĐ6 thật: gọi lại api.submitJob với cùng options + footage đã lưu. */
-              }}
+              // plan.json is only shown as a real sample in mock mode; the API has no route for it.
+              onShowPlan={api.mode === 'mock' ? () => setShowPlan(true) : undefined}
+              onRerender={() =>
+                void run(async () => {
+                  const next = await api.rerender(displayedJob);
+                  onSelectJob(next.id);
+                })
+              }
             />
             <ConsoleLog lines={displayedJob.logLines} />
           </>

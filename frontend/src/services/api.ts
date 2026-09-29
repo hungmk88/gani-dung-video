@@ -1,38 +1,38 @@
 /**
  * API surface the UI depends on. Components only ever import `api` from this file —
- * never mockApi.ts directly — so wiring GĐ6's real daemon later means implementing
- * `realApi` below and flipping USE_MOCK in config.ts, with zero component changes.
+ * never mockApi.ts / realApi.ts directly. `VITE_USE_MOCK=false` (see config.ts) switches
+ * the whole UI from the in-browser simulation to the local server of phase 6b.
  */
 
-import type { FootageFile, RenderJob, VideoOptions } from '../types/rules';
+import type {
+  HealthInfo,
+  PreflightResult,
+  ProjectInfo,
+  RenderJob,
+  SubmitRequest,
+  VideoOptions,
+  FootageFile,
+} from '../types/rules';
 import { USE_MOCK } from './config';
 import { mockApi } from './mockApi';
+import { realApi } from './realApi';
 
 export interface StudioApi {
-  submitJob(options: VideoOptions, footage: FootageFile[]): Promise<RenderJob>;
+  /** 'mock': footage is dropped in the browser; 'real': a project is picked on the server. */
+  mode: 'mock' | 'real';
+  health(): Promise<HealthInfo>;
+  /** Projects the server can render; the mock has none (it has a footage dropzone). */
+  listProjects(): Promise<ProjectInfo[]>;
+  /** Real: POST /api/preflight (Python is the single source of truth). Mock: local copy. */
+  preflight(options: VideoOptions, footage: FootageFile[]): Promise<PreflightResult>;
+  submitJob(req: SubmitRequest): Promise<RenderJob>;
   listJobs(): Promise<RenderJob[]>;
   getJob(id: string): Promise<RenderJob | null>;
-  /** Simulates the WebSocket push described in the spec. Returns an unsubscribe fn. */
+  /** Live updates of one job; returns the unsubscribe function. */
   subscribeJob(id: string, onUpdate: (job: RenderJob) => void): () => void;
   cancelJob(id: string): Promise<void>;
+  /** Re-run a job: retry when it failed / QC-failed, otherwise queue a fresh one. */
+  rerender(job: RenderJob): Promise<RenderJob>;
 }
-
-const realApi: StudioApi = {
-  async submitJob() {
-    throw new Error('GĐ6 (daemon thật ở 127.0.0.1:8765) chưa được duyệt/triển khai.');
-  },
-  async listJobs() {
-    throw new Error('GĐ6 chưa triển khai.');
-  },
-  async getJob() {
-    throw new Error('GĐ6 chưa triển khai.');
-  },
-  subscribeJob() {
-    throw new Error('GĐ6 chưa triển khai.');
-  },
-  async cancelJob() {
-    throw new Error('GĐ6 chưa triển khai.');
-  },
-};
 
 export const api: StudioApi = USE_MOCK ? mockApi : realApi;

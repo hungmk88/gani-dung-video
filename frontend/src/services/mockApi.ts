@@ -11,6 +11,7 @@
  */
 
 import { RULES } from '../data/rules';
+import { runPreflight } from '../lib/preflight';
 import { PIPELINE_STEPS } from '../types/rules';
 import type {
   ConsoleLine,
@@ -19,6 +20,7 @@ import type {
   PipelineStepId,
   QaReport,
   RenderJob,
+  SubmitRequest,
   VideoOptions,
 } from '../types/rules';
 import type { StudioApi } from './api';
@@ -81,33 +83,34 @@ const RULES_QC_MAX_ROUNDS = 3;
 
 function buildQaReport(): QaReport {
   return {
-    pass1_sync: [
-      { code: 'V2', label: 'Tổng phách khớp plan', passed: true, detail: 'Tổng phách mỗi khối đúng như plan.json biên dịch.' },
-      { code: 'V3', label: 'Phách ngoài dải → làm tròn', passed: true, detail: 'Tự động làm tròn về phách gần nhất cho phép (không cần AI sửa lại).' },
-      { code: 'V4', label: 'Không lặp cảnh, cách nhau ≥ 3s', passed: true, detail: 'Tối đa 3 đoạn/clip, không có cặp đoạn trùng gần (similar_warn 0,95).' },
-      { code: 'T1', label: 'Khung hình / fps / codec đúng cấu hình', passed: true, detail: '1080×1920, 30fps, H.264 — khớp render.final trong rules.json.' },
-    ],
-    pass2_glossary: [
+    groups: [
       {
-        code: 'V7',
-        label: `Không chứa cụm từ cấm (${RULES.bannedClaims.length} cụm trong glossary.json)`,
-        passed: true,
-        detail: `Đã soát: ${RULES.bannedClaims.slice(0, 5).join(', ')}… và các cụm y tế "chữa/trị/phòng bệnh".`,
-      },
-      { code: 'V8', label: 'Khối cuối hiện đúng CTA', passed: true, detail: 'CTA khớp purposes.*.cta cho mục đích đã chọn.' },
-    ],
-    pass3_audio: [
-      {
-        code: 'T3',
-        label: 'Độ to trung bình (LUFS)',
-        passed: true,
-        detail: 'Đo được −13,9 LUFS, mục tiêu −14,0 ±1,0 LU (qc.lufs_tolerance).',
+        title: 'Pass 1 · Đồng bộ nhịp & hình ảnh (V2–V4, T1)',
+        checks: [
+          { code: 'V2', label: 'Tổng phách khớp plan', passed: true, detail: 'Tổng phách mỗi khối đúng như plan.json biên dịch.' },
+          { code: 'V3', label: 'Phách ngoài dải → làm tròn', passed: true, detail: 'Tự động làm tròn về phách gần nhất cho phép (không cần AI sửa lại).' },
+          { code: 'V4', label: 'Không lặp cảnh, cách nhau ≥ 3s', passed: true, detail: 'Tối đa 3 đoạn/clip, không có cặp đoạn trùng gần (similar_warn 0,95).' },
+          { code: 'T1', label: 'Khung hình / fps / codec đúng cấu hình', passed: true, detail: '1080×1920, 30fps, H.264 — khớp render.final trong rules.json.' },
+        ],
       },
       {
-        code: 'T3',
-        label: 'Đỉnh thật (dBTP)',
-        passed: true,
-        detail: 'Đo được −2,0 dBTP, trần qc.max_true_peak_db = −1,0 dBTP.',
+        title: 'Pass 2 · Từ khoá cấm / đối thủ (glossary.json, V7–V8)',
+        checks: [
+          {
+            code: 'V7',
+            label: `Không chứa cụm từ cấm (${RULES.bannedClaims.length} cụm trong glossary.json)`,
+            passed: true,
+            detail: `Đã soát: ${RULES.bannedClaims.slice(0, 5).join(', ')}… và các cụm y tế "chữa/trị/phòng bệnh".`,
+          },
+          { code: 'V8', label: 'Khối cuối hiện đúng CTA', passed: true, detail: 'CTA khớp purposes.*.cta cho mục đích đã chọn.' },
+        ],
+      },
+      {
+        title: 'Pass 3 · Cân bằng âm thanh (qc.T3)',
+        checks: [
+          { code: 'T3', label: 'Độ to trung bình (LUFS)', passed: true, detail: 'Đo được −13,9 LUFS, mục tiêu −14,0 ±1,0 LU (qc.lufs_tolerance).' },
+          { code: 'T3', label: 'Đỉnh thật (dBTP)', passed: true, detail: 'Đo được −2,0 dBTP, trần qc.max_true_peak_db = −1,0 dBTP.' },
+        ],
       },
     ],
     rounds_used: 1,
@@ -119,7 +122,7 @@ function buildQaReport(): QaReport {
 interface JobRecord {
   job: RenderJob;
   timer: ReturnType<typeof setTimeout> | null;
-  footage: FootageFile[];
+  footage: SubmitRequest['footage'];
 }
 
 const store = new Map<string, JobRecord>();
@@ -178,7 +181,27 @@ function makeId(): string {
 }
 
 export const mockApi: StudioApi = {
-  async submitJob(options: VideoOptions, footage: FootageFile[]): Promise<RenderJob> {
+  mode: 'mock',
+
+  async health() {
+    return {
+      online: true,
+      daemonOnline: true,
+      rulesVersion: RULES.rules_version,
+      jobs: {},
+      allowedRootsConfigured: true,
+    };
+  },
+
+  async listProjects() {
+    return [];
+  },
+
+  async preflight(options, footage) {
+    return runPreflight({ options, footage });
+  },
+
+  async submitJob({ options, footage }: SubmitRequest): Promise<RenderJob> {
     const id = makeId();
     const style = RULES.styles[options.phong_cach as keyof typeof RULES.styles];
     const purpose = RULES.purposes[options.muc_dich as keyof typeof RULES.purposes];
@@ -227,5 +250,10 @@ export const mockApi: StudioApi = {
     rec.job.status = 'error';
     rec.job.logLines.push(log('warn', 'Đã huỷ theo yêu cầu.'));
     notify(id);
+  },
+
+  async rerender(job: RenderJob): Promise<RenderJob> {
+    const footage = store.get(job.id)?.footage ?? [];
+    return mockApi.submitJob({ options: job.options, footage });
   },
 };

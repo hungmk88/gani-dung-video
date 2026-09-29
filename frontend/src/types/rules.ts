@@ -144,6 +144,8 @@ export interface PreflightResult {
   valid: boolean;
   errors: PreflightIssue[];
   warnings: PreflightIssue[];
+  /** Auto-applied corrections (level 'auto', e.g. X12/X13) — informational only. */
+  adjustments: PreflightIssue[];
   scenes_needed: number | null;
   scenes_estimated: number | null;
 }
@@ -179,6 +181,10 @@ export type JobStatus = 'queued' | 'running' | 'qa_review' | 'done' | 'error';
 
 export interface RenderJob {
   id: string;
+  /** Real API only: the project/draft/size this job renders (needed to re-render). */
+  projectId?: string;
+  draft?: string;
+  size?: 'preview' | 'final';
   title: string;
   options: VideoOptions;
   status: JobStatus;
@@ -197,8 +203,8 @@ export interface ConsoleLine {
   text: string;
 }
 
-/** V1–V9 (AI draft compliance) + T1–T7 (technical QC) — codes exactly as domain/verify.py
- *  and domain/qc.py use them, so a real WS payload drops straight into this shape. */
+/** One check as the backend reports it. Codes: V1–V9 (AI draft, domain/verify.py) and
+ *  T1–T8 (technical QC, domain/qc.py). */
 export interface QaCheck {
   code: string;
   label: string;
@@ -206,11 +212,49 @@ export interface QaCheck {
   detail: string;
 }
 
+/** A titled group of checks. `emptyNote` explains an empty group instead of faking rows
+ *  (e.g. V1–V9 are not stored per check by the backend yet — docs/api-jobs.md §6.1). */
+export interface QaGroup {
+  title: string;
+  checks: QaCheck[];
+  emptyNote?: string;
+}
+
 export interface QaReport {
-  pass1_sync: QaCheck[]; // beat/scene sync (V2, V3, V4)
-  pass2_glossary: QaCheck[]; // banned claims / competitor terms (V7)
-  pass3_audio: QaCheck[]; // loudness / true-peak (qc.T3)
+  groups: QaGroup[];
   rounds_used: number;
   max_rounds: number;
   overall_pass: boolean;
+}
+
+/* ───────────────────── Local API (phase 6b) ───────────────────── */
+
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  ready_to_render: boolean;
+  has_inventory: boolean;
+  has_plan: boolean;
+  has_drafts: boolean;
+}
+
+export interface HealthInfo {
+  online: boolean;
+  daemonOnline: boolean;
+  rulesVersion: string | null;
+  jobs: Record<string, number>;
+  allowedRootsConfigured: boolean;
+}
+
+export type DraftChoice = 'A' | 'B' | 'C' | 'all';
+
+/** What the wizard hands to `api.submitJob`. Mock uses options+footage; the real API takes
+ *  its options from the project's plan.json and only needs project/draft/final. */
+export interface SubmitRequest {
+  options: VideoOptions;
+  footage: FootageFile[];
+  projectId?: string;
+  draft?: DraftChoice;
+  final?: boolean;
+  noAsr?: boolean;
 }

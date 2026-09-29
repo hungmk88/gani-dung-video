@@ -68,7 +68,14 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
   const warnings: PreflightIssue[] = [];
 
   if (!isOptionsComplete(o)) {
-    return { valid: false, errors: [], warnings: [], scenes_needed: null, scenes_estimated: null };
+    return {
+      valid: false,
+      errors: [],
+      warnings: [],
+      adjustments: [],
+      scenes_needed: null,
+      scenes_estimated: null,
+    };
   }
 
   const style = RULES.styles[o.phong_cach as keyof typeof RULES.styles];
@@ -130,7 +137,7 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
   }
   // X11 — no music × style whose only defined fallback is the virtual grid (TVC)
   if (style.driver === 'music' && style.driver_fallback === 'grid' && o.nhac === 'khong_nhac') {
-    warnings.push(issue('X11', { style: style.name, grid: '0.5' }));
+    warnings.push(issue('X11', { style: style.name, grid: style.scene_avg_sec }));
   }
   // X7 — speech-driven style, footage speech unknown until real `inventory`/`transcribe` runs
   if (style.requires_speech) {
@@ -169,6 +176,7 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
     valid: errors.length === 0,
     errors,
     warnings,
+    adjustments: [],
     scenes_needed: scenesNeeded,
     scenes_estimated: scenesEstimated,
   };

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { api } from '../../services/api';
 import type { ConsoleLine } from '../../types/rules';
 
 const LEVEL_COLOR: Record<ConsoleLine['level'], string> = {
@@ -17,7 +18,7 @@ export function ConsoleLog({ lines }: { lines: ConsoleLine[] }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-black/40">
       <div className="border-b border-slate-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-500">
-        Console — tín hiệu từ daemon (mock)
+        Console — tín hiệu từ daemon{api.mode === 'mock' ? ' (mô phỏng)' : ''}
       </div>
       <div ref={boxRef} className="max-h-48 overflow-y-auto scroll-thin px-3 py-2 font-mono-studio text-[11px]">
         {lines.length === 0 && <p className="text-slate-600">Chưa có tín hiệu.</p>}
