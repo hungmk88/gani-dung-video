@@ -30,8 +30,16 @@ export interface StudioApi {
   getJob(id: string): Promise<RenderJob | null>;
   /** Live updates of one job; returns the unsubscribe function. */
   subscribeJob(id: string, onUpdate: (job: RenderJob) => void): () => void;
+  /** Cancels a job; for a pipeline card ("p:<n>") every job still waiting or running. */
   cancelJob(id: string): Promise<void>;
-  /** Re-run a job: retry when it failed / QC-failed, otherwise queue a fresh one. */
+  /** Retry one failed / cancelled / QC-failed server job (a draft needs a fresh approval). */
+  retryJob(jobId: string): Promise<void>;
+  /**
+   * Approve the Claude cost of the card's draft job. The ONLY call that can make money be
+   * spent: it needs the exact amount a person confirmed, never a default.
+   */
+  approve(job: RenderJob, maxVnd: number): Promise<RenderJob>;
+  /** Re-run a card: retry what failed (in order), otherwise queue fresh renders. */
   rerender(job: RenderJob): Promise<RenderJob>;
 }
 

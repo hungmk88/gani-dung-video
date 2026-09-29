@@ -1,4 +1,4 @@
-import { Cpu, Database, Music2 } from 'lucide-react';
+import { Cpu, Database, KeyRound, Music2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MUSIC_LIBRARY } from '../../data/mockMusic';
 import { api } from '../../services/api';
@@ -59,11 +59,14 @@ function queueBadge(health: HealthInfo | null): { value: string; tone: 'emerald'
   if (health === null) return { value: 'Máy chủ dựng: không kết nối', tone: 'amber' };
   if (!health.daemonOnline) return { value: 'Máy chủ OK · daemon TẮT', tone: 'amber' };
   const waiting = (health.jobs.queued ?? 0) + (health.jobs.processing ?? 0);
-  return { value: `Daemon online · ${waiting} job đang chờ/chạy`, tone: 'emerald' };
+  const approvals = health.jobs.awaiting_approval ?? 0;
+  const tail = approvals > 0 ? ` · ${approvals} chờ duyệt chi phí` : '';
+  return { value: `Daemon online · ${waiting} job đang chờ/chạy${tail}`, tone: approvals > 0 ? 'amber' : 'emerald' };
 }
 
 export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabId) => void }) {
-  const queue = queueBadge(useHealth());
+  const health = useHealth();
+  const queue = queueBadge(health);
   return (
     <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6">
@@ -84,6 +87,9 @@ export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabI
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge icon={Database} label="Hàng đợi" value={queue.value} tone={queue.tone} />
+            {health && !health.aiKeyConfigured && (
+              <Badge icon={KeyRound} label="Khóa API Claude" value="chưa cấu hình — không thể gọi AI" tone="amber" />
+            )}
             <Badge
               icon={Music2}
               label="Thư viện nhạc"

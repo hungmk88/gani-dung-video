@@ -21,7 +21,15 @@ const DEFAULT_OPTIONS: VideoOptions = {
   pacing: 'nhac',
 };
 
-const DEFAULT_CHOICE: RealJobChoice = { projectId: null, draft: 'all', final: false, noAsr: false };
+const DEFAULT_CHOICE: RealJobChoice = {
+  mode: 'pipeline',
+  projectId: null,
+  draft: 'all',
+  final: false,
+  noAsr: false,
+  forceAnalyze: false,
+};
+const DRAFT_LETTERS = ['A', 'B', 'C'] as const;
 const PREFLIGHT_DEBOUNCE_MS = 250;
 
 function messageOf(e: unknown): string {
@@ -44,10 +52,13 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   }
 
   const incomplete = !isOptionsComplete(options);
+  // "Chỉ dựng lại": the server takes everything from plan.json, so the matrix is not sent.
+  const renderOnly = isReal && choice.mode === 'render';
+  const draftLetters = DRAFT_LETTERS.slice(0, options.so_ban_nhap);
 
   // Debounced preflight through the API; `cancelled` drops answers of superseded inputs.
   useEffect(() => {
-    if (incomplete) return;
+    if (incomplete || renderOnly) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       setChecking(true);
@@ -69,7 +80,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [options, footage, incomplete]);
+  }, [options, footage, incomplete, renderOnly]);
 
   const needsProject = isReal && choice.projectId === null;
 
@@ -81,9 +92,15 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         options,
         footage,
         projectId: choice.projectId ?? undefined,
-        draft: choice.draft,
+        mode: choice.mode,
+        // A letter the options do not produce (e.g. C with 2 drafts) would be a 400.
+        draft:
+          choice.mode === 'pipeline' && choice.draft !== 'all' && !draftLetters.includes(choice.draft)
+            ? 'all'
+            : choice.draft,
         final: choice.final,
         noAsr: choice.noAsr,
+        forceAnalyze: choice.forceAnalyze,
       });
       onJobCreated(job.id);
     } catch (e) {
@@ -98,7 +115,11 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
       <div className="space-y-6">
         {isReal ? (
           <Panel title="1. Chọn dự án trên máy dựng">
-            <ProjectPicker value={choice} onChange={(p) => setChoice((c) => ({ ...c, ...p }))} />
+            <ProjectPicker
+              value={choice}
+              draftLetters={draftLetters}
+              onChange={(p) => setChoice((c) => ({ ...c, ...p }))}
+            />
           </Panel>
         ) : (
           <Panel title="1. Quản lý footage đầu vào">
@@ -106,19 +127,24 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
           </Panel>
         )}
 
-        <Panel title="2. Ma trận cấu hình kịch bản">
-          <RuleSelector options={options} onChange={patch} />
-        </Panel>
+        {!renderOnly && (
+          <>
+            <Panel title="2. Ma trận cấu hình kịch bản">
+              <RuleSelector options={options} onChange={patch} />
+            </Panel>
 
-        <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">
-          <MusicPicker options={options} onChange={patch} />
-        </Panel>
+            <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">
+              <MusicPicker options={options} onChange={patch} />
+            </Panel>
+          </>
+        )}
       </div>
 
       <div className="lg:sticky lg:top-24 lg:self-start">
         <PreflightValidator
           result={incomplete ? null : preflight}
           incomplete={incomplete}
+          renderOnly={renderOnly}
           checking={checking}
           error={preflightError ?? submitError}
           missingProject={needsProject}

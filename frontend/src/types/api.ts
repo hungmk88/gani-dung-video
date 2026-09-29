@@ -25,6 +25,9 @@ export interface ApiHealth {
   daemon_stopping: string | null;
   jobs: Record<string, number>;
   allowed_roots_configured: boolean;
+  /** Yes/no only — the server never returns the key itself. */
+  ai_key_configured: boolean;
+  budget: { limit_vnd: number | null; spent_24h_vnd: number; reserved_vnd: number };
 }
 
 export interface ApiEvent {
@@ -58,8 +61,21 @@ export interface ApiQa {
   checks: ApiQaCheck[];
 }
 
+export interface ApiCost {
+  input_tokens: number;
+  worst_call_vnd: number;
+  cap_vnd: number;
+  approved_vnd: number | null;
+  spent_vnd: number | null;
+}
+
 export interface ApiJob {
   id: number;
+  pipeline_id?: number | null;
+  depends_on?: number | null;
+  needs_approval?: boolean;
+  approval_expires_at?: string | null;
+  cost?: ApiCost | null;
   project_id: string | null;
   project_name: string;
   title: string;
@@ -106,4 +122,14 @@ export interface ApiPreflightResult {
   warnings: ApiPreflightIssue[];
   adjustments: ApiPreflightIssue[];
   scenes_needed: number | null;
+}
+
+export interface ApiPipeline {
+  id: number;
+  project_id: string | null;
+  project_name: string;
+  /** UI vocabulary: queued | running | awaiting_approval | qa_review | done | error. */
+  status: string;
+  needs_approval: boolean;
+  jobs: ApiJob[];
 }

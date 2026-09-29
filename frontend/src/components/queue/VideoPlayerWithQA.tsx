@@ -79,14 +79,39 @@ export function VideoPlayerWithQA({
   onShowPlan?: () => void;
 }) {
   const [chosenTab, setChosenTab] = useState<'preview' | 'final' | null>(null);
+  const [chosenDraft, setChosenDraft] = useState<string | null>(null);
+  // A pipeline carries one result per draft (A/B/C); a lone job shows its own files.
+  const outputs = job.outputs ?? [];
+  const output = outputs.find((o) => o.draft === chosenDraft) ?? outputs[0];
+  const previewUrl = output ? output.previewUrl : job.previewUrl;
+  const finalUrl = output ? output.finalUrl : job.finalUrl;
+  const qa = output ? output.qa : job.qa;
   // Until the user picks a tab, show whichever file exists (a final-only job has no preview).
-  const tab = chosenTab ?? (job.previewUrl || !job.finalUrl ? 'preview' : 'final');
+  const tab = chosenTab ?? (previewUrl || !finalUrl ? 'preview' : 'final');
   const setTab = setChosenTab;
-  const src = tab === 'final' ? job.finalUrl : job.previewUrl;
+  const src = tab === 'final' ? finalUrl : previewUrl;
   const res = tab === 'final' ? '1080×1920' : '540×960';
 
   return (
     <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+      {outputs.length > 1 && (
+        <div className="flex gap-1 text-xs">
+          {outputs.map((o) => (
+            <button
+              key={o.draft}
+              type="button"
+              onClick={() => setChosenDraft(o.draft)}
+              className={`rounded-md border px-3 py-1 ${
+                o.draft === (output?.draft ?? '')
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-200'
+                  : 'border-slate-800 text-slate-400 hover:border-slate-600'
+              }`}
+            >
+              Bản {o.draft}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex gap-1 rounded-lg border border-slate-800 bg-slate-950/40 p-0.5 text-xs">
           <button
@@ -99,7 +124,7 @@ export function VideoPlayerWithQA({
           <button
             type="button"
             onClick={() => setTab('final')}
-            disabled={!job.finalUrl}
+            disabled={!finalUrl}
             className={`rounded-md px-3 py-1 disabled:opacity-40 ${
               tab === 'final' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'
             }`}
@@ -121,12 +146,12 @@ export function VideoPlayerWithQA({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <ActionButton icon={Download} label="Tải video final" disabled={!job.finalUrl} href={job.finalUrl ?? undefined} />
+        <ActionButton icon={Download} label="Tải video final" disabled={!finalUrl} href={finalUrl ?? undefined} />
         {onShowPlan && <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />}
         <ActionButton icon={RefreshCw} label="Render lại" onClick={onRerender} />
       </div>
 
-      {job.qa && <QaReportPanel qa={job.qa} />}
+      {qa && <QaReportPanel qa={qa} />}
     </div>
   );
 }

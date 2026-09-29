@@ -4,6 +4,7 @@ import type { PreflightResult } from '../../types/rules';
 export function PreflightValidator({
   result,
   incomplete,
+  renderOnly,
   checking,
   error,
   missingProject,
@@ -12,14 +13,17 @@ export function PreflightValidator({
 }: {
   result: PreflightResult | null;
   incomplete: boolean;
+  /** Re-render of an existing plan: nothing to preflight, only a project to pick. */
+  renderOnly: boolean;
   checking: boolean;
   error: string | null;
   missingProject: boolean;
   submitting: boolean;
   onSubmit: () => void;
 }) {
-  const disabled =
-    incomplete || result === null || !result.valid || checking || missingProject || submitting;
+  const disabled = renderOnly
+    ? missingProject || submitting
+    : incomplete || result === null || !result.valid || checking || missingProject || submitting;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -29,7 +33,11 @@ export function PreflightValidator({
         <span className="text-[11px] text-slate-500">— kiểm tra trước khi gọi AI (X1–X18)</span>
       </div>
 
-      {incomplete ? (
+      {renderOnly ? (
+        <p className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
+          Dựng lại theo plan.json và kịch bản có sẵn của dự án — không gọi AI, không cần kiểm tra tuỳ chọn.
+        </p>
+      ) : incomplete ? (
         <p className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
           Chọn đủ phong cách, mục đích, thời lượng và chế độ nhạc để bắt đầu kiểm tra.
         </p>
@@ -99,7 +107,7 @@ export function PreflightValidator({
           {error}
         </p>
       )}
-      {missingProject && !incomplete && (
+      {missingProject && (renderOnly || !incomplete) && (
         <p className="mt-3 text-[11px] text-amber-400/90">Chọn một dự án ở mục 1 để gửi xử lý.</p>
       )}
 
@@ -114,7 +122,7 @@ export function PreflightValidator({
         }`}
       >
         <Zap className="h-4 w-4" />
-        {submitting ? 'Đang gửi…' : 'Gửi xử lý (Queue Render)'}
+        {submitting ? 'Đang gửi…' : renderOnly ? 'Xếp hàng dựng lại' : 'Gửi xử lý (Queue Render)'}
       </button>
     </div>
   );
