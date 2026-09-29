@@ -14,9 +14,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application.preflight_service import check_options_file
+from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.infrastructure.config_files import (
     CONFIG_DIR,
@@ -29,6 +30,10 @@ from gani_dung_video.infrastructure.settings import Settings, load_settings
 
 QUEUE_FILE = "queue.db"
 LETTERS = "ABC"
+
+
+class NotReadyError(ConfigError):
+    """The project cannot be rendered yet (no plan or no drafts); the API answers 409."""
 
 
 class EnqueueResult(BaseModel):
@@ -121,3 +126,62 @@ def cancel_job(db: QueueDb, job_id: int, now: float | None = None) -> str:
 def retry_job(db: QueueDb, job_id: int) -> bool:
     """Queue a failed, cancelled or QC-failed job again."""
     return db.retry_manual(job_id)
+
+
+def enqueue_project_render(
+    project: Path, db: QueueDb, *, draft: str = "all", final: bool = False,
+    no_asr: bool = False, rules: Rules | None = None, settings: Settings | None = None,
+    now: float | None = None,
+) -> list[EnqueueResult]:  # fmt: skip
+    """Queue renders of a project that is already planned and drafted (the web API's path).
+
+    The options are the ones plan.json was compiled from, so nothing is asked twice.
+
+    Raises:
+        ConfigError: no allow-list, project outside it or missing, or a draft letter the plan
+            does not have.
+        NotReadyError: no plan.json, or none of the drafts file the plan's driver renders.
+    """
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    folder = project.expanduser().resolve()
+    if not _inside(folder, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=folder))
+    if not folder.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=folder))
+    plan_path = folder / "edit" / "plan.json"
+    if not plan_path.is_file():
+        raise NotReadyError(msgs["QUEUE_NO_PLAN"])
+    try:
+        plan = Plan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    except ValidationError as e:
+        raise NotReadyError(msgs["QUEUE_NO_PLAN"]) from e
+    drafts_file = "speech_drafts.json" if plan.driver == "speech" else "drafts.json"
+    if not (folder / "edit" / drafts_file).is_file():
+        raise NotReadyError(msgs["QUEUE_NO_DRAFTS"].format(file=drafts_file))
+    count = int(plan.options.get("drafts", 1))
+    letters = list(LETTERS[:count])
+    if draft.lower() == "all":
+        chosen = letters
+    elif draft.upper() in letters:
+        chosen = [draft.upper()]
+    else:
+        raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=draft.upper(), count=count,
+                                                         letters=", ".join(letters)))  # fmt: skip
+    stamp = now if now is not None else time.time()
+    out: list[EnqueueResult] = []
+    for letter in chosen:
+        existing = db.find_active("render", str(folder), letter, final)
+        if existing is not None:
+            out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
+            continue
+        jid = db.enqueue(
+            NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
+                   draft=letter, final=final, no_asr=no_asr,
+                   max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
+        out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+    return out

@@ -298,6 +298,16 @@
   "expected_sec": {"render_preview": 60, "render_final": 300},
   "max_events_per_job": 500
  },
+ "_ghi_chu_api": "API web cục bộ (GĐ6b, chốt 29/09/2026). Chỉ bind 127.0.0.1 (host bị từ chối nếu khác). Mọi yêu cầu phải có Host là 127.0.0.1 hoặc localhost cùng cổng (chặn DNS rebinding); yêu cầu POST phải có Content-Type application/json và, nếu có Origin, Origin phải nằm trong allowed_origins (mặc định: Vite dev server); Sec-Fetch-Site cross-site chỉ được nếu Origin hoặc Referer nằm trong allowed_origins. Thêm origin khác (bản triển khai thật) bằng cách sửa danh sách này. max_body_bytes: thân yêu cầu tối đa; socket_timeout_sec: chống kết nối treo; events_page: số dòng console cuối kèm trong chi tiết job; media_chunk_bytes: khối đọc khi phát video.",
+ "api": {
+  "host": "127.0.0.1",
+  "port": 8765,
+  "allowed_origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+  "max_body_bytes": 65536,
+  "socket_timeout_sec": 10,
+  "events_page": 200,
+  "media_chunk_bytes": 65536
+ },
  "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
  "speech_edit": {
   "sentence_end": ".?!…",
@@ -405,6 +415,8 @@
   "QUEUE_OUTSIDE_ROOTS": "Thư mục '{folder}' không nằm trong GANI_DV_ALLOWED_ROOTS nên không được đưa vào hàng đợi. Thêm thư mục cha vào .env nếu đây là footage của anh.",
   "QUEUE_NO_FOLDER": "Không thấy thư mục footage '{folder}'.",
   "QUEUE_PREFLIGHT_BLOCKED": "Tùy chọn bị chặn ở bước kiểm tra trước [{code}]: {msg}",
+  "QUEUE_NO_PLAN": "Dự án chưa có edit/plan.json — chạy lệnh `plan` (rồi `pick`, `draft`) trước khi đưa vào hàng đợi.",
+  "QUEUE_NO_DRAFTS": "Dự án chưa có edit/{file} — chạy lệnh `draft` trước khi đưa vào hàng đợi.",
   "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
   "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }

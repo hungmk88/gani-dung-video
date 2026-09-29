@@ -385,3 +385,22 @@ def test_find_active_sees_waiting_and_running_jobs_only(db: QueueDb) -> None:
     assert db.find_active("render", "E:/footage", "A", False) == jid  # running counts
     db.finish(jid, T0 + 1, "completed", "passed", 0, None, None)
     assert db.find_active("render", "E:/footage", "A", False) is None
+
+
+# ─────────────── counts, project filter (6b) ───────────────
+
+
+def test_counts_by_status_include_every_status(db: QueueDb) -> None:
+    a = db.enqueue(new_job("A"), T0)
+    db.enqueue(new_job("B"), T0)
+    db.claim(T0, 1)
+    db.finish(a, T0 + 1, "failed", None, 2, "lỗi", None)
+    assert db.counts() == {"queued": 1, "processing": 0, "completed": 0, "failed": 1,
+                           "cancelled": 0}  # fmt: skip
+
+
+def test_list_can_be_limited_to_one_project(db: QueueDb) -> None:
+    mine = db.enqueue(new_job("A", project_dir="E:/one"), T0)
+    db.enqueue(new_job("A", project_dir="E:/two"), T0)
+    assert [j.id for j in db.list_jobs(project_dir="E:/one")] == [mine]
+    assert db.list_jobs(project_dir="E:/none") == []

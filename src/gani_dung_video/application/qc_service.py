@@ -11,6 +11,7 @@ and comes after this loop: spoken words cannot be re-rendered better, so it only
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -53,18 +54,35 @@ class QcReport(BaseModel):
     loudness_two_pass: bool
     fixes: list[str]  # what code changed, in Vietnamese
     findings: list[Finding]  # what is left: errors, fixes that did not work, warnings
+    # What the last render measured (phase 6b: the dashboard shows real numbers). None when
+    # nothing was measured (stopped before rendering, wrong container, silence).
+    lufs: float | None = None
+    true_peak_db: float | None = None
 
 
-def check_file(video: Path, e: Edl, rules: Rules, probe: Prober = probe_media,
-               measure: Measurer = measure_file) -> list[Finding]:  # fmt: skip
-    """T1–T5 on a rendered file."""
+def check_file_measured(video: Path, e: Edl, rules: Rules, probe: Prober = probe_media,
+                        measure: Measurer = measure_file
+                        ) -> tuple[list[Finding], Measures | None]:  # fmt: skip
+    """T1–T5 on a rendered file, and the numbers they were judged on (None when the
+    container was wrong and nothing else was measured)."""
     cfg = rules["qc"]
     timeout = float(cfg["probe_timeout_sec"])
     facts = probe(video, timeout)
     found = check_media(facts, e, cfg)
     if any(f.code == "T1" for f in found):
-        return found  # wrong container: the other measurements would be meaningless
-    return found + check_measures(measure(video, cfg, facts.duration, timeout), e, cfg)
+        return found, None  # wrong container: the other measurements would be meaningless
+    measures = measure(video, cfg, facts.duration, timeout)
+    return found + check_measures(measures, e, cfg), measures
+
+
+def check_file(video: Path, e: Edl, rules: Rules, probe: Prober = probe_media,
+               measure: Measurer = measure_file) -> list[Finding]:  # fmt: skip
+    """T1–T5 on a rendered file."""
+    return check_file_measured(video, e, rules, probe, measure)[0]
+
+
+def _finite(x: float | None) -> float | None:
+    return x if x is not None and math.isfinite(x) else None
 
 
 def _before_render(e: Edl, rules: Rules, width: WidthFn
@@ -98,10 +116,11 @@ def render_checked(
                         loudness_two_pass=False, fixes=[], findings=stop)  # fmt: skip
     loud: Mapping[str, float] | None = None
     found: list[Finding] = []
+    measures: Measures | None = None
     rounds = 0
     for rounds in range(1, int(rules["qc"]["max_rounds"]) + 1):
         render(sizes, loud)
-        found = check_file(video, e, rules, probe, measure)
+        found, measures = check_file_measured(video, e, rules, probe, measure)
         if any(f.level == "error" for f in found) or not any(f.fix == "loudness" for f in found):
             break
         if rounds < int(rules["qc"]["max_rounds"]):
@@ -109,7 +128,9 @@ def render_checked(
             fixes.append(f"T3: dựng lại vòng {rounds + 1} với chuẩn hóa âm lượng 2 lượt")
     passed = not any(f.level in ("error", "fix") for f in found)
     return QcReport(video=video.name, passed=passed, rounds=rounds, font_px=sizes,
-                    loudness_two_pass=loud is not None, fixes=fixes, findings=found)  # fmt: skip
+                    loudness_two_pass=loud is not None, fixes=fixes, findings=found,
+                    lufs=_finite(measures.lufs) if measures else None,
+                    true_peak_db=_finite(measures.true_peak_db) if measures else None)  # fmt: skip
 
 
 def _listen(path: Path, e: Edl, rules: Rules, transcribe: Transcriber, terms: Sequence[Term]

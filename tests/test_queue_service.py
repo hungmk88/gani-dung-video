@@ -11,13 +11,17 @@ from typing import Any
 import pytest
 
 from gani_dung_video.application.queue_service import (
+    NotReadyError,
     allowed_roots,
     cancel_job,
+    enqueue_project_render,
     enqueue_render,
     queue_dir,
     retry_job,
 )
 from gani_dung_video.cli import main
+from gani_dung_video.domain.options import VideoOptions
+from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
 from gani_dung_video.infrastructure.queue_db import QueueDb
 from gani_dung_video.infrastructure.settings import Settings
@@ -231,3 +235,73 @@ def test_cli_daemon_refuses_to_start_a_second_one(env: Path) -> None:
     other = os.getppid()  # a live process that is not this one
     db.register_daemon(other, time.time(), 15, lambda p: True)  # "another" live daemon
     assert main(["daemon"]) == 2
+
+
+# ─────────────── by project, from plan.json (6b) ───────────────
+
+
+def ready_project(root: Path, speech: bool = False, count: int = 2) -> Path:
+    folder = root / "footage"
+    (folder / "edit").mkdir(parents=True, exist_ok=True)
+    style = "ban_hang_co_loi" if speech else "ke_chuyen_nghe"
+    purpose = "ban_hang" if speech else "gioi_thieu_xuong"
+    opts = VideoOptions(phong_cach=style, muc_dich=purpose, do_dai_giay=15, so_ban_nhap=count,
+                        nhac="khong_nhac")  # fmt: skip
+    plan = compile_plan(opts, RULES, music=None, available_tags=set())
+    (folder / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
+    name = "speech_drafts.json" if speech else "drafts.json"
+    (folder / "edit" / name).write_text("{}", encoding="utf-8")
+    return folder
+
+
+def by_project(db: QueueDb, folder: Path, root: Path | None, **kw: Any) -> Any:
+    return enqueue_project_render(folder, db, rules=RULES, settings=cfg(root), **kw)
+
+
+def test_project_render_queues_every_draft_the_plan_has(db: QueueDb, root: Path) -> None:
+    out = by_project(db, ready_project(root, count=3), root, final=True)
+    assert [r.draft for r in out] == ["A", "B", "C"]
+    a = db.list_jobs()[-1]
+    assert a.final and a.options_file.endswith("plan.json")  # the plan is the options source
+
+
+def test_project_render_names_one_draft_and_refuses_unknown_ones(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root, count=2)
+    assert [r.draft for r in by_project(db, folder, root, draft="b")] == ["B"]
+    with pytest.raises(ConfigError, match="'C'"):
+        by_project(db, folder, root, draft="C")
+
+
+def test_project_render_is_not_queued_twice(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root)
+    by_project(db, folder, root, draft="A")
+    assert by_project(db, folder, root, draft="A")[0].duplicate
+
+
+def test_a_project_without_a_plan_or_drafts_is_not_ready(db: QueueDb, root: Path) -> None:
+    bare = root / "footage"
+    with pytest.raises(NotReadyError, match="plan"):
+        by_project(db, bare, root)
+    ready_project(root)
+    (bare / "edit" / "drafts.json").unlink()  # the plan is there, the drafts are not
+    with pytest.raises(NotReadyError, match="draft"):
+        by_project(db, bare, root)
+    assert db.list_jobs() == []
+
+
+def test_speech_projects_need_speech_drafts(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root, speech=True)
+    assert len(by_project(db, folder, root)) == 2
+    (folder / "edit" / "speech_drafts.json").unlink()
+    (folder / "edit" / "drafts.json").write_text("{}", encoding="utf-8")  # the wrong file
+    with pytest.raises(NotReadyError, match="speech_drafts"):
+        by_project(db, folder, root, draft="A")
+
+
+def test_project_render_keeps_the_allow_list_rules(db: QueueDb, root: Path, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        by_project(db, ready_project(root), None)
+    other = tmp_path / "other"
+    (other / "edit").mkdir(parents=True)
+    with pytest.raises(ConfigError, match="không nằm trong"):
+        by_project(db, other, root)

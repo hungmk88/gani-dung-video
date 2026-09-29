@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from gani_dung_video.application.qc_service import render_checked
+from gani_dung_video.application.qc_service import QcReport, render_checked
 from gani_dung_video.domain.edl import Caption, Edl, Shot
 from gani_dung_video.domain.qc import Measures, MediaFacts
 from gani_dung_video.infrastructure.config_files import load_rules
@@ -115,3 +115,34 @@ def test_unfixable_caption_or_overlap_stops_before_rendering() -> None:
         rep = run(rig, edl(caps))
         assert not rep.passed and rep.rounds == 0 and rig.renders == []  # type: ignore[attr-defined]
         assert rep.findings[0].code in ("T6", "T7") and rep.findings[0].level == "error"  # type: ignore[attr-defined]
+
+
+# ─────────────── measured numbers in the report (6b) ───────────────
+
+
+def test_the_report_carries_the_measured_loudness_and_peak() -> None:
+    rep = run(Rig(-14.1))
+    assert rep.lufs == -14.1 and rep.true_peak_db == -1.4  # type: ignore[attr-defined]
+
+
+def test_the_numbers_are_those_of_the_last_render_round() -> None:
+    rep = run(Rig(-16.0, -14.05))
+    assert rep.rounds == 2 and rep.lufs == -14.05  # type: ignore[attr-defined]
+
+
+def test_a_report_stopped_before_rendering_has_no_numbers() -> None:
+    rep = run(Rig(-14.1), edl([Caption(start=0, end=3, text=f"{LONG} {LONG}", kind="text")]))
+    assert rep.rounds == 0 and rep.lufs is None and rep.true_peak_db is None  # type: ignore[attr-defined]
+
+
+def test_silence_is_stored_as_no_number_not_minus_infinity() -> None:
+    rep = run(Rig(float("-inf")))
+    assert rep.lufs is None  # type: ignore[attr-defined]
+    QcReport.model_validate_json(rep.model_dump_json())  # type: ignore[attr-defined]
+
+
+def test_a_report_written_before_6b_still_loads() -> None:
+    old = ('{"video": "v.mp4", "passed": true, "rounds": 1, "font_px": {}, '
+           '"loudness_two_pass": false, "fixes": [], "findings": []}')  # fmt: skip
+    rep = QcReport.model_validate_json(old)
+    assert rep.lufs is None and rep.true_peak_db is None

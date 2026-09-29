@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.jobs import Job, can_transition, may_retry
+from gani_dung_video.domain.jobs import STATUSES, Job, can_transition, may_retry
 
 SCHEMA_VERSION = 1
 STOP_MODES = ("graceful", "now")
@@ -214,13 +214,27 @@ class QueueDb:
             row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _job(row) if row else None
 
-    def list_jobs(self, status: str | None = None, limit: int = 100) -> list[Job]:
-        sql, args = "SELECT * FROM jobs", []
+    def list_jobs(self, status: str | None = None, limit: int = 100,
+                  project_dir: str | None = None) -> list[Job]:  # fmt: skip
+        where, args = [], []
         if status:
-            sql, args = sql + " WHERE status = ?", [status]
+            where.append("status = ?")
+            args.append(status)
+        if project_dir is not None:
+            where.append("project_dir = ?")
+            args.append(project_dir)
+        sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         with self._conn() as con:
             rows = con.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
         return [_job(r) for r in rows]
+
+    def counts(self) -> dict[str, int]:
+        """Number of jobs per status (every status present, zero when none)."""
+        out = dict.fromkeys(STATUSES, 0)
+        with self._conn() as con:
+            for row in con.execute("SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"):
+                out[str(row["status"])] = int(row["n"])
+        return out
 
     def claim(self, now: float, worker_pid: int) -> Job | None:
         """Take the next runnable job (highest priority, then oldest) or None."""

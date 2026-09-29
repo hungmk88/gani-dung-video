@@ -29,6 +29,9 @@ python -m gani_dung_video queue add <yeu-cau.md|options.json> <thu_muc_footage> 
 python -m gani_dung_video queue list | show ID | cancel ID | retry ID | stop [--now]
     hàng đợi dựng (GĐ6a); exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
     sách cho phép, hoặc không có job đó
+python -m gani_dung_video serve [--port 8765]
+    API web cục bộ cho giao diện (chỉ 127.0.0.1); chạy độc lập với daemon; Ctrl+C để dừng;
+    exit 2 = cổng đang bị chiếm
 python -m gani_dung_video daemon
     chạy nền lấy job từ hàng đợi; Ctrl+C = dừng sau khi job đang chạy xong, Ctrl+C lần 2 =
     dừng ngay (trả job về hàng đợi); exit 2 = đã có daemon khác đang chạy
@@ -47,6 +50,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from gani_dung_video.application.api_service import ApiContext
 from gani_dung_video.application.daemon import Daemon, DaemonError
 from gani_dung_video.application.draft_service import DraftError, DraftsFile, DryRun, build_drafts
 from gani_dung_video.application.inventory_service import build_inventory
@@ -78,10 +82,11 @@ from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import RenderError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
+from gani_dung_video.infrastructure.http_server import ApiServerError, make_server
 from gani_dung_video.infrastructure.media_probe import ProbeFailed
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.queue_db import QueueDb, QueueDbError
-from gani_dung_video.infrastructure.settings import SettingsError
+from gani_dung_video.infrastructure.settings import SettingsError, load_settings
 from gani_dung_video.infrastructure.whisper_asr import AsrError
 
 logger = logging.getLogger("gani_dung_video")
@@ -157,6 +162,8 @@ def _build_parser() -> argparse.ArgumentParser:
     qst = qsub.add_parser("stop", help="Yêu cầu daemon dừng")
     qst.add_argument("--now", action="store_true", help="Dừng ngay, trả job đang chạy về hàng đợi")
     sub.add_parser("daemon", help="Chạy nền: lấy job từ hàng đợi và dựng lần lượt")
+    sv = sub.add_parser("serve", help="API web cục bộ 127.0.0.1 cho giao diện (độc lập với daemon)")
+    sv.add_argument("--port", type=int, help="Cổng (mặc định theo rules.json api.port: 8765)")
     return ap
 
 
@@ -242,6 +249,27 @@ def _run_daemon() -> int:
     sys.stdout.write("Daemon hàng đợi đang chạy. Ctrl+C: dừng sau khi job đang dựng xong.\n")
     daemon.run()
     sys.stdout.write("Daemon đã dừng.\n")
+    return 0
+
+
+def _run_serve(port: int | None) -> int:
+    rules = load_rules()
+    settings = load_settings()
+    ctx = ApiContext(open_queue(settings), rules, settings)
+    server = make_server(ctx, port=port)
+    try:
+        real_port = int(server.server_address[1])
+        sys.stdout.write(f"API đang chạy ở http://127.0.0.1:{real_port} (Ctrl+C để dừng). "
+                         "Việc dựng vẫn do `daemon` đảm nhiệm.\n")  # fmt: skip
+        if not ctx.roots:
+            sys.stdout.write("Cảnh báo: chưa đặt GANI_DV_ALLOWED_ROOTS trong .env — chưa có dự án "
+                             "nào được phép, mọi job sẽ bị từ chối.\n")  # fmt: skip
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            sys.stdout.write("Đã dừng API.\n")
+    finally:
+        server.server_close()
     return 0
 
 
@@ -478,6 +506,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_queue(args)
         if args.cmd == "daemon":
             return _run_daemon()
+        if args.cmd == "serve":
+            return _run_serve(args.port)
         if args.cmd == "inventory":
             return _run_inventory(args.folder)
         if args.cmd == "transcribe":
@@ -511,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
         ProbeFailed,
         DaemonError,
         QueueDbError,
+        ApiServerError,
     ) as e:
         logger.error("LỖI: %s", e)
         return 2
