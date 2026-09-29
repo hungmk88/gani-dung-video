@@ -10,18 +10,21 @@ from typing import Any
 
 import pytest
 
+from gani_dung_video.application import render_service
 from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.inventory_service import build_inventory
-from gani_dung_video.application.render_service import SpeechDraftsFile, build_render
+from gani_dung_video.application.render_service import SpeechDraftsFile, build_render, recheck
 from gani_dung_video.cli import main
 from gani_dung_video.domain.beats import DraftSegment, SceneRef, snap_to_beats
 from gani_dung_video.domain.drafts import SnappedDraft
-from gani_dung_video.domain.edl import BrollPlacement, SpeechDraft
+from gani_dung_video.domain.edl import BrollPlacement, SpeechDraft, build_speech_edl
+from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.options import VideoOptions
-from gani_dung_video.domain.plan import beats_of, compile_plan
-from gani_dung_video.domain.speech import SpokenWord
+from gani_dung_video.domain.plan import Plan, beats_of, compile_plan
+from gani_dung_video.domain.speech import RawTranscript, SpokenWord
 from gani_dung_video.domain.speech_edit import Overlay, SpeechCut
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
+from gani_dung_video.infrastructure.ffmpeg_render import render_voice_only
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
 RULES = load_rules()
@@ -203,3 +206,94 @@ def test_cli_render_speech_mode(speech_folder: Path, capsys: pytest.CaptureFixtu
     assert main(["render", str(speech_folder), "--preview", "--ban", "A"]) == 0
     out = capsys.readouterr().out
     assert "QC: ĐẠT" in out and "nhap_A_540p.mp4" in out and "10s" in out
+
+
+# ─────────────── T8: Whisper listens to the final video (5c-3) ───────────────
+
+# A cheap "final": same code path as the 1080p render, at preview size.
+SMALL_FINAL = {**RULES, "render": {**RULES["render"], "final": RULES["render"]["preview"]}}
+SPOKEN = [word("Giò", 0.1, 0.5), word("lụa", 0.5, 0.9), word("GANI", 0.9, 1.8),
+          word("Bò", 2.1, 2.5), word("viên", 2.5, 2.9), word("tròn", 2.9, 3.8),
+          word("Nhắn", 5.1, 5.6), word("tin", 5.6, 6.0), word("ngay", 6.0, 7.8)]  # fmt: skip
+
+
+class Listener:
+    """A fake Whisper: answers with fixed words and counts how often it was asked."""
+
+    def __init__(self, words: list[SpokenWord]) -> None:
+        self.words, self.calls = words, 0
+
+    def __call__(self, path: Path) -> RawTranscript:
+        self.calls += 1
+        return RawTranscript(language="vi", duration_sec=10.0, speech_sec=7.0, words=self.words)
+
+
+def test_final_speech_render_is_listened_to_and_passes_when_heard_right(
+    speech_folder: Path,
+) -> None:
+    ear = Listener(SPOKEN)
+    [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, transcribe=ear)
+    assert res.video.name == "video_A_1080x1920.mp4" and res.qc_passed and ear.calls == 1
+    assert not any("T8" in n for n in res.qc_notes)
+
+
+def test_final_speech_render_fails_qc_when_the_voice_cannot_be_heard(speech_folder: Path) -> None:
+    ear = Listener([word("ồn", 0.1, 0.5)])
+    [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, transcribe=ear)
+    assert not res.qc_passed and any(n.startswith("T8:") for n in res.qc_notes)
+    report = json.loads((res.video.parent / "qc_report.json").read_text(encoding="utf-8"))
+    assert report["passed"] is False and any(f["code"] == "T8" for f in report["findings"])
+
+
+def test_no_asr_and_preview_never_load_the_recogniser(speech_folder: Path) -> None:
+    ear = Listener([word("ồn", 0.1, 0.5)])
+    [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, asr=False,
+                         transcribe=ear)  # fmt: skip
+    assert res.qc_passed
+    build_render(speech_folder, preview=True, rules=SMALL_FINAL, transcribe=ear)
+    assert ear.calls == 0
+
+
+def test_qc_command_listens_to_an_existing_final_video(speech_folder: Path) -> None:
+    build_render(speech_folder, preview=False, rules=SMALL_FINAL, asr=False)
+    bad = Listener([word("ồn", 0.1, 0.5)])
+    found = recheck(speech_folder, "A", preview=False, rules=SMALL_FINAL, transcribe=bad)
+    assert any("T8" in f and f.startswith("ERROR") for f in found) and bad.calls == 1
+    quiet = recheck(speech_folder, "A", preview=False, rules=SMALL_FINAL, asr=False, transcribe=bad)
+    assert not any("T8" in f for f in quiet) and bad.calls == 1
+
+
+def test_cli_accepts_no_asr(speech_folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["render", str(speech_folder), "--preview", "--ban", "A", "--no-asr"]) == 0
+    assert main(["qc", str(speech_folder), "--ban", "A", "--no-asr"]) == 0
+    assert "QC: ĐẠT" in capsys.readouterr().out
+
+
+def test_voice_only_mix_has_the_video_timeline_and_needs_no_music_file(
+    speech_folder: Path, tmp_path: Path
+) -> None:
+    edit = speech_folder / "edit"
+    plan = Plan.model_validate_json((edit / "plan.json").read_text(encoding="utf-8"))
+    inv = Inventory.model_validate_json((edit / "inventory.json").read_text(encoding="utf-8"))
+    sd = SpeechDraftsFile.model_validate_json(
+        (edit / "speech_drafts.json").read_text(encoding="utf-8"))  # fmt: skip
+    draft = sd.drafts[0]
+    e = build_speech_edl(draft.cuts, draft.broll, plan, {c.file: c for c in inv.clips}, RULES,
+                         preview=True)  # fmt: skip
+    wav = render_voice_only(e, speech_folder, tmp_path, RULES)
+    assert wav.suffix == ".wav" and duration(wav) == pytest.approx(e.duration, abs=0.1)
+
+
+def test_t8_uses_its_own_whisper_model_not_the_transcription_default(
+    speech_folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[str] = []
+
+    def fake_loader(model: str, cfg: Any) -> Listener:
+        asked.append(model)
+        return Listener(SPOKEN)
+
+    monkeypatch.setattr(render_service, "load_transcriber", fake_loader)
+    build_render(speech_folder, preview=False, rules=SMALL_FINAL)
+    assert asked == [RULES["qc"]["t8"]["model"]] == ["small"]
+    assert RULES["speech"]["model_default"] != "small"  # the two settings are independent

@@ -15,9 +15,10 @@ python -m gani_dung_video pick <yeu-cau.md|options.json> <thu_muc_footage>
 python -m gani_dung_video draft <yeu-cau.md|options.json> <thu_muc_footage> [--dry-run]
     exit 0 = đã ghi edit/drafts.json (hoặc in ước tính), 1 = hết vòng sửa / chạm trần chi phí,
     2 = thiếu khóa API, lỗi file, lỗi mạng
-python -m gani_dung_video render <thu_muc_footage> [--preview] [--ban A]
+python -m gani_dung_video render <thu_muc_footage> [--preview] [--ban A] [--no-asr]
     exit 0 = đã dựng + đạt soát kỹ thuật, 1 = còn lỗi soát, 2 = thiếu drafts.json / lỗi ffmpeg
-python -m gani_dung_video qc <thu_muc_footage> --ban A [--final]
+    (bản cuối chế độ lời còn được Whisper nghe lại — T8; --no-asr để bỏ)
+python -m gani_dung_video qc <thu_muc_footage> --ban A [--final] [--no-asr]
     exit 0 = đạt, 1 = còn lỗi, 2 = chưa có video / lỗi file
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
@@ -105,10 +106,16 @@ def _build_parser() -> argparse.ArgumentParser:
     rd.add_argument("folder", type=Path, help="Thư mục footage đã chạy draft")
     rd.add_argument("--preview", action="store_true", help="Bản nháp 540p (nhanh)")
     rd.add_argument("--ban", help="Chỉ dựng một bản nháp (A, B hoặc C)")
+    rd.add_argument(
+        "--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8) ở bản cuối chế độ lời"
+    )
     qc = sub.add_parser("qc", help="Soát kỹ thuật lại một video đã dựng (không dựng lại)")
     qc.add_argument("folder", type=Path, help="Thư mục footage đã chạy render")
     qc.add_argument("--ban", required=True, help="Bản nháp cần soát (A, B hoặc C)")
     qc.add_argument("--final", action="store_true", help="Soát bản 1080×1920 thay vì nháp")
+    qc.add_argument(
+        "--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8) ở bản cuối chế độ lời"
+    )
     return ap
 
 
@@ -137,8 +144,8 @@ def _vnd(x: float) -> str:
     return _num(x) + "đ"
 
 
-def _run_render(folder: Path, preview: bool, draft: str | None) -> int:
-    results = build_render(folder, draft=draft, preview=preview)
+def _run_render(folder: Path, preview: bool, draft: str | None, asr: bool = True) -> int:
+    results = build_render(folder, draft=draft, preview=preview, asr=asr)
     lines: list[str] = []
     for r in results:
         verdict = "QC: ĐẠT" if r.qc_passed else "QC: KHÔNG ĐẠT — không giao bản này"
@@ -148,8 +155,8 @@ def _run_render(folder: Path, preview: bool, draft: str | None) -> int:
     return 0 if all(r.qc_passed for r in results) else 1
 
 
-def _run_qc(folder: Path, draft: str, final: bool) -> int:
-    found = recheck(folder, draft, preview=not final)
+def _run_qc(folder: Path, draft: str, final: bool, asr: bool = True) -> int:
+    found = recheck(folder, draft, preview=not final, asr=asr)
     bad = [f for f in found if not f.startswith("WARN")]
     lines = ["QC: ĐẠT" if not bad else "QC: KHÔNG ĐẠT", *[f"  {f}" for f in found]]
     sys.stdout.write("\n".join(lines) + "\n")
@@ -350,9 +357,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
         if args.cmd == "qc":
-            return _run_qc(args.folder, args.ban, args.final)
+            return _run_qc(args.folder, args.ban, args.final, not args.no_asr)
         if args.cmd == "render":
-            return _run_render(args.folder, args.preview, args.ban)
+            return _run_render(args.folder, args.preview, args.ban, not args.no_asr)
         if args.cmd == "draft":
             return _run_draft(args.file, args.folder, args.dry_run)
         if args.cmd == "pick":

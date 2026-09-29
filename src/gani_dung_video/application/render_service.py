@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,20 +17,32 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application.draft_service import DraftsFile
-from gani_dung_video.application.qc_service import QcReport, check_file, render_checked
+from gani_dung_video.application.qc_service import (
+    QcReport,
+    check_file,
+    check_speech_asr,
+    render_checked,
+)
 from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
-from gani_dung_video.domain.qc import check_captions
+from gani_dung_video.domain.qc import Finding, check_captions
 from gani_dung_video.domain.subtitles import ass_document, srt_document
-from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
-from gani_dung_video.infrastructure.ffmpeg_render import extract_cover, measure_loudnorm, render
+from gani_dung_video.infrastructure.config_files import ConfigError, load_glossary, load_rules
+from gani_dung_video.infrastructure.ffmpeg_render import (
+    extract_cover,
+    measure_loudnorm,
+    render,
+    render_voice_only,
+)
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR, INVENTORY_FILE
 from gani_dung_video.infrastructure.media_probe import FontMetrics
+from gani_dung_video.infrastructure.whisper_asr import Transcriber, load_transcriber
 
 logger = logging.getLogger(__name__)
 RENDER_DIR = "render"
+T8Hook = Callable[[Edl, Path, Path], list[Finding]]  # (edl, finished video, work dir) → findings
 
 
 class RenderResult(BaseModel):
@@ -97,13 +109,39 @@ def _read_plan_and_inventory(folder: Path, rules: Rules) -> tuple[Plan, Inventor
     return plan, inv
 
 
+def _t8_hook(folder: Path, rules: Rules, transcribe: Transcriber | None) -> T8Hook:
+    """T8 (5c-3): Whisper listens to the finished speech-mode video. The model loads on first
+    use only, and is reused for the music-free listen that names a masking problem."""
+    cfg, model = rules["speech"], str(rules["qc"]["t8"]["model"])  # own key: Dell "small"
+    terms = load_glossary().term_objects()
+    loaded: list[Transcriber] = []
+
+    def listen(path: Path) -> Any:
+        if not loaded:
+            loaded.append(transcribe or load_transcriber(model, cfg))
+        return loaded[0](path)
+
+    def hook(e: Edl, video: Path, work: Path) -> list[Finding]:
+        return check_speech_asr(
+            video,
+            e,
+            rules,
+            listen,
+            terms,
+            voice_only=lambda: render_voice_only(e, folder, work, rules),
+        )
+
+    return hook
+
+
 _NO_SPEECH_DRAFTS = ("Chưa có edit/speech_drafts.json — dựng ghép tay (5c-1) hoặc chờ Claude "
                     "ở bước 5c-2.")  # fmt: skip
 
 
-def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None = None
-            ) -> list[str]:  # fmt: skip
-    """Re-run T1–T6 on an existing video (no re-render). Returns findings, Vietnamese.
+def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None = None,
+            asr: bool = True, transcribe: Transcriber | None = None) -> list[str]:  # fmt: skip
+    """Re-run T1–T6 on an existing video (no re-render), plus T8 (Whisper) on a final
+    speech-mode video unless `asr` is False. Returns findings, Vietnamese.
 
     Raises:
         ConfigError: inputs missing or the video was not rendered yet.
@@ -135,6 +173,8 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     if report.is_file():  # sizes the render actually used (may be lowered by T7)
         px = {**px, **QcReport.model_validate_json(report.read_text(encoding="utf-8")).font_px}
     found = check_captions(e, rules, px, FontMetrics().width) + check_file(video, e, rules)
+    if asr and not preview and e.mode == "speech":
+        found += _t8_hook(folder, rules, transcribe)(e, video, video.parent)
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
 
 
@@ -151,6 +191,7 @@ def _render_one(
     preview: bool,
     metrics: FontMetrics,
     plan: Plan,
+    t8: T8Hook | None = None,
 ) -> RenderResult:
     out = edit / RENDER_DIR / letter
     out.mkdir(parents=True, exist_ok=True)
@@ -167,6 +208,11 @@ def _render_one(
         return measure_loudnorm(e, folder, music, out, rules)
 
     rep = render_checked(e, video, rules, do_render, pass1, metrics.width)
+    if t8 is not None and rep.rounds:  # the file exists: Whisper listens to it (5c-3)
+        heard = t8(e, video, out)
+        blocked = any(f.level in ("error", "fix") for f in heard)
+        rep = rep.model_copy(update={"findings": [*rep.findings, *heard],
+                                     "passed": rep.passed and not blocked})  # fmt: skip
     (out / "qc_report.json").write_text(rep.model_dump_json(indent=1), encoding="utf-8")
     if rep.rounds:
         cover_at = e.captions[0].start + 0.3 if e.captions else 0.5
@@ -182,13 +228,15 @@ def _render_one(
 
 
 def build_render(
-    folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None
-) -> list[RenderResult]:
+    folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None,
+    asr: bool = True, transcribe: Transcriber | None = None,
+) -> list[RenderResult]:  # fmt: skip
     """Render every draft (or only `draft`) of the style's drafts file.
 
     Speech-driven styles (spec Insight 4 "LỜI") read edit/speech_drafts.json — the A-roll
     follows the voice, B-roll overlays and ducking come from build_speech_edl; everything
-    else reads edit/drafts.json (beat-driven, build_edl).
+    else reads edit/drafts.json (beat-driven, build_edl). A final (not preview) speech-mode
+    video is also listened to by Whisper (T8, phase 5c-3) unless `asr` is False.
 
     Raises:
         ConfigError: drafts/plan/inventory missing or corrupt, unknown draft, music gone.
@@ -202,6 +250,7 @@ def build_render(
     clips = {c.file: c for c in inv.clips}
     metrics = FontMetrics()
     if plan.driver == "speech":
+        t8 = _t8_hook(folder, rules, transcribe) if asr and not preview else None
         sd: SpeechDraftsFile = _read(edit / "speech_drafts.json", SpeechDraftsFile,
                                      _NO_SPEECH_DRAFTS)  # fmt: skip
         speech_chosen = [x for x in sd.drafts if draft is None or x.draft == draft]
@@ -211,7 +260,7 @@ def build_render(
         return [
             _render_one(build_speech_edl(x.cuts, x.broll, plan, clips, rules, preview=preview),
                        x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
-                       preview, metrics, plan)
+                       preview, metrics, plan, t8)
             for x in speech_chosen
         ]  # fmt: skip
     no_drafts = "Chưa có edit/drafts.json — chạy lệnh `draft` trước."

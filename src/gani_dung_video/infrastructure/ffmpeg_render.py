@@ -270,6 +270,19 @@ def measure_loudnorm(e: Edl, footage_dir: Path, music: Path | None, work: Path,
     return parse_loudnorm(_run(args, work, float(rules["render"]["ffmpeg_timeout_sec"])))
 
 
+def render_voice_only(e: Edl, footage_dir: Path, work: Path, rules: Rules) -> Path:
+    """The audio mix without the music, on the video's own timeline (T8 masking check, 5c-3)."""
+    quiet = e.model_copy(update={"music": None})
+    inputs, has_audio, _ = _inputs(quiet, footage_dir, None)
+    graph = work / "graph_voice.txt"
+    graph.write_text(audio_graph(quiet, has_audio, None), encoding="utf-8")
+    out = work / "voice_only.wav"
+    args = ["ffmpeg", "-hide_banner", "-nostats", "-y", *inputs, "-/filter_complex", graph.name,
+            "-map", "[aout]", "-t", _n(e.duration), out.name]  # fmt: skip
+    _run(args, work, float(rules["render"]["ffmpeg_timeout_sec"]))
+    return out
+
+
 def extract_cover(video: Path, at_sec: float, out: Path, timeout: float = 60.0) -> None:
     """cover.jpg: one frame of the finished video."""
     _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", _n(at_sec), "-i",
