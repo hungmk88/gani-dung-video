@@ -1,0 +1,231 @@
+/**
+ * Mock implementation of StudioApi (see api.ts). Simulates the SQLite queue daemon
+ * described in the spec: jobs advance through the 8 pipeline steps on a timer and push
+ * updates to subscribers, the same shape a real WebSocket payload from 127.0.0.1:8765
+ * would use. Nothing here touches the network or the filesystem.
+ *
+ * The QA numbers in `buildQaReport` are not invented — they are the actual measured
+ * results from the phase 5b real render run (docs memory, 29/09/2026): -13.9 LUFS,
+ * -2.0 dBTP true peak, passed on round 1 of qc.max_rounds = 3. They're reused here as a
+ * realistic reference sample since this prototype has no ffmpeg/ebur128 to measure with.
+ */
+
+import { RULES } from '../data/rules';
+import { PIPELINE_STEPS } from '../types/rules';
+import type {
+  ConsoleLine,
+  FootageFile,
+  PipelineStep,
+  PipelineStepId,
+  QaReport,
+  RenderJob,
+  VideoOptions,
+} from '../types/rules';
+import type { StudioApi } from './api';
+
+const STEP_LABELS: Record<PipelineStepId, string> = {
+  inventory: 'Inventory (kiểm kê footage)',
+  nhan_dang: 'Nhận dạng (Whisper + CLIP + OpenCV)',
+  plan_compile: 'Biên dịch plan (khối / phách)',
+  pick: 'Chọn ứng viên cảnh',
+  ai_draft: 'AI viết kịch bản (Claude)',
+  render_preview: 'Dựng bản xem trước (540p)',
+  qc_verify: 'Soát kỹ thuật (T1–T7)',
+  final_export: 'Xuất bản cuối (1080×1920)',
+};
+
+const STEP_TICK_MS = 1800;
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function newSteps(): PipelineStep[] {
+  return PIPELINE_STEPS.map((id, i) => ({
+    id,
+    label: STEP_LABELS[id],
+    status: i === 0 ? 'running' : 'queued',
+  }));
+}
+
+function log(level: ConsoleLine['level'], text: string): ConsoleLine {
+  return { ts: nowIso(), level, text };
+}
+
+function stepDetail(id: PipelineStepId, options: VideoOptions, footage: FootageFile[]): string {
+  const style = RULES.styles[options.phong_cach as keyof typeof RULES.styles];
+  const totalSec = footage.reduce((s, f) => s + f.duration_sec, 0);
+  switch (id) {
+    case 'inventory':
+      return `${footage.length} clip, ${Math.round(totalSec)}s thô, lọc trùng theo tên/băm 16MB đầu-cuối.`;
+    case 'nhan_dang':
+      return `faster-whisper (device=cpu, int8) + CLIP ViT-L/14-quickgelu + OpenCV cắt cảnh/đo nét.`;
+    case 'plan_compile':
+      return `Khối theo mục đích '${RULES.purposes[options.muc_dich as keyof typeof RULES.purposes].name}', driver=${style.driver}.`;
+    case 'pick':
+      return `2–20 ứng viên/khối, lọc mờ + nhãn 'khac' + ngưỡng món ăn 0,25.`;
+    case 'ai_draft':
+      return `model claude-sonnet-5-5, effort=medium — tham khảo lần chạy thật: ~2.400 token vào, ≤4.200đ/lần.`;
+    case 'render_preview':
+      return `540p, 2500 kbps, phụ đề ASS (Be Vietnam Pro), −14 LUFS mục tiêu.`;
+    case 'qc_verify':
+      return `T1–T7 trên chính file xuất, tối đa ${RULES_QC_MAX_ROUNDS} vòng.`;
+    case 'final_export':
+      return `1080×1920, ~9000 kbps, AAC 320kbps 48kHz.`;
+    default:
+      return '';
+  }
+}
+
+const RULES_QC_MAX_ROUNDS = 3;
+
+function buildQaReport(): QaReport {
+  return {
+    pass1_sync: [
+      { code: 'V2', label: 'Tổng phách khớp plan', passed: true, detail: 'Tổng phách mỗi khối đúng như plan.json biên dịch.' },
+      { code: 'V3', label: 'Phách ngoài dải → làm tròn', passed: true, detail: 'Tự động làm tròn về phách gần nhất cho phép (không cần AI sửa lại).' },
+      { code: 'V4', label: 'Không lặp cảnh, cách nhau ≥ 3s', passed: true, detail: 'Tối đa 3 đoạn/clip, không có cặp đoạn trùng gần (similar_warn 0,95).' },
+      { code: 'T1', label: 'Khung hình / fps / codec đúng cấu hình', passed: true, detail: '1080×1920, 30fps, H.264 — khớp render.final trong rules.json.' },
+    ],
+    pass2_glossary: [
+      {
+        code: 'V7',
+        label: `Không chứa cụm từ cấm (${RULES.bannedClaims.length} cụm trong glossary.json)`,
+        passed: true,
+        detail: `Đã soát: ${RULES.bannedClaims.slice(0, 5).join(', ')}… và các cụm y tế "chữa/trị/phòng bệnh".`,
+      },
+      { code: 'V8', label: 'Khối cuối hiện đúng CTA', passed: true, detail: 'CTA khớp purposes.*.cta cho mục đích đã chọn.' },
+    ],
+    pass3_audio: [
+      {
+        code: 'T3',
+        label: 'Độ to trung bình (LUFS)',
+        passed: true,
+        detail: 'Đo được −13,9 LUFS, mục tiêu −14,0 ±1,0 LU (qc.lufs_tolerance).',
+      },
+      {
+        code: 'T3',
+        label: 'Đỉnh thật (dBTP)',
+        passed: true,
+        detail: 'Đo được −2,0 dBTP, trần qc.max_true_peak_db = −1,0 dBTP.',
+      },
+    ],
+    rounds_used: 1,
+    max_rounds: RULES_QC_MAX_ROUNDS,
+    overall_pass: true,
+  };
+}
+
+interface JobRecord {
+  job: RenderJob;
+  timer: ReturnType<typeof setTimeout> | null;
+  footage: FootageFile[];
+}
+
+const store = new Map<string, JobRecord>();
+const listeners = new Map<string, Set<(job: RenderJob) => void>>();
+
+function notify(id: string): void {
+  const rec = store.get(id);
+  if (!rec) return;
+  // Shallow-clone before handing to React state setters — rec.job is mutated in place
+  // as the canonical record, so subscribers need a fresh reference to actually re-render.
+  const snapshot: RenderJob = { ...rec.job, steps: [...rec.job.steps], logLines: [...rec.job.logLines] };
+  for (const fn of listeners.get(id) ?? []) fn(snapshot);
+}
+
+function advance(id: string): void {
+  const rec = store.get(id);
+  if (!rec) return;
+  const { job, footage } = rec;
+  const runningIdx = job.steps.findIndex((s) => s.status === 'running');
+  if (runningIdx === -1) return;
+
+  const step = job.steps[runningIdx];
+  step.status = 'done';
+  step.detail = stepDetail(step.id, job.options, footage);
+  job.logLines.push(log('info', `✓ ${step.label} — ${step.detail}`));
+
+  if (step.id === 'render_preview') {
+    job.previewUrl = '/preview/nhap_A_540p.mp4';
+    job.logLines.push(log('info', 'Bản xem trước sẵn sàng: nhap_A_540p.mp4'));
+  }
+
+  const nextIdx = runningIdx + 1;
+  if (nextIdx >= job.steps.length) {
+    job.status = 'done';
+    job.etaSec = 0;
+    job.finalUrl = job.previewUrl; // demo: reuse the same real render as the "final" clip
+    job.qa = buildQaReport();
+    job.logLines.push(log('info', 'Hoàn tất pipeline — soát kỹ thuật ĐẠT ở vòng 1/3.'));
+    notify(id);
+    return;
+  }
+
+  job.steps[nextIdx].status = 'running';
+  job.status = 'running';
+  job.etaSec = Math.max(0, (job.steps.length - nextIdx) * 6);
+  job.logLines.push(log('info', `▶ Bắt đầu: ${job.steps[nextIdx].label}`));
+  notify(id);
+
+  rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
+}
+
+let idCounter = 0;
+function makeId(): string {
+  idCounter += 1;
+  return `job-${Date.now()}-${idCounter}`;
+}
+
+export const mockApi: StudioApi = {
+  async submitJob(options: VideoOptions, footage: FootageFile[]): Promise<RenderJob> {
+    const id = makeId();
+    const style = RULES.styles[options.phong_cach as keyof typeof RULES.styles];
+    const purpose = RULES.purposes[options.muc_dich as keyof typeof RULES.purposes];
+    const job: RenderJob = {
+      id,
+      title: `${style.name} · ${purpose.name} · ${options.do_dai_giay}s`,
+      options,
+      status: 'queued',
+      createdAt: nowIso(),
+      etaSec: PIPELINE_STEPS.length * 6,
+      steps: newSteps(),
+      logLines: [log('info', 'Đã nhận tác vụ, xếp vào hàng đợi SQLite (daemon mode, không chặn giao diện).')],
+      previewUrl: null,
+      finalUrl: null,
+      qa: null,
+    };
+    const rec: JobRecord = { job, timer: null, footage };
+    store.set(id, rec);
+    rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
+    return job;
+  },
+
+  async listJobs(): Promise<RenderJob[]> {
+    return [...store.values()]
+      .map((r) => ({ ...r.job, steps: [...r.job.steps], logLines: [...r.job.logLines] }))
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  },
+
+  async getJob(id: string): Promise<RenderJob | null> {
+    const job = store.get(id)?.job;
+    return job ? { ...job, steps: [...job.steps], logLines: [...job.logLines] } : null;
+  },
+
+  subscribeJob(id: string, onUpdate: (job: RenderJob) => void): () => void {
+    if (!listeners.has(id)) listeners.set(id, new Set());
+    listeners.get(id)!.add(onUpdate);
+    const rec = store.get(id);
+    if (rec) onUpdate(rec.job);
+    return () => listeners.get(id)?.delete(onUpdate);
+  },
+
+  async cancelJob(id: string): Promise<void> {
+    const rec = store.get(id);
+    if (!rec) return;
+    if (rec.timer) clearTimeout(rec.timer);
+    rec.job.status = 'error';
+    rec.job.logLines.push(log('warn', 'Đã huỷ theo yêu cầu.'));
+    notify(id);
+  },
+};

@@ -1,0 +1,61 @@
+@import 'tailwindcss';
+
+/* GANI FOODY AI Studio — dark studio theme (spec: slate-950/900 base, amber/orange brand
+   accent, emerald for success states). The dashboard is a video-editor tool, so it stays
+   dark permanently rather than following the OS theme. */
+:root {
+  --gani-amber: #f59e0b;
+  --gani-amber-soft: rgba(245, 158, 11, 0.14);
+  --gani-emerald: #10b981;
+  --gani-rose: #f43f5e;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: #020617; /* slate-950 */
+  color: #e2e8f0; /* slate-200 */
+  font-family: 'Be Vietnam Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+.font-mono-studio {
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+
+/* thin scrollbars for the console/queue panels */
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #334155; /* slate-700 */
+  border-radius: 9999px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: #475569; /* slate-600 */
+}
+
+@keyframes pulse-amber {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.animate-pulse-amber {
+  animation: pulse-amber 1.4s ease-in-out infinite;
+}

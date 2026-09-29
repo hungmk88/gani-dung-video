@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Demo media for the Studio Wizard / Job Queue preview — real files copied from elsewhere
+# in the repo (see README.md "Đồng bộ tài nguyên demo"), not generated and not meant to
+# live in git history. The root .gitignore already blocks *.mp4/*.m4a repo-wide; these
+# rules are kept here too so the intent is obvious from inside frontend/ alone, and the
+# .gitkeep placeholders keep the folders present after a fresh clone.
+public/audio/*
+!public/audio/.gitkeep
+public/preview/*
+!public/preview/.gitkeep
