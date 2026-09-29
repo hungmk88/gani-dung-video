@@ -1,5 +1,8 @@
 import { Cpu, Database, Music2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { MUSIC_LIBRARY } from '../../data/mockMusic';
+import { api } from '../../services/api';
+import type { HealthInfo } from '../../types/rules';
 
 function Badge({
   icon: Icon,
@@ -29,7 +32,38 @@ function Badge({
 
 export type TabId = 'wizard' | 'queue';
 
+const HEALTH_POLL_MS = 5000;
+
+// Daemon status badge: mock always reads "online"; real polls GET /api/health.
+function useHealth(): HealthInfo | null {
+  const [health, setHealth] = useState<HealthInfo | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = () =>
+      api
+        .health()
+        .then((h) => !cancelled && setHealth(h))
+        .catch(() => !cancelled && setHealth(null));
+    void tick();
+    const t = setInterval(tick, HEALTH_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
+  return health;
+}
+
+function queueBadge(health: HealthInfo | null): { value: string; tone: 'emerald' | 'amber' | 'slate' } {
+  if (api.mode === 'mock') return { value: 'Daemon · SQLite Queue (mô phỏng)', tone: 'slate' };
+  if (health === null) return { value: 'Máy chủ dựng: không kết nối', tone: 'amber' };
+  if (!health.daemonOnline) return { value: 'Máy chủ OK · daemon TẮT', tone: 'amber' };
+  const waiting = (health.jobs.queued ?? 0) + (health.jobs.processing ?? 0);
+  return { value: `Daemon online · ${waiting} job đang chờ/chạy`, tone: 'emerald' };
+}
+
 export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabId) => void }) {
+  const queue = queueBadge(useHealth());
   return (
     <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6">
@@ -49,7 +83,7 @@ export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabI
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Badge icon={Database} label="Hàng đợi" value="Daemon · SQLite Queue" tone="emerald" />
+            <Badge icon={Database} label="Hàng đợi" value={queue.value} tone={queue.tone} />
             <Badge
               icon={Music2}
               label="Thư viện nhạc"

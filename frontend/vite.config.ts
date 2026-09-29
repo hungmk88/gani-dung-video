@@ -7,9 +7,14 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
-    // Phase 6 will serve the real API from 127.0.0.1:8765 (see src/services/config.ts).
+    // The phase 6b server listens on 127.0.0.1:8765 (see src/services/config.ts).
     proxy: {
       '/api': {
+        target: 'http://127.0.0.1:8765',
+        changeOrigin: true,
+      },
+      // Finished videos / covers / subtitles (Range requests included).
+      '/media': {
         target: 'http://127.0.0.1:8765',
         changeOrigin: true,
       },
