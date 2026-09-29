@@ -141,7 +141,8 @@ def _job(options_file: Path, folder: Path, rules: Rules, glossary: GlossaryFile)
 
 
 def _log(folder: Path, **entry: Any) -> None:
-    line = {"time": datetime.now(UTC).isoformat(timespec="seconds"), **entry}
+    # "mode": speech drafts (5c-2) log to this same file, tagged "speech" (decision 29/09/2026).
+    line = {"time": datetime.now(UTC).isoformat(timespec="seconds"), "mode": "music", **entry}
     with (folder / EDIT_DIR / LOG_FILE).open("a", encoding="utf-8") as f:
         f.write(json.dumps(line, ensure_ascii=False) + "\n")
 

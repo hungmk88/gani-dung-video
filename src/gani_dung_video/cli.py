@@ -34,7 +34,9 @@ import logging
 import sys
 from pathlib import Path
 
-from gani_dung_video.application.draft_service import DraftError, DryRun, build_drafts
+from pydantic import ValidationError
+
+from gani_dung_video.application.draft_service import DraftError, DraftsFile, DryRun, build_drafts
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
@@ -42,14 +44,20 @@ from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.render_service import build_render, recheck
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
+from gani_dung_video.application.speech_draft_service import (
+    SpeechDraftError,
+    SpeechDraftsResult,
+    build_speech_drafts,
+)
 from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
-from gani_dung_video.domain.plan import PlanError
+from gani_dung_video.domain.plan import Plan, PlanError
 from gani_dung_video.infrastructure.claude_client import AiError
 from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.ffmpeg_render import RenderError
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
+from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.media_probe import ProbeFailed
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.settings import SettingsError
@@ -148,10 +156,25 @@ def _run_qc(folder: Path, draft: str, final: bool) -> int:
     return 0 if not bad else 1
 
 
-def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
+def _driver_of(folder: Path) -> str | None:
+    """Peek at plan.json's driver so `draft` can dispatch without reading it twice."""
+    p = folder / EDIT_DIR / "plan.json"
+    if not p.is_file():
+        return None
     try:
-        r, out = build_drafts(file, folder, dry_run=dry_run)
-    except DraftError as e:
+        return Plan.model_validate_json(p.read_text(encoding="utf-8")).driver
+    except ValidationError:
+        return None
+
+
+def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
+    r: DraftsFile | SpeechDraftsResult | DryRun
+    try:
+        if _driver_of(folder) == "speech":
+            r, out = build_speech_drafts(file, folder, dry_run=dry_run)
+        else:
+            r, out = build_drafts(file, folder, dry_run=dry_run)
+    except (DraftError, SpeechDraftError) as e:
         sys.stdout.write(f"KHÔNG ĐẠT: {e}\n")
         return 1
     if isinstance(r, DryRun):
@@ -160,6 +183,19 @@ def _run_draft(file: Path, folder: Path, dry_run: bool) -> int:
             f"  Token vào ≈ {_num(r.input_tokens)} → {_vnd(r.input_only_vnd)}",
             f"  Một lần gọi tối đa ≈ {_vnd(r.worst_call_vnd)} (gồm cả giới hạn token ra)",
             f"  Tối đa {r.max_attempts} vòng; trần {_vnd(r.cap_vnd)}",
+        ]
+    elif isinstance(r, SpeechDraftsResult):
+        lines = [
+            f"Model {r.model} — {len(r.drafts)} bản nháp sau {r.attempts} vòng",
+            f"  Token {_num(r.input_tokens)} vào / {_num(r.output_tokens)} ra — {_vnd(r.cost_vnd)} "
+            f"(trần {_vnd(r.cap_vnd)})",
+            *[
+                f"  Bản {d.draft} ({d.label}): {len(d.cuts)} câu, {d.cuts[-1].t_end:g}s, "
+                f"{len(d.broll)} B-roll"
+                for d in r.drafts
+            ],
+            *[f"  Ghi chú {n}" for n in r.notes],
+            f"Kết quả: {out}",
         ]
     else:
         lines = [

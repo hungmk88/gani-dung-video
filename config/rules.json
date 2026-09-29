@@ -287,6 +287,7 @@
   "broll_max_shift_sec": 0.15,
   "duck_fade_sec": 0.15,
   "duck_merge_gap_sec": 0.4,
+  "duration_tolerance_pct": 0.2,
   "karaoke": {
    "min_words": 3,
    "max_words": 5,
@@ -376,6 +377,10 @@
   "DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
   "DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON.",
   "PHRASES_NOT_SPEECH_STYLE": "Phong cách '{style}' không dẫn nhịp theo lời nói — chỉ 'Bán hàng có lời' dùng bước này. Chọn phong cách đó, hoặc dùng lệnh `plan`/`pick` cho phong cách hiện tại.",
-  "PHRASES_NO_TRANSCRIPTS": "Chưa có edit/transcripts/ — chạy lệnh `transcribe` trước."
+  "PHRASES_NO_TRANSCRIPTS": "Chưa có edit/transcripts/ — chạy lệnh `transcribe` trước.",
+  "SPEECH_DRAFT_NO_PHRASES": "Chưa có edit/phrases.json — chạy lệnh `phrases` trước.",
+  "SPEECH_DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",
+  "SPEECH_DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
+  "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }
 }
