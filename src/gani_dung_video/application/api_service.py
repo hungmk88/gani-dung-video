@@ -301,7 +301,7 @@ def _read_verify(ctx: ApiContext, folder: Path, job: Job) -> VerifyView | None:
     def rows(record: RoundRecord) -> list[VerifyCheckView]:
         return [VerifyCheckView(code=r.code, label=labels.get(r.code, ""), status=r.status,
                                 detail=_scrub(ctx, job.project_dir, check_detail(r)) or "")
-                for r in check_rows(report.mode, record)]  # fmt: skip
+                for r in check_rows(report.mode, record, report.extra_codes)]  # fmt: skip
 
     rounds = [
         VerifyRoundView(round=r.round, drafts=r.drafts, parsed=r.parsed, passed=r.passed,

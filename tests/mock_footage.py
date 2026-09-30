@@ -26,7 +26,7 @@ def mock_scenes(
         segs = []
         for k in range(per_clip):
             start = 12.0 * k  # 12 s apart: far more than the 3 s gap V4 asks for
-            dur = 3.6 + 0.6 * ((i + k) % 3)  # 3.6 / 4.2 / 4.8 s → 4 or 4–6 beats at 0.75 s
+            dur = (3.6, 4.8, 5.0)[(i + k) % 3]  # 4 beats, or 4–6 beats for two thirds
             segs.append(Segment(start=start, end=start + dur, peak=start + dur / 3,
                                 aesthetic=4.0 + ((i * 7 + k * 3) % 10) / 5.0,
                                 labels=[tags[(i * per_clip + k) % len(tags)]]))  # fmt: skip

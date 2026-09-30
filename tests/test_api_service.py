@@ -1141,3 +1141,15 @@ def test_a_report_from_an_older_run_is_not_shown(ctx: ApiContext, root: Path) ->
     assert job is not None and job.started_at is not None
     os.utime(path, (job.started_at - 3600, job.started_at - 3600))
     assert get_job(ctx, draft_id).verify is None
+
+
+def test_a_chapter_plan_report_shows_the_v10_row_before_snap(ctx: ApiContext, root: Path) -> None:
+    rep = VerifyReportFile(mode="music", final_status="passed", rounds=[one_round(1)],
+                           extra_codes=["V10"])  # fmt: skip
+    draft_id, _ = finish_paid_draft(ctx, root, rep.model_dump_json())
+    v = get_job(ctx, draft_id).verify
+    assert v is not None
+    codes = [c.code for c in v.checks]
+    assert codes[-3:] == ["V9", "V10", "SNAP"]
+    row = next(c for c in v.checks if c.code == "V10")
+    assert row.label == RULES["verify_labels"]["V10"] and row.status == "pass"
