@@ -20,6 +20,7 @@ from gani_dung_video.infrastructure.ffmpeg_render import (
     parse_loudnorm,
     render,
 )
+from gani_dung_video.infrastructure.ffmpeg_render import _run as render_run
 
 RULES = load_rules()
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
@@ -244,3 +245,51 @@ def test_ffmpeg_failure_is_reported(tmp_path: Path) -> None:
     ass.write_text(ass_document(e, RULES), encoding="utf-8")
     with pytest.raises(RenderError, match="ffmpeg"):
         render(e, tmp_path, None, ass, tmp_path / "out.mp4", RULES)
+
+
+# ─────────────── a crossfade after a hard cut (found by the real API run, 30/09/2026) ───────
+
+
+MIXED = [
+    shot("a.mp4", 0, 1.0, d=0.3, src_in=0.0),  # dissolve out …
+    shot("a.mp4", 1.0, 2.0, src_in=1.5),  # … then two hard cuts …
+    shot("a.mp4", 2.0, 3.0, src_in=3.0),
+    shot("a.mp4", 3.0, 4.0, d=0.3, src_in=4.5),  # … then a dissolve again
+    shot("a.mp4", 4.0, 5.0, src_in=6.0),
+]
+
+
+def test_a_cut_gets_its_timebase_reset_so_a_later_crossfade_can_follow() -> None:
+    g = build_graph(edl(list(MIXED)), has_audio=[True] * 5)
+    joins = [ln for ln in g.splitlines() if "concat=n=2:v=1:a=0" in ln and "[vend]" not in ln]
+    assert len(joins) == 2  # the two hard cuts between the crossfades
+    assert all("concat=n=2:v=1:a=0,settb=1/30[" in ln for ln in joins)
+
+
+def test_pure_cuts_and_pure_crossfades_keep_their_graph() -> None:
+    cuts = build_graph(edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 2)]), has_audio=[True, True])
+    assert "settb" not in cuts  # one concat over every shot: nothing to reset
+
+
+@needs_ffmpeg
+def test_real_render_survives_crossfade_cut_cut_crossfade(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=8", 8.0)
+    e = edl(list(MIXED))
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "mixed.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    fmt = probe(out)["format"]
+    assert isinstance(fmt, dict) and float(fmt["duration"]) == pytest.approx(6.0, abs=0.2)
+
+
+def test_an_ffmpeg_failure_keeps_the_last_lines_so_the_cause_is_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stderr = "\n".join(f"line{i}" for i in range(1, 13)).encode()
+    done = subprocess.CompletedProcess(["ffmpeg"], 4294967274, b"", stderr)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: done)
+    with pytest.raises(RenderError) as caught:
+        render_run(["ffmpeg"], tmp_path, 5.0)
+    msg = str(caught.value)
+    assert "line12" in msg and "line5" in msg and "line4" not in msg

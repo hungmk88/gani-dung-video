@@ -66,7 +66,8 @@ def _join_video(e: Edl) -> list[str]:
             out.append(f"[{cur}][v{i}]xfade=transition=fade:duration={_n(prev.dissolve_out_sec)}"
                        f":offset={_n(prev.t_end)}[{nxt}]")  # fmt: skip
         else:
-            out.append(f"[{cur}][v{i}]concat=n=2:v=1:a=0[{nxt}]")
+            # concat outputs 1/1000000 timebase; a later xfade needs the inputs' 1/fps
+            out.append(f"[{cur}][v{i}]concat=n=2:v=1:a=0,settb=1/{e.fps}[{nxt}]")
         cur = nxt
     if n == 1:
         out.append("[v0]null[vjoin]")
@@ -289,6 +290,10 @@ def extract_cover(video: Path, at_sec: float, out: Path, timeout: float = 60.0) 
           str(video), "-frames:v", "1", "-q:v", "2", str(out)], video.parent, timeout)  # fmt: skip
 
 
+_ERROR_LINES = 8  # how much of ffmpeg's stderr an error message keeps
+_ERROR_CHARS = 900
+
+
 def _run(args: list[str], cwd: Path, timeout: float) -> str:
     try:
         r = subprocess.run(args, cwd=cwd, capture_output=True, timeout=timeout, check=False)
@@ -298,5 +303,7 @@ def _run(args: list[str], cwd: Path, timeout: float) -> str:
         raise RenderError(f"ffmpeg chạy quá {timeout:g}s, đã dừng.") from e
     if r.returncode != 0:
         lines = r.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise RenderError(f"ffmpeg lỗi: {lines[-1] if lines else r.returncode}")
+        # the cause is often a few lines above the last ("Nothing was written…" says nothing)
+        tail = " | ".join(x.strip() for x in lines[-_ERROR_LINES:])[-_ERROR_CHARS:]
+        raise RenderError(f"ffmpeg lỗi: {tail or r.returncode}")
     return r.stderr.decode("utf-8", "replace")
