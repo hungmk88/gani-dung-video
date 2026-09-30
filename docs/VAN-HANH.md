@@ -26,7 +26,22 @@ Các biến trong `.env` (xem `.env.example`):
 | `GANI_DV_MUSIC_DIR` | thư viện nhạc của máy (xem mục 4) |
 | `GANI_DV_CLAUDE_MODEL` | chỉ khi cần model khác `rules.ai.model` |
 
-## 2. Khởi động mỗi ngày (hai cửa sổ lệnh, cùng thư mục dự án)
+## 2. Khởi động mỗi ngày
+
+**Cách nhanh nhất: nhấp đúp biểu tượng "GANI Video" trên Desktop.** Nó chạy
+`scripts\chay-gani.bat`: bật máy chủ và daemon nếu chưa chạy (mỗi cái một cửa sổ nhỏ tên
+"GANI - …" trên thanh tác vụ), đợi máy chủ sẵn sàng, rồi mở giao diện trong một cửa sổ riêng
+không có thanh địa chỉ. Bấm lại lúc đang chạy thì không bật trùng. Tắt hết: đóng hai cửa sổ nhỏ
+đó (hoặc `Ctrl+C` trong từng cửa sổ).
+
+- Biểu tượng là lối tắt (`.lnk`) trỏ tới `scripts\chay-gani.bat`, dùng icon
+  `frontend\public\favicon.ico` (logo lá GANI). Làm lại khi mất: chuột phải vào
+  `chay-gani.bat` → Send to → Desktop (create shortcut) → chuột phải lối tắt → Properties →
+  Change Icon → chọn `favicon.ico`.
+- Cần có sẵn bản giao diện đã build (`frontend\dist`); thiếu thì file báo lệnh build cần chạy.
+- Cấu hình (khóa API, thư mục footage…) đọc từ `.env` của dự án, xem mục 1.
+
+**Cách thủ công** (hai cửa sổ lệnh, cùng thư mục dự án):
 
 ```bash
 python -m gani_dung_video serve    # máy chủ giao diện + API, chỉ 127.0.0.1:8765
