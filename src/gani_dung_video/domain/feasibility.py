@@ -19,6 +19,11 @@ order of scenes.
   its scenes with an earlier one.
 
 Missing tags alone never block (X8: "build with the nearest scene"): only a lack of scenes does.
+
+`footage_fit` (phase 6h) is the softer question asked before a person approves the money: the plan
+CAN be filled, but with how much room to spare? Nine different scenes for a plan that needs at most
+nine pass the gate, yet Claude has nothing to swap when it repeats one (V4) and three rounds go
+by. It never blocks; it measures, so the UI can warn.
 """
 
 from __future__ import annotations
@@ -150,3 +155,102 @@ def _variety(plan: Plan, cands: dict[str, list[Candidate]], rules: Rules, drafts
     text = msgs["FEASIBLE_VARIETY"].format(drafts=drafts, need=need, per=per_draft,
                                            overlap=f"{limit:.0%}", have=have)  # fmt: skip
     return Shortfall("variety", (), need, have, text)
+
+
+# ─────────────── 6h: how much room is there? ───────────────
+
+
+@dataclass(frozen=True)
+class BlockFit:
+    """One block: what it can draw on, what it needs, and whether that is barely enough."""
+
+    role: str
+    candidates: int  # different scenes offered to this block
+    beats_needed: int
+    max_fill: int  # most beats those scenes can carry (each once, at most N per clip)
+    scenes_min: int  # fewest scenes that make exactly `beats_needed`
+    scenes_max: int  # most scenes that make exactly `beats_needed`
+    tight: bool  # candidates < ceil(scenes_max x ratio)
+
+
+@dataclass(frozen=True)
+class FootageFit:
+    """The whole plan: usable different scenes against the scenes it may need."""
+
+    scenes_available: int  # different scenes over all blocks, at most N per clip
+    scenes_needed_min: int
+    scenes_needed_max: int
+    warn_below: int  # ceil(scenes_needed_max x ratio)
+    tight: bool  # scenes_available < warn_below
+    blocks: tuple[BlockFit, ...]
+
+
+def scene_counts(beats: int, allowed: Sequence[int]) -> tuple[int, int] | None:
+    """(fewest, most) scenes that add up to exactly `beats`, each scene one of `allowed` beats.
+
+    None when `beats` is not a sum of allowed sizes (a plan built by `compile_plan` never is).
+
+    Example:
+        >>> scene_counts(16, [4, 6])  # 4+6+6, or 4+4+4+4
+        (3, 4)
+    """
+    if beats <= 0:
+        return (0, 0)
+    fewest: list[int | None] = [0] + [None] * beats
+    most: list[int | None] = [0] + [None] * beats
+    for n in range(1, beats + 1):
+        options = [(fewest[n - a], most[n - a]) for a in allowed if a > 0 and n >= a]
+        lows = [lo + 1 for lo, _ in options if lo is not None]
+        highs = [hi + 1 for _, hi in options if hi is not None]
+        fewest[n], most[n] = (min(lows), max(highs)) if lows and highs else (None, None)
+    lo, hi = fewest[beats], most[beats]
+    return (lo, hi) if lo is not None and hi is not None else None
+
+
+def _warn_level(needed: int, ratio: float) -> int:
+    """ceil(needed x ratio), ignoring float noise (10 x 1.3 is 13, not 14)."""
+    return math.ceil(needed * ratio - 1e-9)
+
+
+def _usable_scenes(cands: Iterable[Candidate], per_clip: int) -> int:
+    """Different scenes one draft can use: each once, at most `per_clip` of any one clip."""
+    counts: dict[str, int] = {}
+    for c in _distinct(cands).values():
+        counts[c.clip] = counts.get(c.clip, 0) + 1
+    return sum(min(n, per_clip) for n in counts.values())
+
+
+def footage_fit(plan: Plan, pick: PickFile, rules: Rules) -> FootageFit | None:
+    """Room to spare between the picked scenes and what the plan may need; None in speech mode
+    (cuts follow the voice, there are no scene blocks).
+
+    A block needs between `scenes_min` and `scenes_max` scenes (sums of the allowed scene sizes
+    that make its planned beats); the plan needs the sums over its blocks. The footage is `tight`
+    when its usable different scenes fall below `scenes_needed_max x pick.footage_warn_ratio`.
+    """
+    if plan.driver == "speech":
+        return None
+    ratio = float(rules["pick"]["footage_warn_ratio"])
+    per_clip = int(rules["vision"]["max_segments_per_clip"])
+    allowed = plan.beats_per_scene_allowed
+    by_role = {b.role: b for b in pick.blocks}
+    rows: list[BlockFit] = []
+    for block in plan.blocks:
+        cands = list(by_role[block.role].candidates) if block.role in by_role else []
+        counts = scene_counts(block.beats, allowed)
+        if counts is None:  # not a sum of allowed sizes: bound it by the extremes instead
+            counts = (math.ceil(block.beats / max(allowed)), block.beats // min(allowed))
+        have = len(_distinct(cands))
+        rows.append(BlockFit(
+            role=block.role, candidates=have, beats_needed=block.beats,
+            max_fill=_supply(cands, per_clip), scenes_min=counts[0], scenes_max=counts[1],
+            tight=have < _warn_level(counts[1], ratio),
+        ))  # fmt: skip
+    need_min = sum(r.scenes_min for r in rows)
+    need_max = sum(r.scenes_max for r in rows)
+    warn_below = _warn_level(need_max, ratio)
+    pool = [c for b in plan.blocks if b.role in by_role for c in by_role[b.role].candidates]
+    available = _usable_scenes(pool, per_clip)
+    return FootageFit(scenes_available=available, scenes_needed_min=need_min,
+                      scenes_needed_max=need_max, warn_below=warn_below,
+                      tight=available < warn_below, blocks=tuple(rows))  # fmt: skip

@@ -332,6 +332,42 @@ thư mục dự án của nó nằm ngoài `GANI_DV_ALLOWED_ROOTS`.
 Claude ở trường hợp xấu nhất (job có thể gọi tối đa vài vòng nhưng luôn dưới `cap_vnd` và dưới
 `approved_vnd`); `spent_vnd` là số thật đọc lại từ `edit/ai_log.jsonl` khi job kết thúc.
 
+### `footage`: footage còn dư bao nhiêu (Giai đoạn 6h)
+
+Cổng khả thi (6e) chỉ chặn kế hoạch **không thể** lấp. Còn kế hoạch lấp được nhưng chỉ vừa khít
+(ví dụ 9 cảnh khác nhau cho plan cần 8–9 cảnh) thì Claude dễ lặp cảnh (V4) và mất vài vòng. Job
+`draft` **đang chờ duyệt** vì thế trả thêm `footage` để giao diện cảnh báo trước khi người dùng
+bấm duyệt tiền. Không chặn gì.
+
+```json
+"footage": {
+  "scenes_available": 9,
+  "scenes_needed_min": 8,
+  "scenes_needed_max": 9,
+  "warn_below": 12,
+  "tight": true,
+  "blocks": [
+    {"role": "hook", "candidates": 9, "beats_needed": 4, "max_fill": 54,
+     "scenes_min": 1, "scenes_max": 1, "tight": false},
+    {"role": "quy_trinh", "candidates": 9, "beats_needed": 16, "max_fill": 54,
+     "scenes_min": 3, "scenes_max": 4, "tight": false}
+  ]
+}
+```
+
+- `scenes_available`: số cảnh **khác nhau** dùng được cho cả plan (một cảnh được chào cho nhiều
+  khối chỉ tính một lần; tối đa `vision.max_segments_per_clip` cảnh của một clip).
+- `scenes_needed_min` / `scenes_needed_max`: số cảnh plan cần, cộng theo từng khối. Mỗi khối là
+  tổng của các cỡ cảnh cho phép (`beats_per_scene_allowed`) đúng bằng số phách của khối, nên
+  khối 10 phách với cỡ 4 hoặc 6 chỉ có thể là 4+6 (2 cảnh).
+- `warn_below` = `ceil(scenes_needed_max × rules.pick.footage_warn_ratio)` (mặc định 1,3);
+  `tight` = `scenes_available < warn_below`. Cảnh báo vàng, người dùng vẫn duyệt được.
+- Mỗi khối: `candidates` (cảnh chào riêng cho khối), `max_fill` (số phách tối đa các cảnh đó mang
+  được), `scenes_min` / `scenes_max`, và `tight` riêng của khối.
+- `footage` là `null` khi: job không phải `draft` hoặc không còn chờ duyệt; phong cách dẫn lời
+  (không có khối cảnh); `plan.json` / `candidates.json` thiếu, hỏng hoặc cũ hơn lần chạy của
+  job (hai tệp dùng chung theo dự án, cùng luật với `qc_report.json`).
+
 ### `POST /api/jobs/{id}/approve`
 
 ```json

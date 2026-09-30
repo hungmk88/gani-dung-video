@@ -184,6 +184,30 @@ class CostView(BaseModel):
     spent_vnd: float | None  # what ai_log.jsonl says was really spent
 
 
+class FootageBlockView(BaseModel):
+    """One plan block against the scenes picked for it."""
+
+    role: str
+    candidates: int  # different scenes offered to this block
+    beats_needed: int
+    max_fill: int  # most beats those scenes can carry
+    scenes_min: int  # fewest / most scenes that make exactly `beats_needed`
+    scenes_max: int
+    tight: bool
+
+
+class FootageView(BaseModel):
+    """How much room the footage leaves a draft waiting for approval (phase 6h). Never blocks:
+    `tight` only tells the UI to warn that Claude may repeat a scene and need several rounds."""
+
+    scenes_available: int  # usable different scenes over all blocks
+    scenes_needed_min: int
+    scenes_needed_max: int
+    warn_below: int  # tight when scenes_available is below this (rules.pick.footage_warn_ratio)
+    tight: bool
+    blocks: list[FootageBlockView]
+
+
 class JobView(BaseModel):
     id: int
     pipeline_id: int | None = None
@@ -216,6 +240,7 @@ class JobView(BaseModel):
     srt_url: str | None
     steps: list[StepView]
     qa: QaView | None
+    footage: FootageView | None = None  # only a draft job at the approval gate, music modes
 
 
 class JobDetail(JobView):

@@ -39,6 +39,8 @@ from gani_dung_video.domain.api_models import (
     BudgetView,
     CostView,
     EventView,
+    FootageBlockView,
+    FootageView,
     HealthView,
     JobCreate,
     JobDetail,
@@ -60,7 +62,9 @@ from gani_dung_video.domain.api_models import (
     qa_checks,
     t8_status,
 )
+from gani_dung_video.domain.feasibility import footage_fit
 from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
+from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.infrastructure.config_files import ConfigError
@@ -233,6 +237,42 @@ def _read_qc(out: Path, job: Job) -> QcReport | None:
         return None
 
 
+def _fresh(path: Path, job: Job) -> bool:
+    """The file was written during THIS run: plan.json and candidates.json belong to the project,
+    so one left by an older run says nothing about the job that is waiting now."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return False
+    return job.started_at is not None and mtime >= job.started_at - _REPORT_SLACK_SEC
+
+
+def _read_footage(folder: Path, job: Job, rules: Rules) -> FootageView | None:
+    """Room to spare between the picked scenes and the plan, for a draft job at the approval
+    gate. None for every other job, for speech mode, and whenever the files cannot be trusted."""
+    if job.kind != "draft" or job.status != "awaiting_approval":
+        return None
+    edit = folder / EDIT_DIR
+    try:
+        if not (_fresh(edit / "plan.json", job) and _fresh(edit / "candidates.json", job)):
+            return None
+        plan = Plan.model_validate_json((edit / "plan.json").read_text("utf-8"))
+        pick = PickFile.model_validate_json((edit / "candidates.json").read_text("utf-8"))
+    except (OSError, ValueError):  # pydantic's ValidationError is a ValueError
+        return None
+    fit = footage_fit(plan, pick, rules)
+    if fit is None:
+        return None
+    return FootageView(
+        scenes_available=fit.scenes_available, scenes_needed_min=fit.scenes_needed_min,
+        scenes_needed_max=fit.scenes_needed_max, warn_below=fit.warn_below, tight=fit.tight,
+        blocks=[FootageBlockView(role=b.role, candidates=b.candidates,
+                                 beats_needed=b.beats_needed, max_fill=b.max_fill,
+                                 scenes_min=b.scenes_min, scenes_max=b.scenes_max, tight=b.tight)
+                for b in fit.blocks],
+    )  # fmt: skip
+
+
 def _plan_is_speech(folder: Path) -> bool | None:
     """Whether the project's plan is speech-driven; None when plan.json cannot be read."""
     with contextlib.suppress(OSError, ValidationError):
@@ -332,6 +372,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         options=_read_options(folder),
         video_url=urls["video"], cover_url=urls["cover"], srt_url=urls["srt"],
         steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
+        footage=_read_footage(folder, job, ctx.rules),
     )  # fmt: skip
 
 
