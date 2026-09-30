@@ -134,9 +134,13 @@ từ `plan.json` của dự án, không gửi lại.
            "cancelled": 0},
   "allowed_roots_configured": true,
   "ai_key_configured": false,
-  "budget": {"limit_vnd": null, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0}
+  "budget": {"limit_vnd": null, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0},
+  "features": {"long_video": false}
 }
 ```
+
+`features.long_video`: video 3 phút đã mở chưa (`rules.durations.180.enabled`; bật ở pha 7e sau khi
+nghiệm thu thật). Giao diện khóa nút 3 phút khi là `false`; máy chủ cũ không có trường này.
 
 `GET /api/jobs/1` cho một job đã xong (rút gọn `steps`):
 
@@ -411,6 +415,31 @@ kết thúc** (`completed` hoặc `failed`) trả thêm `verify`.
   thiếu, hỏng hoặc được ghi ngoài khoảng thời gian chạy của chính job (tệp dùng chung theo dự án,
   cùng luật với `qc_report.json`; `started_at` được đặt lại mỗi lần daemon nhận job nên luôn tính
   theo lần chạy trả phí cuối).
+
+### `structure`: mở đầu / chương / kêu gọi của video 3 phút (Giai đoạn 7g)
+
+Job `draft` và `render` của một dự án có plan chia chương (`plan.json` có `chapters`) trả thêm
+`structure`, để giao diện vẽ dòng thời gian các chương:
+
+```json
+"structure": {
+  "duration_sec": 180.0,
+  "items": [
+    {"kind": "opening", "id": "hook", "start_sec": 0.0, "end_sec": 4.29, "title": null},
+    {"kind": "chapter", "id": "ve_sinh", "start_sec": 4.29, "end_sec": 50.0,
+     "title": "Khởi đầu sạch sẽ"},
+    {"kind": "closing", "id": "cta", "start_sec": 168.57, "end_sec": 180.0, "title": null}
+  ]
+}
+```
+
+- Giây tính từ phách đầu tiên (= giây 0 của video): `start_beat × beat_sec` của plan; các mục liền
+  nhau không hở, không chồng, mục cuối kết thúc ở `duration_sec`.
+- `title`: tiêu đề chương Claude viết cho **bản nháp của job** (chữ cái `draft`) trong
+  `drafts.json`; `null` khi chưa có bản nháp (job `draft` đang chờ duyệt), khi bản đó không có tiêu
+  đề, và luôn `null` ở `opening` / `closing`.
+- `structure` là `null` với video 15–60 giây, job `analyze`, và khi `plan.json` thiếu/hỏng. Như
+  `options`, nó đọc từ tệp hiện tại của dự án (không có cửa sổ thời gian như `qa`).
 
 ### `POST /api/jobs/{id}/approve`
 

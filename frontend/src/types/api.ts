@@ -17,6 +17,11 @@ export interface ApiProject {
   ready_to_render: boolean;
 }
 
+export interface ApiFeatures {
+  /** 3-minute videos are open (switched on after the real acceptance run, phase 7e). */
+  long_video: boolean;
+}
+
 export interface ApiHealth {
   ok: boolean;
   rules_version: string;
@@ -28,6 +33,8 @@ export interface ApiHealth {
   /** Yes/no only — the server never returns the key itself. */
   ai_key_configured: boolean;
   budget: { limit_vnd: number | null; spent_24h_vnd: number; reserved_vnd: number };
+  /** Absent on servers older than phase 7g. */
+  features?: ApiFeatures;
 }
 
 export interface ApiEvent {
@@ -120,6 +127,22 @@ export interface ApiVerify {
   rounds: ApiVerifyRound[];
 }
 
+export interface ApiStructureItem {
+  /** opening (hook) | chapter | closing (CTA) */
+  kind: string;
+  id: string;
+  start_sec: number;
+  end_sec: number;
+  /** Chapter title written by Claude; null for opening/closing or before the draft exists. */
+  title: string | null;
+}
+
+/** Hook / chapters / CTA of a 3-minute plan on its timeline (phase 7g). */
+export interface ApiStructure {
+  duration_sec: number;
+  items: ApiStructureItem[];
+}
+
 export interface ApiJob {
   id: number;
   pipeline_id?: number | null;
@@ -157,6 +180,8 @@ export interface ApiJob {
   footage?: ApiFootage | null;
   /** Only a finished draft job whose run left a report (phase 6i). */
   verify?: ApiVerify | null;
+  /** Only a draft / render job of a chapter plan (phase 7g). */
+  structure?: ApiStructure | null;
 }
 
 export interface ApiJobDetail extends ApiJob {

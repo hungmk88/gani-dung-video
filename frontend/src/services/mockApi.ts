@@ -84,6 +84,7 @@ const RULES_QC_MAX_ROUNDS = 3;
 
 function buildQaReport(): QaReport {
   return {
+    fixes: [],
     groups: [
       {
         title: 'Pass 1 · Đồng bộ nhịp & hình ảnh (V2–V4, T1)',
@@ -213,6 +214,7 @@ export const mockApi: StudioApi = {
       jobs: {},
       allowedRootsConfigured: true,
       aiKeyConfigured: true,
+      longVideo: true,
       budget: { limitVnd: null, spent24hVnd: 0, reservedVnd: 0 },
     };
   },

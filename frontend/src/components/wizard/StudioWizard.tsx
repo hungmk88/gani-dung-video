@@ -46,6 +46,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [longVideo, setLongVideo] = useState<boolean | null>(null);
 
   function patch(p: Partial<VideoOptions>) {
     setOptions((prev) => ({ ...prev, ...p }));
@@ -55,6 +56,20 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   // "Chỉ dựng lại": the server takes everything from plan.json, so the matrix is not sent.
   const renderOnly = isReal && choice.mode === 'render';
   const draftLetters = DRAFT_LETTERS.slice(0, options.so_ban_nhap);
+
+  // Whether the server has opened 3-minute videos (phase 7g); unknown until it answers.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .health()
+      .then((h) => {
+        if (!cancelled) setLongVideo(h.longVideo);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Debounced preflight through the API; `cancelled` drops answers of superseded inputs.
   useEffect(() => {
@@ -130,7 +145,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         {!renderOnly && (
           <>
             <Panel title="2. Ma trận cấu hình kịch bản">
-              <RuleSelector options={options} onChange={patch} />
+              <RuleSelector options={options} onChange={patch} longVideo={longVideo} />
             </Panel>
 
             <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">

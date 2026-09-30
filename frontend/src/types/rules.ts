@@ -264,6 +264,8 @@ export interface PipelineJobInfo {
 /** Playable result of one draft (A/B/C) of a pipeline. */
 export interface DraftOutput {
   draft: string;
+  /** Chapters of this draft with its own titles (3-minute videos only). */
+  structure?: Structure;
   previewUrl: string | null;
   finalUrl: string | null;
   qa: QaReport | null;
@@ -276,6 +278,8 @@ export interface RenderJob {
   approval?: ApprovalInfo;
   /** V/S check history of the chain's draft job (real API, finished draft only). */
   verify?: VerifyReport | null;
+  /** 3-minute videos: the timeline of the first draft (or the plan, before any draft). */
+  structure?: Structure;
   jobs?: PipelineJobInfo[];
   outputs?: DraftOutput[];
   /** Real API only: the project/draft/size this job renders (needed to re-render). */
@@ -321,6 +325,8 @@ export interface QaGroup {
 
 export interface QaReport {
   groups: QaGroup[];
+  /** What QC fixed by itself, e.g. "dựng lại vòng 2 với trần đỉnh -3 dBTP". */
+  fixes: string[];
   rounds_used: number;
   max_rounds: number;
   overall_pass: boolean;
@@ -337,6 +343,23 @@ export interface ProjectInfo {
   has_drafts: boolean;
 }
 
+export type StructureKind = 'opening' | 'chapter' | 'closing';
+
+export interface StructureItem {
+  kind: StructureKind;
+  id: string;
+  startSec: number;
+  endSec: number;
+  /** The chapter title drawn over the first beats of the chapter (its own lane on screen). */
+  title: string | null;
+}
+
+/** Hook / chapters / CTA of a 3-minute video (phase 7g). */
+export interface Structure {
+  durationSec: number;
+  items: StructureItem[];
+}
+
 export interface HealthInfo {
   online: boolean;
   daemonOnline: boolean;
@@ -344,6 +367,8 @@ export interface HealthInfo {
   jobs: Record<string, number>;
   allowedRootsConfigured: boolean;
   aiKeyConfigured: boolean;
+  /** 3-minute videos open on this server; null = an older server that does not say. */
+  longVideo: boolean | null;
   budget: { limitVnd: number | null; spent24hVnd: number; reservedVnd: number };
 }
 

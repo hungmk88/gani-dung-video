@@ -15,6 +15,7 @@ import type {
   ApiPreflightResult,
   ApiProject,
   ApiQa,
+  ApiStructure,
   ApiVerify,
   ApiVerifyCheck,
 } from '../types/api.ts';
@@ -41,6 +42,8 @@ import type {
   QaGroup,
   QaReport,
   RenderJob,
+  Structure,
+  StructureKind,
   VerifyCheck,
   VerifyFinal,
   VerifyReport,
@@ -84,6 +87,7 @@ export function toHealthInfo(h: ApiHealth): HealthInfo {
     jobs: h.jobs,
     allowedRootsConfigured: h.allowed_roots_configured,
     aiKeyConfigured: h.ai_key_configured,
+    longVideo: h.features ? h.features.long_video : null,
     budget: {
       limitVnd: h.budget.limit_vnd,
       spent24hVnd: h.budget.spent_24h_vnd,
@@ -188,6 +192,24 @@ export function toVerify(v: ApiVerify): VerifyReport {
   };
 }
 
+const STRUCTURE_KINDS: readonly StructureKind[] = ['opening', 'chapter', 'closing'];
+
+/** Hook / chapters / CTA of a 3-minute plan (phase 7g). An unknown kind shows as a chapter. */
+export function toStructure(s: ApiStructure): Structure {
+  return {
+    durationSec: s.duration_sec,
+    items: s.items.map((i) => ({
+      kind: (STRUCTURE_KINDS as readonly string[]).includes(i.kind)
+        ? (i.kind as StructureKind)
+        : 'chapter',
+      id: i.id,
+      startSec: i.start_sec,
+      endSec: i.end_sec,
+      title: i.title,
+    })),
+  };
+}
+
 /** Footage room for the approval dialog (phase 6h). */
 export function toFootage(f: ApiFootage): FootageInfo {
   return {
@@ -235,6 +257,7 @@ export function toQaReport(qa: ApiQa, hasVerify = false): QaReport {
   }
   return {
     groups: visible,
+    fixes: qa.fixes,
     rounds_used: qa.rounds,
     max_rounds: QC_MAX_ROUNDS,
     overall_pass: qa.passed,
@@ -281,6 +304,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     finalUrl: newestUrl(group, 'final'),
     qa: job.qa ? toQaReport(job.qa, job.verify != null) : null,
     verify: job.verify ? toVerify(job.verify) : null,
+    ...(job.structure ? { structure: toStructure(job.structure) } : {}),
   };
 }
 
@@ -391,8 +415,10 @@ function toOutputs(jobs: ApiJob[], hasVerify: boolean): DraftOutput[] {
     const withQa = own
       .filter((j) => j.qa !== null && j.status === 'completed')
       .sort((a, b) => (a.size === b.size ? b.id - a.id : a.size === 'final' ? -1 : 1))[0];
+    const planned = [...own].sort((a, b) => b.id - a.id).find((j) => j.structure != null)?.structure;
     return {
       draft,
+      ...(planned ? { structure: toStructure(planned) } : {}),
       previewUrl: newestUrl(own, 'preview'),
       finalUrl: newestUrl(own, 'final'),
       qa: withQa?.qa ? toQaReport(withQa.qa, hasVerify) : null,
@@ -432,6 +458,10 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
   const outputs = toOutputs(jobs, draftWithVerify !== undefined);
   const first = outputs[0];
   const planJob = jobs.find((j) => Object.keys(j.options).length > 0);
+  // The first draft's own structure carries its titles; before any draft, the plan's (draft job).
+  const planned = jobs.find((j) => j.kind === 'draft' && j.structure != null)?.structure;
+  const cardStructure =
+    outputs.find((o) => o.structure)?.structure ?? (planned ? toStructure(planned) : undefined);
   return {
     id: pipelineCardId(p.id),
     pipelineId: p.id,
@@ -450,6 +480,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
     finalUrl: first?.finalUrl ?? null,
     qa: first?.qa ?? null,
     verify: draftWithVerify?.verify ? toVerify(draftWithVerify.verify) : null,
+    ...(cardStructure ? { structure: cardStructure } : {}),
   };
 }
 

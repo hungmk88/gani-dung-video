@@ -1165,3 +1165,107 @@ def test_the_eta_of_a_three_minute_render_is_not_the_fixed_guess(ctx: ApiContext
     ctx.db.claim(time.time() - 10, 1)
     v = get_job(ctx, jid)
     assert v.eta_sec is not None and v.eta_sec > RULES["queue"]["expected_sec"]["render_preview"]
+
+
+# ─────────────── 3-minute videos in the API (phase 7g) ───────────────
+
+
+def rules_with_long_video() -> Any:
+    import copy
+
+    r = copy.deepcopy(dict(RULES))
+    r["durations"]["180"]["enabled"] = True
+    return r
+
+
+def write_chapter_project(root: Path, titles: bool = True) -> Path:
+    """A project whose plan has chapters (as 7a builds them) and, optionally, drafts with titles."""
+    from gani_dung_video.application.draft_service import DraftsFile
+    from gani_dung_video.domain.drafts import ChapterTitle, SnappedDraft
+    from gani_dung_video.domain.plan import MusicInfo
+
+    folder = make_project(root, "chapters")
+    opts = VideoOptions(phong_cach="ke_chuyen_nghe", muc_dich="gioi_thieu_xuong", do_dai_giay=180,
+                        so_ban_nhap=2, nhac="thu_vien", nhac_file="t.mp3")  # fmt: skip
+    music = MusicInfo(track="t.mp3", bpm=84.0, first_beat_sec=0.5, duration_sec=200.0,
+                      source="library")  # fmt: skip
+    plan = compile_plan(opts, rules_with_long_video(), music=music, available_tags=set())
+    (folder / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
+    if titles:
+        names = ["Khởi đầu sạch sẽ", "Từng mẻ giò thủ công", "Minh chứng chất lượng"]
+        d = SnappedDraft(
+            draft="A",
+            label="A",
+            segments=[],
+            missing_shots=[],
+            warnings=[],
+            chapter_titles=[
+                ChapterTitle(chapter=c.id, title=t)
+                for c, t in zip(plan.chapters, names, strict=True)
+            ],
+        )
+        out = DraftsFile(model="m", attempts=1, input_tokens=0, output_tokens=0, cost_vnd=0.0,
+                         cap_vnd=30000.0, drafts=[d], notes=[])  # fmt: skip
+        (folder / "edit" / "drafts.json").write_text(out.model_dump_json(), encoding="utf-8")
+    return folder
+
+
+def test_health_says_whether_three_minute_videos_are_open(ctx: ApiContext) -> None:
+    assert health(ctx).features.long_video is False  # shipped: closed until the 7e acceptance
+    opened = ApiContext(ctx.db, rules_with_long_video(), ctx.settings)
+    assert health(opened).features.long_video is True
+
+
+def test_a_job_of_a_chapter_plan_shows_the_structure_with_titles(ctx: ApiContext,
+                                                                 root: Path) -> None:  # fmt: skip
+    write_chapter_project(root)
+    jid = create_jobs(ctx, JobCreate(project_id="0/chapters", draft="A"))[0].id
+    s = get_job(ctx, jid).structure
+    assert s is not None
+    assert [(i.kind, i.id) for i in s.items] == [
+        ("opening", "hook"), ("chapter", "ve_sinh"), ("chapter", "quy_trinh"),
+        ("chapter", "bang_chung"), ("closing", "cta")]  # fmt: skip
+    assert s.items[0].start_sec == 0.0 and s.items[-1].end_sec == pytest.approx(s.duration_sec)
+    for a, b in zip(s.items, s.items[1:], strict=False):
+        assert a.end_sec == pytest.approx(b.start_sec)  # no gap, no overlap
+    assert [i.title for i in s.items if i.kind == "chapter"] == [
+        "Khởi đầu sạch sẽ", "Từng mẻ giò thủ công", "Minh chứng chất lượng"]  # fmt: skip
+    assert s.items[0].title is None and s.items[-1].title is None
+    assert 175 <= s.duration_sec <= 185
+
+
+def test_the_structure_of_a_draft_without_titles_has_none(ctx: ApiContext, root: Path) -> None:
+    write_chapter_project(root, titles=False)
+    jid = create_jobs(ctx, JobCreate(project_id="0/chapters", draft="A"))[0].id
+    s = get_job(ctx, jid).structure
+    assert s is not None and all(i.title is None for i in s.items)
+
+
+def test_titles_come_from_the_jobs_own_draft_letter(ctx: ApiContext, root: Path) -> None:
+    write_chapter_project(root)
+    jid = create_jobs(ctx, JobCreate(project_id="0/chapters", draft="B"))[0].id
+    s = get_job(ctx, jid).structure
+    assert s is not None and all(i.title is None for i in s.items)  # drafts.json only has A
+
+
+def test_short_videos_and_analyze_jobs_have_no_structure(ctx: ApiContext, root: Path) -> None:
+    jid = queue_one(ctx, root)
+    assert get_job(ctx, jid).structure is None
+    view = start(ctx, root, "another")
+    assert all(get_job(ctx, j.id).structure is None for j in view.jobs if j.kind == "analyze")
+
+
+def test_a_broken_plan_gives_no_structure_not_an_error(ctx: ApiContext, root: Path) -> None:
+    folder = write_chapter_project(root)
+    jid = create_jobs(ctx, JobCreate(project_id="0/chapters", draft="A"))[0].id
+    (folder / "edit" / "plan.json").write_text("{not json", encoding="utf-8")  # damaged later
+    assert get_job(ctx, jid).structure is None
+
+
+def test_the_structure_reaches_the_json(ctx: ApiContext, root: Path) -> None:
+    write_chapter_project(root)
+    jid = create_jobs(ctx, JobCreate(project_id="0/chapters", draft="A"))[0].id
+    body = get_job(ctx, jid).model_dump(mode="json")["structure"]
+    assert set(body) == {"duration_sec", "items"}
+    assert set(body["items"][1]) == {"kind", "id", "start_sec", "end_sec", "title"}
+    assert json.dumps(body)
