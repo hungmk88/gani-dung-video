@@ -112,20 +112,39 @@ export function toConsoleLine(e: ApiEvent): ConsoleLine {
   return { ts: e.ts, level, text: e.text };
 }
 
+const TEXT_GROUP = 'Chữ & phụ đề (T6, T7, T8)';
+
+/** Why T8 (Whisper listening to the finished video) left no row, by `qa.t8`. */
+const T8_NOTES: Record<string, string> = {
+  skipped_draft: 'T8: không áp dụng cho bản nháp',
+  skipped_music: 'T8: không áp dụng cho chế độ nhạc',
+  skipped_no_asr: 'T8: đã tắt kiểm tra lời',
+  unavailable: 'T8: chưa có số đo (bản dựng cũ hoặc thiếu Whisper)',
+};
+
+/**
+ * Label for the T8 status. `ran` and an absent field (older server) give none: the T8 row
+ * itself says what was measured. An unknown status is treated as `unavailable`.
+ */
+export function t8Note(t8: string | undefined): string | undefined {
+  if (t8 === undefined || t8 === 'ran') return undefined;
+  return T8_NOTES[t8] ?? T8_NOTES.unavailable;
+}
+
 // Where each backend check code lands. V1–V9 have no per-check data yet (api-jobs.md §6.1).
 const QA_GROUP_OF: Record<string, string> = {
   T1: 'Kỹ thuật video (T1, T2, T4, T5)',
   T2: 'Kỹ thuật video (T1, T2, T4, T5)',
   T4: 'Kỹ thuật video (T1, T2, T4, T5)',
   T5: 'Kỹ thuật video (T1, T2, T4, T5)',
-  T6: 'Chữ & phụ đề (T6, T7, T8)',
-  T7: 'Chữ & phụ đề (T6, T7, T8)',
-  T8: 'Chữ & phụ đề (T6, T7, T8)',
+  T6: TEXT_GROUP,
+  T7: TEXT_GROUP,
+  T8: TEXT_GROUP,
   T3: 'Âm thanh (T3)',
 };
 const QA_GROUP_ORDER = [
   'Kỹ thuật video (T1, T2, T4, T5)',
-  'Chữ & phụ đề (T6, T7, T8)',
+  TEXT_GROUP,
   'Âm thanh (T3)',
 ];
 
@@ -140,7 +159,10 @@ export function toQaReport(qa: ApiQa): QaReport {
   if (qa.lufs !== null && qa.true_peak_db !== null && audio.checks.length === 0) {
     audio.emptyNote = `Đo được ${qa.lufs} LUFS, đỉnh thật ${qa.true_peak_db} dBTP.`;
   }
-  const visible = groups.filter((g) => g.checks.length > 0 || g.emptyNote);
+  const note = t8Note(qa.t8);
+  const text = groups.find((g) => g.title === TEXT_GROUP);
+  if (note && text) text.note = note;
+  const visible = groups.filter((g) => g.checks.length > 0 || g.emptyNote || g.note);
   if (other.checks.length > 0) visible.push(other);
   visible.push({
     title: 'AI viết kịch bản (V1–V9)',

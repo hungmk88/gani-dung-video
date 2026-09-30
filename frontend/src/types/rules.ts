@@ -261,6 +261,8 @@ export interface QaGroup {
   title: string;
   checks: QaCheck[];
   emptyNote?: string;
+  /** Info line shown under the rows, e.g. why T8 is not applicable. */
+  note?: string;
 }
 
 export interface QaReport {
