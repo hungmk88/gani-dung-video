@@ -18,14 +18,12 @@ import numpy as np
 from pydantic import ValidationError
 
 from gani_dung_video.domain.pick import (
-    BlockCandidates,
     Candidate,
     PickFile,
-    candidate_limit,
     dish_matches,
     eligible_candidates,
     find_dishes,
-    rank_block,
+    rank_plan,
     similar_id_pairs,
 )
 from gani_dung_video.domain.plan import Plan
@@ -140,14 +138,7 @@ def build_pick(
         dvec = _dish_vectors(folder, dishes, glossary, model, embed_texts, rules)
         hits = dish_matches(_frame_vectors(folder, pool), dvec, float(cfg["dish_min_similarity"]))
         pool = [c.model_copy(update={"dishes": hits.get(c.id, [])}) for c in pool]
-    blocks, missing_tags = [], []
-    for b in plan.blocks:
-        limit = candidate_limit(b.beats, allowed, int(cfg["min_candidates"]),
-                                int(cfg["max_candidates"]))  # fmt: skip
-        ranked, missing = rank_block(pool, b.required_tags, set(hits), limit)
-        blocks.append(BlockCandidates(role=b.role, beats=b.beats, required_tags=b.required_tags,
-                                      missing_tags=missing, candidates=ranked))  # fmt: skip
-        missing_tags += [t for t in missing if t not in missing_tags]
+    blocks, missing_tags = rank_plan(plan.blocks, pool, set(hits), allowed, cfg)
     result = PickFile(
         rules_version=str(rules["rules_version"]), style=style, beat_sec=plan.beat_sec,
         beats_per_scene_allowed=allowed, dishes=dishes, blocks=blocks,

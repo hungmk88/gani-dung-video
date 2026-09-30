@@ -200,6 +200,7 @@
   "footage_warn_ratio": 1.3,
   "min_candidates": 6,
   "max_candidates": 20,
+  "max_total_candidates": 160,
   "dish_min_similarity": 0.25,
   "tag_names": {
    "nguoi_thao_tac": "Công nhân thao tác",
@@ -213,6 +214,7 @@
    "khac": "Màn chữ / logo"
   }
  },
+ "_ghi_chu_pick_7b": "Video 3 phút (GĐ7b, chốt 01/10/2026): các tiểu khối của một chương được xếp hạng CHUNG một lần (cảnh có nhãn bắt buộc trước, rồi bù bằng cảnh đẹp nhất còn lại) và chia đều cho từng tiểu khối, nên mỗi tiểu khối có danh sách ứng viên riêng, không cảnh nào xuất hiện hai lần trong một chương. max_total_candidates: trần tổng số ứng viên của cả kịch bản (mỗi ứng viên ≈ 94 token vào), 0 = không giới hạn; vượt thì các khối bị giảm đều nhưng không dưới số cảnh tối thiểu của khối. Video 15–60 giây xa trần này nên không đổi. Cổng khả thi tìm theo cụm chương: mọi tập con bên trong một chương, rồi mọi tập con các chương gộp lại.",
  "_ghi_chu_ai": "Gọi Claude (GĐ4c, chốt 29/09/2026). model mặc định claude-sonnet-5-5 (giá tra trang Anthropic 29/09/2026: $2 vào / $10 ra mỗi 1 triệu token; token ra gồm cả phần suy nghĩ); máy nào muốn đổi model thì đặt GANI_DV_CLAUDE_MODEL trong .env. effort medium. Gọi 1 lần cho mọi bản nháp; lỗi V1–V9 loại 'ai' thì gọi lại kèm danh sách lỗi, chỉ cho bản bị lỗi, tối đa max_attempts vòng (R2). Trước mỗi lần gọi: đã tiêu + chi phí xấu nhất của lần gọi (token vào ước tính + max_tokens ra) mà vượt cost_cap_vnd theo độ dài video (≤ 60s: 20.000đ) thì DỪNG, không gọi. chars_per_token dùng để ước tính token vào cho --dry-run và cho kiểm tra trần trước mỗi lần gọi; đã hiệu chỉnh 30/09/2026 bằng 2 lượt gọi thật (tiếng Việt có dấu + JSON ≈ 1,4 ký tự/token; hệ số cũ 3,0 ước thấp ~2,1 lần: 1.694 so với 3.538 token thật, 5.414 so với 11.883).",
  "ai": {
   "model": "claude-sonnet-5-5",
