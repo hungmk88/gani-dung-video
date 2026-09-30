@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { canApprove, estimateVnd, formatRemaining, suggestMaxVnd, validateMax } from '../../lib/approval';
 import { formatVnd } from '../../lib/format';
 import { api } from '../../services/api';
+import { FootageWarning } from './FootageWarning';
 import type { HealthInfo, RenderJob } from '../../types/rules';
 
 /**
@@ -121,6 +122,8 @@ export function ApprovalDialog({
               Máy dựng chưa có khóa API: job sẽ báo lỗi trước khi gọi Claude (chi phí 0đ).
             </p>
           )}
+
+          <FootageWarning footage={ap.footage} />
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
             <dt className="text-slate-500">Một lần gọi, tệ nhất</dt>

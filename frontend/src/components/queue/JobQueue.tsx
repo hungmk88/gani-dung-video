@@ -4,8 +4,10 @@ import { api } from '../../services/api';
 import type { JobStatus, PipelineJobInfo, RenderJob } from '../../types/rules';
 import { ApprovalDialog } from './ApprovalDialog';
 import { ConsoleLog } from './ConsoleLog';
+import { FootageWarning } from './FootageWarning';
 import { PipelineStepper } from './PipelineStepper';
 import { PlanModal } from './PlanModal';
+import { VerifyPanel } from './VerifyPanel';
 import { VideoPlayerWithQA } from './VideoPlayerWithQA';
 
 const STATUS_LABEL: Record<JobStatus, { label: string; cls: string }> = {
@@ -141,6 +143,8 @@ export function JobQueue({
               </div>
             )}
 
+            {displayedJob.approval?.footage && <FootageWarning footage={displayedJob.approval.footage} compact />}
+
             <PipelineStepper steps={displayedJob.steps} etaSec={displayedJob.etaSec} />
 
             {displayedJob.jobs && displayedJob.jobs.length > 0 && (
@@ -149,6 +153,8 @@ export function JobQueue({
                 onRetry={(id) => void run(() => api.retryJob(id))}
               />
             )}
+
+            {displayedJob.verify && <VerifyPanel report={displayedJob.verify} />}
 
             {(LIVE.includes(displayedJob.status) || displayedJob.jobs?.some((j) => LIVE.includes(j.status))) && (
               <button
