@@ -389,9 +389,16 @@ và `speech.json`), `plan_compile` (← `plan.json`), `pick` (← `candidates.js
 là `final`). Bước lỗi kèm `detail` là thông báo lỗi.
 
 **`qa`** (khác `QaReport` của frontend, xem "Khoảng trống"):
-`qa.checks` là T1–T7 (thêm T8 khi có kết quả Whisper) với `code`, `label`, `passed`, `detail`;
+`qa.checks` là T1–T7 với `code`, `label`, `passed`, `detail`;
 `qa.lufs`, `qa.true_peak_db` là số đo thật của lần dựng cuối (`null` nếu chưa đo hoặc im lặng).
 Để lấp `pass3_audio` của frontend: dùng các `checks` có `code == "T3"`.
+
+**T8 (Whisper nghe lại thành phẩm)** không phải kiểm tra logo hay đoạn mở đầu: Whisper chép lại
+lời của video đã dựng để đo sai lệch lời (WER), độ lệch thời gian phụ đề và nhạc nền có đè tiếng
+nói không. Điều kiện chạy: chỉ **bản cuối** (`size = "final"`, 1080×1920) của **chế độ lời**
+(`ban_hang_co_loi`) và `no_asr = false`. **Bản nháp 540p và chế độ nhạc không có T8.** Dòng T8 chỉ
+xuất hiện trong `qa.checks` khi Whisper báo cảnh báo hoặc lỗi (hoặc không chạy được); bản cuối
+đạt sạch thì không có dòng T8. Giao diện đừng coi thiếu dòng T8 là "chưa kiểm".
 
 ## 6. Khoảng trống đã biết (nói thẳng)
 

@@ -197,7 +197,7 @@
    "khac": "Màn chữ / logo"
   }
  },
- "_ghi_chu_ai": "Gọi Claude (GĐ4c, chốt 29/09/2026). model mặc định claude-sonnet-5-5 (giá tra trang Anthropic 29/09/2026: $2 vào / $10 ra mỗi 1 triệu token; token ra gồm cả phần suy nghĩ); máy nào muốn đổi model thì đặt GANI_DV_CLAUDE_MODEL trong .env. effort medium. Gọi 1 lần cho mọi bản nháp; lỗi V1–V9 loại 'ai' thì gọi lại kèm danh sách lỗi, chỉ cho bản bị lỗi, tối đa max_attempts vòng (R2). Trước mỗi lần gọi: đã tiêu + chi phí xấu nhất của lần gọi (token vào ước tính + max_tokens ra) mà vượt cost_cap_vnd theo độ dài video (≤ 60s: 20.000đ) thì DỪNG, không gọi. chars_per_token chỉ dùng để ước tính cho --dry-run.",
+ "_ghi_chu_ai": "Gọi Claude (GĐ4c, chốt 29/09/2026). model mặc định claude-sonnet-5-5 (giá tra trang Anthropic 29/09/2026: $2 vào / $10 ra mỗi 1 triệu token; token ra gồm cả phần suy nghĩ); máy nào muốn đổi model thì đặt GANI_DV_CLAUDE_MODEL trong .env. effort medium. Gọi 1 lần cho mọi bản nháp; lỗi V1–V9 loại 'ai' thì gọi lại kèm danh sách lỗi, chỉ cho bản bị lỗi, tối đa max_attempts vòng (R2). Trước mỗi lần gọi: đã tiêu + chi phí xấu nhất của lần gọi (token vào ước tính + max_tokens ra) mà vượt cost_cap_vnd theo độ dài video (≤ 60s: 20.000đ) thì DỪNG, không gọi. chars_per_token dùng để ước tính token vào cho --dry-run và cho kiểm tra trần trước mỗi lần gọi; đã hiệu chỉnh 30/09/2026 bằng 2 lượt gọi thật (tiếng Việt có dấu + JSON ≈ 1,4 ký tự/token; hệ số cũ 3,0 ước thấp ~2,1 lần: 1.694 so với 3.538 token thật, 5.414 so với 11.883).",
  "ai": {
   "model": "claude-sonnet-5-5",
   "effort": "medium",
@@ -213,7 +213,7 @@
   "cost_cap_vnd": {
    "60": 20000
   },
-  "chars_per_token": 3.0
+  "chars_per_token": 1.4
  },
  "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz 320 kbps, −14 LUFS, trần đỉnh −2,0 dBTP khi chuẩn hóa (29/09/2026: AAC 192 kbps làm đỉnh thật nhô thêm tới 1,2 dB, 320 kbps chỉ 0,1 dB; soát T3 yêu cầu ≤ −1,0 dBTP trên file xuất). speech_cta_extra_margin: ở chế độ lời (GĐ5c-1), CTA được đẩy lên thêm quãng này (px) so với lề an toàn dưới để không đè phụ đề karaoke. Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
  "render": {

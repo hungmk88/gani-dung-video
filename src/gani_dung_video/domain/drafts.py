@@ -150,5 +150,5 @@ def cost_vnd(input_tokens: int, output_tokens: int, cfg: Mapping[str, Any]) -> f
 
 
 def estimate_tokens(text: str, chars_per_token: float) -> int:
-    """Rough offline token count for --dry-run (Vietnamese + JSON ≈ 3 chars per token)."""
+    """Rough offline token count (Vietnamese + JSON ≈ 1.4 chars/token, measured)."""
     return math.ceil(len(text) / chars_per_token)
