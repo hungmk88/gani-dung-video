@@ -303,6 +303,11 @@ export const RULES: RulesBundle = {
     'chất lượng nhất',
     'sạch nhất',
     'uy tín nhất',
+    'thần dược',
+    'không chất bảo quản',
+    'minh long',
+    'atala',
+    'foco',
   ],
 
   // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
