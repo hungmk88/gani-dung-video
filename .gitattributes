@@ -4,3 +4,7 @@
 *.wav binary
 *.png binary
 *.jpg binary
+*.ico binary
+*.webp binary
+# Windows launcher: cmd.exe wants CRLF line endings.
+*.bat text eol=crlf

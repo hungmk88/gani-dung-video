@@ -18,6 +18,8 @@ python -m gani_dung_video serve    # cửa sổ 1: giao diện + API
 python -m gani_dung_video daemon   # cửa sổ 2: người làm việc
 ```
 
+Trên Windows có thể nhấp đúp `scripts\chay-gani.bat` (hoặc lối tắt "GANI Video" trên Desktop) thay cho hai lệnh trên.
+
 Mở `http://127.0.0.1:8765/`. Từng bước, chi phí, xử lý sự cố: [`docs/VAN-HANH.md`](docs/VAN-HANH.md).
 
 ## Tài liệu
