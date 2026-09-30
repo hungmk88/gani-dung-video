@@ -33,6 +33,7 @@ from gani_dung_video.application.queue_service import (
     enqueue_project_render,
     retry_job,
 )
+from gani_dung_video.application.render_limits import limits_of
 from gani_dung_video.domain.api_models import (
     ApproveRequest,
     Artifacts,
@@ -362,7 +363,7 @@ def _expected_sec(ctx: ApiContext, job: Job) -> float:
         names = ("estimate", "draft") if job.phase == "paid" else ("plan", "pick", "phrases",
                                                                     "estimate")  # fmt: skip
         return float(sum(stages[s] for s in names))
-    return float(cfg["expected_sec"]["render_final" if job.final else "render_preview"])
+    return limits_of(cfg, Path(job.project_dir), job.final)[0]
 
 
 def _cost_view(job: Job) -> CostView | None:

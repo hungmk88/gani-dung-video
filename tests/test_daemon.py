@@ -71,6 +71,7 @@ class FakeRunner:
     def __init__(self, *scenarios: Scenario) -> None:
         self.scenarios = list(scenarios)
         self.argvs: list[list[str]] = []
+        self.limits: list[tuple[float, float]] = []  # (stall_sec, timeout_sec) of each call
         self.calls = 0
 
     def __call__(self, argv: Sequence[str], cwd: Path, on_line: Callable[[str], None],
@@ -79,6 +80,7 @@ class FakeRunner:
                  poll_sec: float = 0.5, log_path: Path | None = None,
                  env: Mapping[str, str] | None = None) -> RunResult:  # fmt: skip
         self.calls += 1
+        self.limits.append((stall_sec, timeout_sec))
         self.argvs.append(list(argv))
         if on_start:
             on_start(4321)
@@ -511,3 +513,37 @@ def test_a_real_child_process_renders_a_job_end_to_end(tmp_path: Path) -> None:
     assert j.output_path and Path(j.output_path).is_file()
     assert any("QC: ĐẠT" in e.text for e in db.events(jid))  # the child's console reached the log
     assert (tmp_path / "jobs" / "logs" / f"{jid}.log").is_file()
+
+
+# ─────────────── limits that follow the length of the video (phase 7d) ───────────────
+
+
+def test_a_short_video_keeps_the_fixed_stall_and_timeout(db: QueueDb, folder: Path,
+                                                         clock: Clock) -> None:  # fmt: skip
+    (folder / "edit" / "plan.json").write_text(json.dumps({"options": {"duration": 15}}),
+                                               encoding="utf-8")  # fmt: skip
+    add(db, folder, final=True)
+    runner = FakeRunner(passes)
+    make(db, runner, clock).process_next()
+    assert runner.limits == [(Q["stall_sec"], Q["timeout_sec"]["render_final"])]
+
+
+def test_a_three_minute_final_gets_a_longer_stall_window(db: QueueDb, folder: Path,
+                                                         clock: Clock) -> None:  # fmt: skip
+    # ffmpeg prints nothing for ~8 minutes per round on the Dell: 600 s would kill a healthy job
+    (folder / "edit" / "plan.json").write_text(json.dumps({"options": {"duration": 180}}),
+                                               encoding="utf-8")  # fmt: skip
+    add(db, folder, final=True)
+    runner = FakeRunner(passes)
+    make(db, runner, clock).process_next()
+    stall, timeout = runner.limits[0]
+    assert stall > Q["stall_sec"] and timeout >= Q["timeout_sec"]["render_final"]
+
+
+def test_a_missing_or_broken_plan_falls_back_to_the_fixed_limits(db: QueueDb, folder: Path,
+                                                                 clock: Clock) -> None:  # fmt: skip
+    (folder / "edit" / "plan.json").write_text("{not json", encoding="utf-8")
+    add(db, folder)
+    runner = FakeRunner(passes)
+    make(db, runner, clock).process_next()
+    assert runner.limits == [(Q["stall_sec"], Q["timeout_sec"]["render_preview"])]

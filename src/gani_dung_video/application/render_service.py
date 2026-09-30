@@ -28,7 +28,7 @@ from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
-from gani_dung_video.domain.qc import Finding, check_captions
+from gani_dung_video.domain.qc import Finding, check_captions, fit_keys
 from gani_dung_video.domain.subtitles import ass_document, srt_document
 from gani_dung_video.infrastructure.config_files import ConfigError, load_glossary, load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import (
@@ -171,7 +171,7 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     if not video.is_file():
         raise ConfigError(f"Chưa có {video.name} — chạy lệnh `render` trước.")
     report = folder / EDIT_DIR / RENDER_DIR / draft / "qc_report.json"
-    px = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in ("caption", "cta")}
+    px = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in fit_keys(e)}
     if report.is_file():  # sizes the render actually used (may be lowered by T7)
         px = {**px, **QcReport.model_validate_json(report.read_text(encoding="utf-8")).font_px}
     found = check_captions(e, rules, px, FontMetrics().width) + check_file(video, e, rules)
@@ -201,9 +201,12 @@ def _render_one(
     (out / "phude.srt").write_text(srt_document(e), encoding="utf-8")
 
     def do_render(font_px: Mapping[str, int], loud: Mapping[str, float] | None,
-                  e: Edl = e, ass: Path = ass, video: Path = video) -> None:  # fmt: skip
+                  true_peak_db: float | None = None, *, e: Edl = e, ass: Path = ass,
+                  video: Path = video) -> None:  # fmt: skip
         ass.write_text(ass_document(e, rules, font_px), encoding="utf-8")
         logger.info("Đang dựng bản %s (%s)…", video.parent.name, video.name)
+        if true_peak_db is not None:  # 7d: the encoder added to the peak, limit the mix lower
+            e = e.model_copy(update={"true_peak_db": true_peak_db})
         render(e, folder, music, ass, video, rules, loud)
 
     def pass1(e: Edl = e, out: Path = out) -> Mapping[str, float]:

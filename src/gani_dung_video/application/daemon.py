@@ -27,6 +27,7 @@ from pathlib import Path
 
 from gani_dung_video.application.analyze_job import JobEnv, run_analyze
 from gani_dung_video.application.draft_job import run_draft
+from gani_dung_video.application.render_limits import limits_of
 from gani_dung_video.application.render_service import RENDER_DIR, _video_name
 from gani_dung_video.domain.jobs import (
     Job,
@@ -216,10 +217,9 @@ class Daemon:
         folder = Path(job.project_dir)
         out = folder / EDIT_DIR / RENDER_DIR / job.draft
         video = out / _video_name(job.draft, preview=not job.final)
-        kind = "render_final" if job.final else "render_preview"
         started = job.started_at if job.started_at is not None else self._clock()
         wall_start = time.time()  # file times are wall-clock: compared with this, not the clock
-        expected = float(self._cfg["expected_sec"][kind])
+        expected, stall_sec, timeout_sec = limits_of(self._cfg, folder, job.final)
         tail: list[str] = []
         stage_box, last_box = ["khoi_dong"], [0.0]  # current stage; monotonic time of last write
 
@@ -251,16 +251,14 @@ class Daemon:
         self.db.add_event(job.id, self._clock(), "info", first)
         res = self._runner(
             render_argv(job, self._argv_base), REPO_ROOT, on_line, should_stop, [out],
-            float(self._cfg["stall_sec"]), float(self._cfg["timeout_sec"][kind]),
+            stall_sec, timeout_sec,
             on_start=lambda pid: self.db.set_child(job.id, pid),
             poll_sec=min(float(self._cfg["poll_sec"]), 0.5),
             log_path=self._log_dir / f"{job.id}.log",
             env=self._child_env(),
         )  # fmt: skip
         fresh, passed = self._report(out, video, wall_start)
-        limit = (
-            self._cfg["stall_sec"] if res.reason == "stalled" else self._cfg["timeout_sec"][kind]
-        )
+        limit = stall_sec if res.reason == "stalled" else timeout_sec
         verdict = judge_run(res.reason, res.exit_code, fresh, passed, detail=f"{limit}s")
         self._settle(job, verdict, res, video, wall_start, " | ".join(tail))
 

@@ -36,6 +36,7 @@ from gani_dung_video.domain.jobs import (
     stamp_is_fresh,
     validate_approval,
 )
+from gani_dung_video.infrastructure.config_files import load_rules
 
 # ─────────────── state machine ───────────────
 
@@ -489,3 +490,33 @@ def test_the_daily_budget_counts_spent_reserved_and_the_new_maximum() -> None:
 def test_no_daily_limit_means_no_daily_check() -> None:
     huge = BudgetState(limit=None, spent_24h=9e9, reserved=9e9)
     validate_approval(waiting(), 6000.0, 4207.3, NOW, huge)
+
+
+# ─────────────── render limits that grow with the video (phase 7d) ───────────────
+# Measured 01/10/2026 on the Dell (i5-8265U): a 182 s video took 304 s in preview and 999 s in
+# final, two render rounds each. The fixed 60 s / 300 s guesses fit 15–30 s videos only.
+
+
+def test_render_limits_are_the_old_fixed_ones_for_short_videos() -> None:
+    from gani_dung_video.domain.jobs import render_limits
+
+    cfg = load_rules()["queue"]
+    for final in (False, True):
+        for seconds in (None, 15, 30):
+            exp, stall, timeout = render_limits(cfg, final, seconds)
+            kind = "render_final" if final else "render_preview"
+            assert exp == cfg["expected_sec"][kind]
+            assert stall == cfg["stall_sec"] and timeout == cfg["timeout_sec"][kind]
+
+
+def test_render_limits_grow_with_a_three_minute_video() -> None:
+    from gani_dung_video.domain.jobs import render_limits
+
+    cfg = load_rules()["queue"]
+    exp, stall, timeout = render_limits(cfg, True, 180)
+    assert 900 <= exp <= 1200  # measured 999 s
+    assert stall >= exp  # a round of ffmpeg prints nothing for minutes: not a hang
+    assert timeout >= 2 * exp and timeout >= cfg["timeout_sec"]["render_final"]
+    p_exp, p_stall, _ = render_limits(cfg, False, 180)
+    assert 250 <= p_exp <= 450  # measured 304 s
+    assert p_stall >= cfg["stall_sec"]
