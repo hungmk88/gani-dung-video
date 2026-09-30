@@ -71,12 +71,26 @@
    "cta": "Theo dõi GANI", "max_duration": 180
   }
  },
+ "_ghi_chu_durations_180": "Video 3 phút (GĐ7a, chốt 01/10/2026, thiết kế GD7): hook + 3–4 chương + CTA. enabled=false cho đến khi nghiệm thu thật ở 7e (an toàn: không ai vô tình tốn tiền trên đường chưa kiểm). hook_sec/cta_sec là giây thật (tỉ lệ % của 180s cho hook 18s, CTA 27s, sai); chương chia phần còn lại theo trọng số 45:75:40 (giây mẫu của chủ). layouts[mục đích] = hook, cta và chương [id, khối nguồn trong purposes (nhãn bắt buộc lấy từ đó), trọng số]; Kể chuyện thương hiệu cắt khối con_nguoi làm hai chương. Mỗi chương cắt thành tiểu khối ~sub_block_beats phách (role id#1, id#2…) để V2 giữ chặt. chapter_title_sec: tiêu đề chương chữ đè lên đầu chương, làm tròn theo phách, không chèn thời lượng. text.per_chapter: số dòng chữ tối thiểu–tối đa mỗi chương (thay per_block của phong cách). Giới hạn clip/khoảng cách cảnh chỉ đọc từ vision.*.",
  "durations": {
   "15": {"blocks_merge": ["hook", "main", "cta"], "hook_max_sec": 2, "cta_sec": 3},
   "30": {},
   "45": {"hero_at_sec": [20, 25]},
   "60": {"hero_at_sec": [20, 40]},
-  "180": {"chapters": [3, 4], "chapter_title_sec": 1.5, "max_segments_per_clip": 3, "min_gap_sec": 3}
+  "180": {
+   "enabled": false,
+   "chapters": [3, 4], "chapter_title_sec": 1.5,
+   "hook_sec": 5, "cta_sec": 12, "sub_block_beats": 20,
+   "text": {"per_chapter": [3, 5]},
+   "layouts": {
+    "ban_hang": {"hook": "hook", "cta": "cta",
+     "chapters": [["nhu_cau", "nhu_cau", 45], ["san_pham", "san_pham", 75], ["bang_chung", "bang_chung", 40]]},
+    "gioi_thieu_xuong": {"hook": "hook", "cta": "cta",
+     "chapters": [["ve_sinh", "ve_sinh", 45], ["quy_trinh", "quy_trinh", 75], ["bang_chung", "bang_chung", 40]]},
+    "ke_chuyen_thuong_hieu": {"hook": "mo", "cta": "logo",
+     "chapters": [["con_nguoi_1", "con_nguoi", 50], ["con_nguoi_2", "con_nguoi", 50], ["gia_tri", "gia_tri", 40]]}
+   }
+  }
  },
  "drafts": {
   "allowed": [1, 2, 3],
@@ -412,7 +426,7 @@
   "X12": {"level": "auto",  "stage": "preflight", "desc": "BPM bài nhạc ngoài dải phong cách", "msg": "BPM {bpm} ngoài dải {lo}–{hi} của phong cách. Tự tính theo {eff} BPM ({how}).", "msg_warn": "BPM {bpm} lệch nhiều so với dải {lo}–{hi} của phong cách, kể cả khi nhân/chia đôi. Nên chọn bài khác."},
   "X13": {"level": "auto",  "stage": "preflight", "desc": "Bài nhạc ngắn hơn video", "msg": "Bài nhạc dài {music}s, ngắn hơn video {video}s. Sẽ lặp theo ô nhịp và chuyển giao mượt."},
   "X14": {"level": "block", "stage": "preflight", "desc": "Nhạc tải lên chưa tick quyền sử dụng", "msg": "Nhạc tải lên phải tick 'Tôi có quyền sử dụng bài này' trước khi dựng."},
-  "X15": {"level": "warn",  "stage": "preflight", "desc": "3 bản × 3 phút", "when": {"drafts": 3, "duration": 180}, "msg": "3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3. Kiểm tra ước tính trước khi chạy."},
+  "X15": {"level": "warn",  "stage": "preflight", "desc": "3 bản × 3 phút", "when": {"drafts": 3, "duration": 180}, "msg": "3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3, và câu trả lời của Claude dễ bị cắt vì quá dài. Nên chọn 2 bản; kiểm tra ước tính trước khi chạy."},
   "X16": {"level": "warn",  "stage": "ai",        "desc": "Ghi chú mâu thuẫn với mục đích", "msg": "Ghi chú có vẻ hợp mục đích khác. Đổi mục đích?"},
   "X17": {"level": "auto",  "stage": "render",    "desc": "Chế độ LỜI × nhạc có phách", "msg": "Cắt theo lời; nhạc tự giảm khi có lời; B-roll dịch về phách gần nhất nếu lệch ≤ 150ms."},
   "X18": {"level": "auto",  "stage": "render",    "desc": "Phách nhạc × vị trí đỉnh động tác", "msg": "Giữ phách; lùi đỉnh tối đa đến 50% cảnh."}
@@ -433,7 +447,8 @@
   "INVALID_FACT": "Trường '{field}' có giá trị không hợp lệ: '{value}'.",
   "INVALID_FIELD": "Trường '{field}' không có trong khối tùy chọn — kiểm tra lỗi chính tả (xem Phụ lục D).",
   "RULES_VERSION": "yeu-cau.md ghi rules_version {got}, app đang dùng bộ quy tắc {want}. Kiểm tra lại tùy chọn.",
-  "PLAN_CHAPTERS": "Video 3 phút cần chia chương, chưa được hỗ trợ (giai đoạn 7). Chọn độ dài 15–60 giây.",
+  "PLAN_CHAPTERS": "Video 3 phút đang được xây dựng (giai đoạn 7), chưa mở dùng. Chọn độ dài 15–60 giây.",
+  "PLAN_CHAPTERS_SPEECH": "Chế độ lời 3 phút chưa được hỗ trợ (giai đoạn 7f). Chọn phong cách dựng theo nhạc, hoặc độ dài 15–60 giây.",
   "PLAN_NO_TRACK": "Chế độ nhạc '{mode}' cần ghi tên file nhạc ở nhac_file (chọn bài tự động chưa có).",
   "PLAN_NO_SCENES": "Chưa có edit/scenes.json — chạy các lệnh `scenes` và `semantics` trước.",
   "PICK_NO_PLAN": "Chưa có edit/plan.json — chạy lệnh `plan` trước.",
