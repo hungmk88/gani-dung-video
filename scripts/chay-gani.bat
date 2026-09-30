@@ -55,5 +55,9 @@ if exist "%EDGE%" (
   start "" "%CHROME%" --app=http://127.0.0.1:8765/ --start-maximized
 ) else (
   start "" http://127.0.0.1:8765/
+  exit /b 0
 )
+
+rem Edge hay bo qua --start-maximized khi da co phien chay san: phong to lai bang lenh he thong.
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0phong-to-cua-so.ps1"
 exit /b 0
