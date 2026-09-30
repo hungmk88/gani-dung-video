@@ -8,10 +8,11 @@ job that is already waiting instead of rendering it twice.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from gani_dung_video.infrastructure.config_files import (
     load_rules,
     read_options_file,
 )
+from gani_dung_video.infrastructure.project_lock import ProjectLockedError as FolderLockedError
+from gani_dung_video.infrastructure.project_lock import acquire, release
 from gani_dung_video.infrastructure.queue_db import (
     FolderBusyError,
     NewJob,
@@ -51,6 +54,14 @@ class PipelineBusyError(ConfigError):
     """The project already has an active job, so a new pipeline would collide with it (409)."""
 
     def __init__(self, message: str, job_id: int, pipeline_id: int | None) -> None:
+        super().__init__(message)
+        self.job_id, self.pipeline_id = job_id, pipeline_id
+
+
+class ProjectLockedError(ConfigError):
+    """Another queue (another queue.db) owns the project folder (409 project_locked)."""
+
+    def __init__(self, message: str, job_id: int | None, pipeline_id: int | None) -> None:
         super().__init__(message)
         self.job_id, self.pipeline_id = job_id, pipeline_id
 
@@ -89,6 +100,49 @@ def open_queue(settings: Settings | None = None) -> QueueDb:
 
 def _inside(path: Path, roots: list[Path]) -> bool:
     return any(path == r or r in path.parents for r in roots)
+
+
+def _take_folder(db: QueueDb, project: Path, rules: Rules, stamp: float) -> bool:
+    """Lock the folder for this queue; True when the lock is new (a failure may give it back).
+
+    Raises:
+        ProjectLockedError: another queue owns the folder.
+    """
+    cfg = rules["queue"]
+    if not cfg.get("project_lock", True):
+        return False
+    try:
+        return acquire(project, db.path, now=stamp,
+                       grace_sec=float(cfg.get("project_lock_grace_sec", 10)))  # fmt: skip
+    except FolderLockedError as e:
+        if e.job_id is None:
+            detail = ""
+        elif e.pipeline_id is None:
+            detail = f" (job #{e.job_id})"
+        else:
+            detail = f" (job #{e.job_id}, pipeline #{e.pipeline_id})"
+        raise ProjectLockedError(
+            rules["input_msgs"]["PROJECT_LOCKED"].format(folder=project.name, detail=detail),
+            e.job_id, e.pipeline_id) from e  # fmt: skip
+
+
+def _give_back(db: QueueDb, project: Path) -> None:
+    """Release a lock taken for a job that never got in (the queue has nothing there)."""
+    active = ("queued", "processing", "awaiting_approval")
+    if not any(j.status in active for j in db.list_jobs(project_dir=str(project), limit=200)):
+        release(project, db.path)
+
+
+@contextlib.contextmanager
+def _folder(db: QueueDb, project: Path, rules: Rules, stamp: float) -> Iterator[None]:
+    """Hold the folder for the block; if it fails and nothing was queued, give the lock back."""
+    took = _take_folder(db, project, rules, stamp)
+    try:
+        yield
+    except BaseException:
+        if took:
+            _give_back(db, project)
+        raise
 
 
 def _need_dependency(db: QueueDb, after: int | None, msgs: Mapping[str, Any]) -> None:
@@ -138,16 +192,17 @@ def enqueue_render(
     _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
-    for letter in chosen:
-        existing = db.find_active("render", str(project), letter, final)
-        if existing is not None:
-            out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
-            continue
-        jid = db.enqueue(
-            NewJob(kind="render", project_dir=str(project), options_file=str(options),
-                   draft=letter, final=final, no_asr=no_asr, depends_on=after,
-                   max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
-        out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+    with _folder(db, project, rules, stamp):
+        for letter in chosen:
+            existing = db.find_active("render", str(project), letter, final)
+            if existing is not None:
+                out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
+                continue
+            jid = db.enqueue(
+                NewJob(kind="render", project_dir=str(project), options_file=str(options),
+                       draft=letter, final=final, no_asr=no_asr, depends_on=after,
+                       max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
+            out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
     return out
 
 
@@ -208,16 +263,17 @@ def enqueue_project_render(
     _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
-    for letter in chosen:
-        existing = db.find_active("render", str(folder), letter, final)
-        if existing is not None:
-            out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
-            continue
-        jid = db.enqueue(
-            NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
-                   draft=letter, final=final, no_asr=no_asr, depends_on=after,
-                   max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
-        out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+    with _folder(db, folder, rules, stamp):
+        for letter in chosen:
+            existing = db.find_active("render", str(folder), letter, final)
+            if existing is not None:
+                out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
+                continue
+            jid = db.enqueue(
+                NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
+                       draft=letter, final=final, no_asr=no_asr, depends_on=after,
+                       max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
+            out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
     return out
 
 
@@ -244,13 +300,15 @@ def enqueue_analyze(
         raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=folder))
     if not folder.is_dir():
         raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=folder))
-    existing = db.find_active("analyze", str(folder), "", False)
-    if existing is not None:
-        return EnqueueResult(job_id=existing, draft="", duplicate=True)
-    jid = db.enqueue(
-        NewJob(kind="analyze", project_dir=str(folder), options_file="", draft="", force=force,
-               max_attempts=int(rules["queue"]["max_attempts"])),
-        now if now is not None else time.time())  # fmt: skip
+    stamp = now if now is not None else time.time()
+    with _folder(db, folder, rules, stamp):
+        existing = db.find_active("analyze", str(folder), "", False)
+        if existing is not None:
+            return EnqueueResult(job_id=existing, draft="", duplicate=True)
+        jid = db.enqueue(
+            NewJob(kind="analyze", project_dir=str(folder), options_file="", draft="",
+                   force=force, max_attempts=int(rules["queue"]["max_attempts"])),
+            stamp)  # fmt: skip
     return EnqueueResult(job_id=jid, draft="", duplicate=False)
 
 
@@ -294,13 +352,15 @@ def enqueue_draft(
         raise ConfigError(msgs["QUEUE_PREFLIGHT_BLOCKED"].format(code=first["code"],
                                                                    msg=first["msg"]))  # fmt: skip
     _need_dependency(db, after, msgs)
-    existing = db.find_active("draft", str(project), "", False)
-    if existing is not None:
-        return EnqueueResult(job_id=existing, draft="", duplicate=True)
-    jid = db.enqueue(
-        NewJob(kind="draft", project_dir=str(project), options_file=str(options), draft="",
-               depends_on=after, max_attempts=1),  # one chance: code never retries a paid job
-        now if now is not None else time.time())  # fmt: skip
+    stamp = now if now is not None else time.time()
+    with _folder(db, project, rules, stamp):
+        existing = db.find_active("draft", str(project), "", False)
+        if existing is not None:
+            return EnqueueResult(job_id=existing, draft="", duplicate=True)
+        jid = db.enqueue(
+            NewJob(kind="draft", project_dir=str(project), options_file=str(options), draft="",
+                   depends_on=after, max_attempts=1),  # one chance: code never retries a paid job
+            stamp)  # fmt: skip
     return EnqueueResult(job_id=jid, draft="", duplicate=False)
 
 
@@ -370,15 +430,25 @@ def enqueue_pipeline(
         *((NewJob(kind="render", project_dir=where, options_file=saved, draft=letter,
                   final=final, no_asr=no_asr, max_attempts=tries), 1) for letter in chosen),
     ]  # fmt: skip
+    stamp = now if now is not None else time.time()
+    took = False
+
+    def prepare() -> None:  # inside the transaction: the lock, then the options file
+        nonlocal took
+        took = _take_folder(db, project, rules, stamp)
+        _write_options(project, options)
+
     try:
-        pipeline, ids = db.enqueue_chain(
-            steps, now if now is not None else time.time(), guard_folder=where,
-            before_insert=lambda: _write_options(project, options))  # fmt: skip
+        pipeline, ids = db.enqueue_chain(steps, stamp, guard_folder=where, before_insert=prepare)
     except FolderBusyError as e:
         suffix = f" (pipeline #{e.pipeline_id})" if e.pipeline_id is not None else ""
         raise PipelineBusyError(
             msgs["PIPELINE_BUSY"].format(folder=project.name, job=e.job_id, pipeline=suffix),
             e.job_id, e.pipeline_id) from e  # fmt: skip
+    except BaseException:
+        if took:  # nothing was queued: give the folder back
+            release(project, db.path)
+        raise
     return PipelineResult(pipeline_id=pipeline, analyze_id=ids[0], draft_id=ids[1],
                           render_ids=ids[2:], drafts=chosen)  # fmt: skip
 

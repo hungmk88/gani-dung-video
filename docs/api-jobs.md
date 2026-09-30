@@ -46,6 +46,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | 409 | `not_ready` | Dự án chưa có `plan.json` hoặc `drafts.json`/`speech_drafts.json` — chạy `plan`/`pick`/`draft` trước |
 | 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt; duyệt chi phí một job không phải `draft` |
 | 409 | `pipeline_active` | Dự án đã có job đang chờ/chạy/chờ duyệt (kèm `pipeline_id`, `job_id`) |
+| 409 | `project_locked` | Thư mục dự án đang được **một hàng đợi khác** (`queue.db` khác) dùng (kèm `pipeline_id`, `job_id` của hàng đợi đó nếu biết) |
 | 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
 | 411 | `can_content_length` | Thân dùng `Transfer-Encoding` (không hỗ trợ) |
 | 413 | `than_qua_lon` | Thân > `api.max_body_bytes` (64KB) |
@@ -267,7 +268,9 @@ duyệt (bất kể loại), server trả **409** và **không ghi gì** (kể c
 }
 ```
 
-`pipeline_id` là `null` khi job đang chạy là một job dựng lẻ (`POST /api/jobs`). Muốn đổi cấu
+`pipeline_id` là `null` khi job đang chạy là một job dựng lẻ (`POST /api/jobs`).
+
+**Khóa cấp thư mục (giữa nhiều hàng đợi).** Chốt "một dự án một pipeline" ở trên chỉ nhìn thấy job trong cùng một `queue.db`. Nếu hai hàng đợi (hai `queue.db`, ví dụ hai lần chạy `serve`/`daemon` riêng) cùng làm việc trên một thư mục, chúng sẽ ghi đè `options.json`, `plan.json` và tệp dựng của nhau. Vì vậy mọi cách đưa job vào hàng đợi (`POST /api/pipelines`, `POST /api/jobs`, và các lệnh `queue add/analyze/draft`) còn lấy khóa `<dự án>/edit/.project.lock`, ghi tên `queue.db` đang giữ. Hàng đợi khác thấy khóa còn hiệu lực thì bị từ chối bằng **409 `project_locked`** (không ghi gì, kể cả `options.json`). Khóa còn hiệu lực khi hàng đợi giữ nó còn job chờ/đang chạy/chờ duyệt cho thư mục đó; hết job hoặc mất `queue.db` thì khóa cũ và hàng đợi khác chiếm được. Đọc không được `queue.db` của chủ khóa thì coi là còn hiệu lực. Các lệnh chạy tay (`plan`, `pick`, `draft`, `render`) không kiểm tra khóa. Gỡ khẩn cấp: xóa tệp `edit/.project.lock`; tắt hẳn bằng `queue.project_lock = false` trong `rules.json`. Muốn đổi cấu
 hình: `POST /api/jobs/{id}/cancel` cho các job cũ (job đang chờ bị hủy ngay; job phụ thuộc vào
 nó bị hủy theo), rồi tạo lại.
 

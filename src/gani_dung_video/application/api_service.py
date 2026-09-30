@@ -24,6 +24,7 @@ from gani_dung_video.application.queue_service import (
     ApprovalRefused,
     NotReadyError,
     PipelineBusyError,
+    ProjectLockedError,
     ai_key_configured,
     allowed_roots,
     approve_job,
@@ -331,6 +332,11 @@ def _need(ctx: ApiContext, job_id: int) -> Job:
     return job
 
 
+def _locked(e: ProjectLockedError) -> ApiError:
+    """Another queue owns the folder: 409 naming that queue's job (never its path)."""
+    return ApiError(409, "project_locked", str(e), pipeline_id=e.pipeline_id, job_id=e.job_id)
+
+
 def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
     """Queue the render(s) a request asks for and return their views."""
     folder = resolve_project(ctx, req.project_id)
@@ -340,6 +346,8 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
                                         settings=ctx.settings, now=ctx.clock())  # fmt: skip
     except NotReadyError as e:
         raise ApiError(409, "not_ready", str(e)) from e
+    except ProjectLockedError as e:
+        raise _locked(e) from e
     except ConfigError as e:
         raise ApiError(400, "bad_request", str(e)) from e
     return [_view(ctx, _need(ctx, r.job_id)) for r in queued]
@@ -410,6 +418,8 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
     except PipelineBusyError as e:
         raise ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id,
                        job_id=e.job_id) from e  # fmt: skip
+    except ProjectLockedError as e:
+        raise _locked(e) from e
     except ConfigError as e:
         raise ApiError(400, "bad_request", str(e)) from e
     return _pipeline_view(ctx, result.pipeline_id, ctx.db.jobs_of_pipeline(result.pipeline_id))

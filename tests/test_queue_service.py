@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from gani_dung_video.application.queue_service import (
     ApprovalRefused,
     NotReadyError,
     PipelineBusyError,
+    ProjectLockedError,
     ai_key_configured,
     allowed_roots,
     approve_job,
@@ -32,7 +34,8 @@ from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
-from gani_dung_video.infrastructure.queue_db import QueueDb
+from gani_dung_video.infrastructure.project_lock import acquire
+from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb, QueueDbError
 from gani_dung_video.infrastructure.settings import Settings
 
 RULES = load_rules()
@@ -771,3 +774,136 @@ def test_a_cancelled_analysis_takes_its_waiting_dependents_down_with_it(
     cancel_job(db, r.analyze_id)
     assert db.cascade_blocked(time.time()) != []
     assert {j.status for j in db.jobs_of_pipeline(r.pipeline_id)} == {"cancelled"}
+
+
+# ─────────────── 6d: one queue at a time per project folder ───────────────
+
+
+def lock_path(root: Path) -> Path:
+    return root / "footage" / "edit" / ".project.lock"
+
+
+def foreign_queue(tmp_path: Path, root: Path, active: bool = True) -> QueueDb:
+    """Another queue that took the folder long ago and (if `active`) still has a job in it."""
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    folder = (root / "footage").resolve()
+    acquire(folder, other.path, now=time.time() - 100)
+    if active:
+        other.enqueue(NewJob(kind="render", project_dir=str(folder), options_file="o", draft="A",
+                             pipeline_id=9), time.time() - 100)  # fmt: skip
+    return other
+
+
+def test_a_pipeline_takes_the_folder_for_its_queue(db: QueueDb, root: Path) -> None:
+    pipe(db, root)
+    owner = json.loads(lock_path(root).read_text(encoding="utf-8"))
+    assert Path(owner["queue_db"]) == db.path.resolve()
+
+
+def test_a_second_queue_cannot_start_a_pipeline_on_a_folder_the_first_holds(
+    db: QueueDb, root: Path, tmp_path: Path
+) -> None:
+    first = pipe(db, root)
+    saved = root / "footage" / "edit" / "options.json"
+    before = saved.read_text(encoding="utf-8")
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    with pytest.raises(ProjectLockedError) as caught:
+        enqueue_pipeline({**OPTS, "do_dai_giay": 30}, root / "footage", other, rules=RULES,
+                         settings=cfg(root), now=time.time() + 60)  # fmt: skip
+    assert (caught.value.job_id, caught.value.pipeline_id) == (first.analyze_id, first.pipeline_id)
+    msg = str(caught.value)
+    assert "footage" in msg and "hàng đợi khác" in msg and f"#{first.analyze_id}" in msg
+    assert saved.read_text(encoding="utf-8") == before  # the running pipeline's options survive
+    assert other.list_jobs() == []
+
+
+def test_once_the_first_queue_is_done_a_second_queue_takes_the_folder(
+    db: QueueDb, root: Path, tmp_path: Path
+) -> None:
+    first = pipe(db, root)
+    for jid in [first.analyze_id, first.draft_id, *first.render_ids]:
+        cancel_job(db, jid)
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    done = enqueue_pipeline({**OPTS, "do_dai_giay": 30}, root / "footage", other, rules=RULES,
+                            settings=cfg(root), now=time.time() + 60)  # fmt: skip
+    assert done.pipeline_id == 1
+    assert Path(json.loads(lock_path(root).read_text("utf-8"))["queue_db"]) == other.path.resolve()
+
+
+def test_every_way_into_a_queue_respects_a_lock_held_by_another_queue(
+    db: QueueDb, root: Path, tmp_path: Path, opt: Path
+) -> None:
+    ready_project(root)
+    foreign_queue(tmp_path, root)
+    folder = root / "footage"
+    entries: dict[str, Callable[[], object]] = {
+        "pipeline": lambda: pipe(db, root),
+        "analyze": lambda: enqueue_analyze(folder, db, rules=RULES, settings=cfg(root)),
+        "draft": lambda: enqueue_draft(opt, folder, db, rules=RULES, settings=cfg(root)),
+        "render": lambda: add(db, opt, folder, root),
+        "project_render": lambda: by_project(db, folder, root),
+    }  # fmt: skip
+    for name, call in entries.items():
+        with pytest.raises(ProjectLockedError) as caught:
+            call()
+        assert caught.value.pipeline_id == 9, name
+    assert db.list_jobs() == []  # nothing got in, through any door
+
+
+def test_the_queue_that_holds_the_folder_can_keep_adding_jobs(db: QueueDb, root: Path,
+                                                               opt: Path) -> None:  # fmt: skip
+    ready_project(root)
+    folder = root / "footage"
+    enqueue_analyze(folder, db, rules=RULES, settings=cfg(root))
+    add(db, opt, folder, root)
+    by_project(db, folder, root)
+    enqueue_draft(opt, folder, db, rules=RULES, settings=cfg(root))
+    assert len(db.list_jobs()) == 4
+
+
+def test_a_lock_taken_for_a_job_that_could_not_be_queued_is_given_back(
+    db: QueueDb, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*a: Any, **k: Any) -> int:
+        raise QueueDbError("disco lleno")
+
+    monkeypatch.setattr(QueueDb, "enqueue", broken)
+    with pytest.raises(QueueDbError):
+        enqueue_analyze(root / "footage", db, rules=RULES, settings=cfg(root))
+    assert not lock_path(root).exists()
+
+
+def test_a_pipeline_that_fails_half_way_leaves_no_lock_behind(
+    db: QueueDb, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = QueueDb._insert
+    calls: list[int] = []
+
+    def flaky(con: Any, job: Any, now: float) -> int:
+        calls.append(1)
+        if len(calls) == 2:
+            raise QueueDbError("disco lleno")
+        return real(con, job, now)
+
+    monkeypatch.setattr(QueueDb, "_insert", staticmethod(flaky))
+    with pytest.raises(QueueDbError):
+        pipe(db, root)
+    assert db.list_jobs() == [] and not lock_path(root).exists()
+
+
+def test_a_refused_pipeline_does_not_disturb_the_lock_of_the_queue_that_already_has_it(
+    db: QueueDb, root: Path
+) -> None:
+    pipe(db, root)
+    before = lock_path(root).read_text(encoding="utf-8")
+    with pytest.raises(PipelineBusyError):
+        pipe(db, root)  # same queue, folder busy: the older guard answers first
+    assert Path(json.loads(before)["queue_db"]) == db.path.resolve() and lock_path(root).is_file()
+
+
+def test_the_lock_can_be_switched_off_in_the_rules(db: QueueDb, root: Path, tmp_path: Path) -> None:
+    off = {**RULES, "queue": {**RULES["queue"], "project_lock": False}}
+    enqueue_pipeline(OPTS, root / "footage", db, rules=off, settings=cfg(root))
+    assert not lock_path(root).exists()
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    enqueue_analyze(root / "footage", other, rules=off, settings=cfg(root))  # nothing stops it

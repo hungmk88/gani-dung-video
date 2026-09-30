@@ -39,6 +39,7 @@ from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.infrastructure.config_files import load_rules
+from gani_dung_video.infrastructure.project_lock import acquire
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
 from gani_dung_video.infrastructure.settings import Settings
 
@@ -732,3 +733,38 @@ def test_the_budget_in_health_counts_what_approved_jobs_may_still_spend(
     draft_id = reach_approval(ctx, start(ctx, root))
     approve(ctx, draft_id, ApproveRequest(max_vnd=6000, estimate_vnd=4166))
     assert health(ctx).budget.reserved_vnd == 6000.0
+
+
+# ─────────────── 6d: a folder held by another queue ───────────────
+
+
+def held_elsewhere(ctx: ApiContext, root: Path, tmp_path: Path) -> None:
+    folder = (root / "footage").resolve()
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    acquire(folder, other.path, now=time.time() - 100)
+    other.enqueue(NewJob(kind="analyze", project_dir=str(folder), options_file="", draft="",
+                         pipeline_id=4), time.time() - 100)  # fmt: skip
+
+
+def test_a_pipeline_on_a_folder_another_queue_holds_is_a_409_naming_that_queue_job(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    bare_project(root)
+    held_elsewhere(ctx, root, tmp_path)
+    with pytest.raises(ApiError) as caught:
+        create_pipeline(ctx, PipelineCreate(project_id="0/footage", options=WIZARD))
+    err = caught.value
+    assert (err.status, err.code) == (409, "project_locked")
+    assert err.extra == {"pipeline_id": 4, "job_id": 1}
+    assert "hàng đợi khác" in err.message and str(root) not in err.message
+    assert ctx.db.list_jobs() == [] and not (root / "footage" / "edit" / "options.json").exists()
+
+
+def test_a_plain_render_on_a_folder_another_queue_holds_is_also_a_409(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    make_project(root)
+    held_elsewhere(ctx, root, tmp_path)
+    with pytest.raises(ApiError) as caught:
+        create_jobs(ctx, JobCreate(project_id="0/footage", draft="A"))
+    assert (caught.value.status, caught.value.code) == (409, "project_locked")

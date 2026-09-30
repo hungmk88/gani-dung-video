@@ -32,7 +32,8 @@ from gani_dung_video.infrastructure.http_server import (
     origin_allowed,
     parse_range,
 )
-from gani_dung_video.infrastructure.queue_db import QueueDb
+from gani_dung_video.infrastructure.project_lock import acquire
+from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
 from gani_dung_video.infrastructure.settings import Settings
 
 RULES = load_rules()
@@ -746,3 +747,23 @@ def test_a_refused_body_is_read_out_before_closing_so_the_answer_is_not_lost(api
             json_type=False,
         )
         assert status == 415 and json.loads(data)["error"]["code"] == "content_type_no"
+
+
+# ─────────────── 6d: the folder lock over real HTTP ───────────────
+
+
+def test_a_folder_held_by_another_queue_is_409_project_locked_with_ids(
+    api: Api, tmp_path: Path
+) -> None:
+    root = Path(api.ctx.settings.gani_dv_allowed_roots or "")
+    (root / "fresh").mkdir()
+    folder = (root / "fresh").resolve()
+    other = QueueDb(tmp_path / "other" / "queue.db")
+    acquire(folder, other.path, now=time.time() - 100)
+    other.enqueue(NewJob(kind="analyze", project_dir=str(folder), options_file="", draft="",
+                         pipeline_id=4), time.time() - 100)  # fmt: skip
+    status, body = api.json("POST", "/api/pipelines", {"project_id": "0/fresh", "options": WIZARD})
+    assert status == 409 and body["error"]["code"] == "project_locked"
+    assert (body["error"]["pipeline_id"], body["error"]["job_id"]) == (4, 1)
+    assert "\\" not in body["error"]["message"] and "queue.db" not in body["error"]["message"]
+    assert not (folder / "edit" / "options.json").exists()
