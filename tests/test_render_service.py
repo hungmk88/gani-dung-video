@@ -297,3 +297,37 @@ def test_t8_uses_its_own_whisper_model_not_the_transcription_default(
     build_render(speech_folder, preview=False, rules=SMALL_FINAL)
     assert asked == [RULES["qc"]["t8"]["model"]] == ["small"]
     assert RULES["speech"]["model_default"] != "small"  # the two settings are independent
+
+
+# ─────────────── 6f: qc_report.json keeps the T8 numbers ───────────────
+
+
+def qc_of(res: Any) -> dict[str, Any]:
+    return dict(json.loads((res.video.parent / "qc_report.json").read_text(encoding="utf-8")))
+
+
+def test_a_final_speech_render_that_passes_still_records_what_whisper_measured(
+    speech_folder: Path,
+) -> None:
+    [res] = build_render(
+        speech_folder, preview=False, rules=SMALL_FINAL, transcribe=Listener(SPOKEN)
+    )
+    t8 = qc_of(res)["t8"]
+    assert t8["wer"] == 0.0 and t8["max_wer"] == RULES["qc"]["t8"]["max_wer"]
+    assert t8["median_drift_sec"] is not None and t8["voice_only_wer"] is None
+
+
+def test_a_failed_listen_records_its_numbers_next_to_the_finding(speech_folder: Path) -> None:
+    [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL,
+                         transcribe=Listener([word("ồn", 0.1, 0.5)]))  # fmt: skip
+    report = qc_of(res)
+    assert report["t8"]["wer"] > report["t8"]["max_wer"]
+    assert any(f["code"] == "T8" for f in report["findings"])
+
+
+def test_a_video_nobody_listened_to_has_no_t8_entry(speech_folder: Path) -> None:
+    [preview] = build_render(speech_folder, preview=True, rules=SMALL_FINAL,
+                             transcribe=Listener(SPOKEN))  # fmt: skip
+    assert qc_of(preview).get("t8") is None
+    [no_asr] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, asr=False)
+    assert qc_of(no_asr).get("t8") is None

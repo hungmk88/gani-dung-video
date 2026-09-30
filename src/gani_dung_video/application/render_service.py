@@ -20,9 +20,10 @@ from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.qc_service import (
     QcReport,
     check_file,
-    check_speech_asr,
+    listen_speech_asr,
     render_checked,
 )
+from gani_dung_video.domain.asr_check import T8Measures
 from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
@@ -42,7 +43,8 @@ from gani_dung_video.infrastructure.whisper_asr import Transcriber, load_transcr
 
 logger = logging.getLogger(__name__)
 RENDER_DIR = "render"
-T8Hook = Callable[[Edl, Path, Path], list[Finding]]  # (edl, finished video, work dir) → findings
+# (edl, finished video, work dir) → findings and what Whisper measured
+T8Hook = Callable[[Edl, Path, Path], tuple[list[Finding], T8Measures | None]]
 
 
 class RenderResult(BaseModel):
@@ -121,8 +123,8 @@ def _t8_hook(folder: Path, rules: Rules, transcribe: Transcriber | None) -> T8Ho
             loaded.append(transcribe or load_transcriber(model, cfg))
         return loaded[0](path)
 
-    def hook(e: Edl, video: Path, work: Path) -> list[Finding]:
-        return check_speech_asr(
+    def hook(e: Edl, video: Path, work: Path) -> tuple[list[Finding], T8Measures | None]:
+        return listen_speech_asr(
             video,
             e,
             rules,
@@ -174,7 +176,7 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
         px = {**px, **QcReport.model_validate_json(report.read_text(encoding="utf-8")).font_px}
     found = check_captions(e, rules, px, FontMetrics().width) + check_file(video, e, rules)
     if asr and not preview and e.mode == "speech":
-        found += _t8_hook(folder, rules, transcribe)(e, video, video.parent)
+        found += _t8_hook(folder, rules, transcribe)(e, video, video.parent)[0]
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
 
 
@@ -209,9 +211,9 @@ def _render_one(
 
     rep = render_checked(e, video, rules, do_render, pass1, metrics.width)
     if t8 is not None and rep.rounds:  # the file exists: Whisper listens to it (5c-3)
-        heard = t8(e, video, out)
+        heard, measured = t8(e, video, out)
         blocked = any(f.level in ("error", "fix") for f in heard)
-        rep = rep.model_copy(update={"findings": [*rep.findings, *heard],
+        rep = rep.model_copy(update={"findings": [*rep.findings, *heard], "t8": measured,
                                      "passed": rep.passed and not blocked})  # fmt: skip
     (out / "qc_report.json").write_text(rep.model_dump_json(indent=1), encoding="utf-8")
     if rep.rounds:

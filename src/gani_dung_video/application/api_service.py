@@ -58,6 +58,7 @@ from gani_dung_video.domain.api_models import (
     parse_project_id,
     pipeline_status,
     qa_checks,
+    t8_status,
 )
 from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.plan import Plan
@@ -232,12 +233,22 @@ def _read_qc(out: Path, job: Job) -> QcReport | None:
         return None
 
 
-def _qa_view(report: QcReport) -> QaView:
+def _plan_is_speech(folder: Path) -> bool | None:
+    """Whether the project's plan is speech-driven; None when plan.json cannot be read."""
+    with contextlib.suppress(OSError, ValidationError):
+        plan = Plan.model_validate_json((folder / EDIT_DIR / "plan.json").read_text("utf-8"))
+        return plan.driver == "speech"
+    return None
+
+
+def _qa_view(report: QcReport, job: Job, folder: Path) -> QaView:
     return QaView(passed=report.passed, rounds=report.rounds, fixes=report.fixes,
                   loudness_two_pass=report.loudness_two_pass, lufs=report.lufs,
                   true_peak_db=report.true_peak_db,
                   checks=qa_checks(report.findings, report.rounds, report.lufs,
-                                   report.true_peak_db))  # fmt: skip
+                                   report.true_peak_db, report.t8),
+                  t8=t8_status(final=job.final, speech=_plan_is_speech(folder),
+                               no_asr=job.no_asr, measured=report.t8 is not None))  # fmt: skip
 
 
 def _media_path(ctx: ApiContext, job: Job, kind: str) -> Path | None:
@@ -320,7 +331,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         error_msg=error, no_asr=job.no_asr,
         options=_read_options(folder),
         video_url=urls["video"], cover_url=urls["cover"], srt_url=urls["srt"],
-        steps=derive_steps(arts, run), qa=_qa_view(report) if report else None,
+        steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
     )  # fmt: skip
 
 

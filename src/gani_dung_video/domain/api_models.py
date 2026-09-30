@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from gani_dung_video.domain.asr_check import T8Measures
 from gani_dung_video.domain.qc import Finding
 
 _LETTERS = "ABC"
@@ -159,6 +160,9 @@ class QaCheckView(BaseModel):
     detail: str
 
 
+T8Status = Literal["ran", "skipped_draft", "skipped_music", "skipped_no_asr", "unavailable"]
+
+
 class QaView(BaseModel):
     passed: bool
     rounds: int
@@ -167,6 +171,7 @@ class QaView(BaseModel):
     lufs: float | None
     true_peak_db: float | None
     checks: list[QaCheckView]
+    t8: T8Status = "unavailable"  # why there is (or is not) a T8 row in `checks`
 
 
 class CostView(BaseModel):
@@ -429,7 +434,39 @@ _QA_LABELS = {
 }
 
 
-def _detail(code: str, mine: Sequence[Finding], lufs: float | None, tp: float | None) -> str:
+def _pct(x: float) -> str:
+    return f"{x * 100:.1f}".replace(".", ",") + "%"
+
+
+def _t8_detail(m: T8Measures) -> str:
+    """A passed T8: what Whisper heard against the limits, in Vietnamese number style."""
+    head = f"Đạt: Whisper nghe lại sai {_pct(m.wer)} số từ (tối đa {m.max_wer * 100:g}%)"
+    if m.median_drift_sec is None:
+        text = f"{head}; không đo được độ lệch phụ đề."
+    else:
+        text = (f"{head}, phụ đề lệch tiếng trung vị {m.median_drift_sec * 1000:.0f}ms "
+                f"(tối đa {m.max_median_drift_sec * 1000:.0f}ms).")  # fmt: skip
+    if m.voice_only_wer is not None:
+        text += f" Bản bỏ nhạc sai {_pct(m.voice_only_wer)}."
+    return text
+
+
+def t8_status(*, final: bool, speech: bool | None, no_asr: bool, measured: bool) -> T8Status:
+    """Why a job's QA has (or lacks) a T8 row. `speech` is None when the plan cannot be read.
+    The reasons T8 cannot apply come first: a draft never listens, whatever else was asked."""
+    if not final:
+        return "skipped_draft"
+    if speech is False:
+        return "skipped_music"
+    if no_asr:
+        return "skipped_no_asr"
+    return "ran" if measured else "unavailable"
+
+
+def _detail(code: str, mine: Sequence[Finding], lufs: float | None, tp: float | None,
+            t8: T8Measures | None = None) -> str:  # fmt: skip
+    if code == "T8" and t8 is not None and not mine:
+        return _t8_detail(t8)
     if mine:
         prefix = "" if any(f.level in ("error", "fix") for f in mine) else "Cảnh báo: "
         return prefix + " ".join(f.msg for f in mine)
@@ -439,18 +476,20 @@ def _detail(code: str, mine: Sequence[Finding], lufs: float | None, tp: float | 
 
 
 def qa_checks(findings: Sequence[Finding], rounds: int, lufs: float | None,
-              true_peak_db: float | None) -> list[QaCheckView]:  # fmt: skip
-    """One row per technical check T1–T7 (all run whenever a video was rendered), plus T8 when
-    the Whisper check left a finding. A warning keeps the check passed."""
+              true_peak_db: float | None, t8: T8Measures | None = None
+              ) -> list[QaCheckView]:  # fmt: skip
+    """One row per technical check T1–T7 (all run whenever a video was rendered), plus T8
+    whenever Whisper listened (its numbers are stored) or left a finding, even a clean pass.
+    A warning keeps the check passed."""
     if rounds < 1:
         return []
     codes = [f"T{i}" for i in range(1, 8)]
-    if any(f.code == "T8" for f in findings):
+    if t8 is not None or any(f.code == "T8" for f in findings):
         codes.append("T8")
     out = []
     for code in codes:
         mine = [f for f in findings if f.code == code]
         failed = any(f.level in ("error", "fix") for f in mine)
         out.append(QaCheckView(code=code, label=_QA_LABELS[code], passed=not failed,
-                               detail=_detail(code, mine, lufs, true_peak_db)))  # fmt: skip
+                               detail=_detail(code, mine, lufs, true_peak_db, t8)))  # fmt: skip
     return out

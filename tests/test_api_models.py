@@ -15,6 +15,7 @@ from gani_dung_video.domain.api_models import (
     JobView,
     PipelineCreate,
     PreflightRequest,
+    QaCheckView,
     RunInfo,
     derive_steps,
     eta_sec,
@@ -25,7 +26,9 @@ from gani_dung_video.domain.api_models import (
     parse_project_id,
     pipeline_status,
     qa_checks,
+    t8_status,
 )
+from gani_dung_video.domain.asr_check import T8Measures
 from gani_dung_video.domain.qc import Finding
 
 # ─────────────── project ids ───────────────
@@ -398,3 +401,75 @@ def test_the_cost_block_and_the_new_job_fields_are_part_of_the_view() -> None:
     wanted = {"pipeline_id", "depends_on", "needs_approval", "approval_expires_at", "cost"}
     assert wanted <= set(JobView.model_fields)
     assert {"ai_key_configured", "budget"} <= set(HealthView.model_fields)
+
+
+# ─────────────── 6f: T8 in the QA view ───────────────
+
+
+def measured(
+    wer: float = 0.062, drift: float | None = 0.085, voice: float | None = None
+) -> T8Measures:
+    return T8Measures(wer=wer, median_drift_sec=drift, voice_only_wer=voice, max_wer=0.15,
+                      max_median_drift_sec=0.15)  # fmt: skip
+
+
+def rows(findings: list[Finding], t8: T8Measures | None) -> dict[str, QaCheckView]:
+    return {c.code: c for c in qa_checks(findings, 1, -14.0, -2.0, t8)}
+
+
+def test_a_clean_listen_still_gets_its_t8_row_with_the_real_numbers() -> None:
+    t8 = rows([], measured())["T8"]
+    assert t8.passed is True and t8.label == "Whisper nghe lại thành phẩm"
+    assert t8.detail == (
+        "Đạt: Whisper nghe lại sai 6,2% số từ (tối đa 15%), phụ đề lệch tiếng "
+        "trung vị 85ms (tối đa 150ms)."
+    )
+
+
+def test_the_row_says_so_when_no_word_matched_and_so_no_drift_was_measured() -> None:
+    detail = rows([], measured(0.14, None))["T8"].detail
+    assert detail.startswith("Đạt: Whisper nghe lại sai 14,0% số từ") and "không đo được" in detail
+
+
+def test_the_music_free_listen_is_mentioned_when_it_was_done() -> None:
+    assert "bỏ nhạc" in rows([], measured(0.14, 0.05, voice=0.02))["T8"].detail
+
+
+def test_a_drift_warning_keeps_the_row_passed_and_its_own_words() -> None:
+    warn = Finding(code="T8", level="warn", msg="Phụ đề lệch tiếng trung vị 210ms (tối đa 150ms).")
+    t8 = rows([warn], measured(0.05, 0.21))["T8"]
+    assert t8.passed is True and t8.detail == "Cảnh báo: " + warn.msg
+
+
+def test_a_wer_error_fails_the_row_with_its_own_words() -> None:
+    bad = Finding(code="T8", level="error", msg="Whisper nghe lại thành phẩm sai 30% số từ.")
+    t8 = rows([bad], measured(0.30))["T8"]
+    assert t8.passed is False and t8.detail == bad.msg
+
+
+def test_without_numbers_and_without_a_finding_there_is_no_t8_row() -> None:
+    assert "T8" not in rows([], None)
+
+
+def test_without_numbers_a_t8_finding_still_makes_a_row_as_before() -> None:
+    warn = Finding(code="T8", level="warn", msg="Không chạy được hậu kiểm Whisper: thiếu model")
+    assert rows([warn], None)["T8"].passed is True
+
+
+def test_no_render_means_no_checks_at_all_even_with_numbers() -> None:
+    assert qa_checks([], 0, None, None, measured()) == []
+
+
+@pytest.mark.parametrize(
+    "kw,expected",
+    [({}, "ran"),
+     ({"final": False}, "skipped_draft"),
+     ({"final": False, "no_asr": True}, "skipped_draft"),  # the draft is the reason that counts
+     ({"speech": False}, "skipped_music"),
+     ({"no_asr": True}, "skipped_no_asr"),
+     ({"measured": False}, "unavailable"),  # an old report, or Whisper could not run
+     ({"speech": None, "measured": False}, "unavailable")],  # the plan cannot be read: unknown
+)  # fmt: skip
+def test_the_t8_status_says_why_there_may_be_no_row(kw: dict[str, object], expected: str) -> None:
+    base: dict[str, object] = {"final": True, "speech": True, "no_asr": False, "measured": True}
+    assert t8_status(**{**base, **kw}) == expected  # type: ignore[arg-type]

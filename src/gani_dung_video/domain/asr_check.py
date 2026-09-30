@@ -41,6 +41,28 @@ class AsrResult(BaseModel):
     median_drift_sec: float | None  # None: no word was matched
 
 
+class T8Measures(BaseModel):
+    """What Whisper measured on the finished video, and the limits it was judged by. Stored in
+    qc_report.json so the dashboard can show the numbers of a check that passed."""
+
+    wer: float
+    median_drift_sec: float | None  # None: no word was matched
+    voice_only_wer: float | None  # the music-free listen, when it was done
+    max_wer: float
+    max_median_drift_sec: float
+
+
+def measures_of(mix: AsrResult, voice_only: AsrResult | None, cfg: Mapping[str, Any]
+                ) -> T8Measures | None:  # fmt: skip
+    """The numbers of a listen, or None when there was nothing to compare."""
+    if mix.ref_count == 0:
+        return None
+    return T8Measures(wer=mix.wer, median_drift_sec=mix.median_drift_sec,
+                      voice_only_wer=voice_only.wer if voice_only is not None else None,
+                      max_wer=float(cfg["max_wer"]),
+                      max_median_drift_sec=float(cfg["max_median_drift_sec"]))  # fmt: skip
+
+
 def to_tokens(words: Sequence[SpokenWord]) -> list[Tok]:
     """Syllables of each word (lowercase, no punctuation); a multi-syllable word's syllables
     share its start time."""

@@ -10,6 +10,7 @@ from gani_dung_video.domain.asr_check import (
     align,
     compare,
     diagnose,
+    measures_of,
     to_tokens,
     within_spans,
 )
@@ -167,3 +168,27 @@ def test_both_problems_are_both_reported() -> None:
 
 def test_nothing_to_judge_gives_no_findings() -> None:
     assert diagnose(res(0.0, drift=None, ref=0), None, CFG) == []
+
+
+# ─────────────── 6f: the numbers behind the verdict ───────────────
+
+
+def test_the_measures_carry_what_was_heard_and_the_limits_it_was_judged_by() -> None:
+    m = measures_of(res(0.062, 0.085), None, CFG)
+    assert m is not None
+    assert (m.wer, m.median_drift_sec, m.voice_only_wer) == (0.062, 0.085, None)
+    assert (m.max_wer, m.max_median_drift_sec) == (CFG["max_wer"], CFG["max_median_drift_sec"])
+
+
+def test_the_music_free_listen_is_kept_when_it_was_done() -> None:
+    m = measures_of(res(0.30), res(0.05), CFG)
+    assert m is not None and m.voice_only_wer == 0.05
+
+
+def test_no_word_matched_means_no_drift_but_the_measures_still_exist() -> None:
+    m = measures_of(res(0.5, drift=None), None, CFG)
+    assert m is not None and m.median_drift_sec is None
+
+
+def test_nothing_to_compare_gives_no_measures() -> None:
+    assert measures_of(res(0.0, ref=0), None, CFG) is None

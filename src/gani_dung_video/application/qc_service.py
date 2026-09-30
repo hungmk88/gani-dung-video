@@ -18,7 +18,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from gani_dung_video.domain.asr_check import AsrResult, compare, diagnose, to_tokens, within_spans
+from gani_dung_video.domain.asr_check import (
+    AsrResult,
+    T8Measures,
+    compare,
+    diagnose,
+    measures_of,
+    to_tokens,
+    within_spans,
+)
 from gani_dung_video.domain.edl import Edl
 from gani_dung_video.domain.glossary import Term
 from gani_dung_video.domain.preflight import Rules
@@ -58,6 +66,9 @@ class QcReport(BaseModel):
     # nothing was measured (stopped before rendering, wrong container, silence).
     lufs: float | None = None
     true_peak_db: float | None = None
+    # What Whisper measured (T8, speech-mode finals only); None when nobody listened, so a
+    # report written before phase 6f still loads.
+    t8: T8Measures | None = None
 
 
 def check_file_measured(video: Path, e: Edl, rules: Rules, probe: Prober = probe_media,
@@ -142,18 +153,19 @@ def _listen(path: Path, e: Edl, rules: Rules, transcribe: Transcriber, terms: Se
     return compare(to_tokens([w for g in e.karaoke for w in g]), heard)
 
 
-def check_speech_asr(
+def listen_speech_asr(
     video: Path, e: Edl, rules: Rules, transcribe: Transcriber, terms: Sequence[Term],
     voice_only: Callable[[], Path] | None = None,
-) -> list[Finding]:  # fmt: skip
+) -> tuple[list[Finding], T8Measures | None]:  # fmt: skip
     """T8 on a rendered speech-mode video (phase 5c-3): WER blocks, subtitle drift warns.
+    Also returns what was measured (None when nothing was listened to or compared).
 
     When WER fails and the video has music, `voice_only` (renders the mix without music) is
     listened to as well, so the message says whether music masks the voice.
     A recogniser that cannot run is reported as a warning, never raised: the video is done.
     """
     if e.mode != "speech" or not e.karaoke:
-        return []
+        return [], None
     try:
         mix = _listen(video, e, rules, transcribe, terms)
         voice: AsrResult | None = None
@@ -163,5 +175,15 @@ def check_speech_asr(
             except RenderError:
                 voice = None  # cannot tell why; the plain verdict still stands
     except AsrError as err:
-        return [Finding(code="T8", level="warn", msg=f"Không chạy được hậu kiểm Whisper: {err}")]
-    return diagnose(mix, voice, rules["qc"]["t8"])
+        return [Finding(code="T8", level="warn",
+                        msg=f"Không chạy được hậu kiểm Whisper: {err}")], None  # fmt: skip
+    cfg = rules["qc"]["t8"]
+    return diagnose(mix, voice, cfg), measures_of(mix, voice, cfg)
+
+
+def check_speech_asr(
+    video: Path, e: Edl, rules: Rules, transcribe: Transcriber, terms: Sequence[Term],
+    voice_only: Callable[[], Path] | None = None,
+) -> list[Finding]:  # fmt: skip
+    """The findings of `listen_speech_asr` (T8), without the numbers."""
+    return listen_speech_asr(video, e, rules, transcribe, terms, voice_only)[0]

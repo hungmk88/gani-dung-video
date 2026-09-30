@@ -153,7 +153,7 @@ từ `plan.json` của dự án, không gửi lại.
   ],
   "qa": {
     "passed": true, "rounds": 1, "fixes": [], "loudness_two_pass": false,
-    "lufs": -13.9, "true_peak_db": -2.0,
+    "lufs": -13.9, "true_peak_db": -2.0, "t8": "skipped_draft",
     "checks": [
       {"code": "T3", "label": "Độ to và đỉnh âm thanh", "passed": true,
        "detail": "Đo được -13.9 LUFS, đỉnh thật -2.0 dBTP."}
@@ -401,9 +401,30 @@ là `final`). Bước lỗi kèm `detail` là thông báo lỗi.
 **T8 (Whisper nghe lại thành phẩm)** không phải kiểm tra logo hay đoạn mở đầu: Whisper chép lại
 lời của video đã dựng để đo sai lệch lời (WER), độ lệch thời gian phụ đề và nhạc nền có đè tiếng
 nói không. Điều kiện chạy: chỉ **bản cuối** (`size = "final"`, 1080×1920) của **chế độ lời**
-(`ban_hang_co_loi`) và `no_asr = false`. **Bản nháp 540p và chế độ nhạc không có T8.** Dòng T8 chỉ
-xuất hiện trong `qa.checks` khi Whisper báo cảnh báo hoặc lỗi (hoặc không chạy được); bản cuối
-đạt sạch thì không có dòng T8. Giao diện đừng coi thiếu dòng T8 là "chưa kiểm".
+(`ban_hang_co_loi`) và `no_asr = false`.
+
+`qa.t8` cho biết vì sao có hoặc không có dòng T8 trong `qa.checks`:
+
+| `qa.t8` | Nghĩa | Dòng T8 trong `checks` |
+|---|---|---|
+| `ran` | Whisper đã nghe lại và có số đo | **Luôn có**, kể cả khi đạt |
+| `skipped_draft` | Bản nháp 540p: không chạy T8 | không |
+| `skipped_music` | Chế độ nhạc: không có giọng để đo | không |
+| `skipped_no_asr` | Dựng bản cuối chế độ lời nhưng `no_asr = true` | không |
+| `unavailable` | Whisper không chạy được (lỗi môi trường, khi đó có dòng T8 cảnh báo), hoặc báo cáo dựng từ trước phiên bản này không lưu số đo | có nếu có cảnh báo, không thì không |
+
+Khi `qa.t8 = "ran"`, dòng T8 có `passed = false` chỉ khi WER vượt ngưỡng (lỗi); độ lệch phụ đề
+quá ngưỡng là cảnh báo và vẫn `passed = true`. Lúc đạt, `detail` mang số đo thật (một chữ số
+thập phân cho WER, mili-giây cho độ lệch; ngưỡng lấy từ `rules.json` → `qc.t8`):
+
+```json
+{"code": "T8", "label": "Whisper nghe lại thành phẩm", "passed": true,
+ "detail": "Đạt: Whisper nghe lại sai 6,2% số từ (tối đa 15%), phụ đề lệch tiếng trung vị 85ms (tối đa 150ms)."}
+```
+
+Khi có cảnh báo hoặc lỗi, `detail` giữ nguyên câu chẩn đoán (ví dụ nhạc đè tiếng). Số đo được
+lưu trong `qc_report.json` (trường `t8`) nên đọc lại được về sau; báo cáo cũ không có trường này
+vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
 
 ## 6. Khoảng trống đã biết (nói thẳng)
 

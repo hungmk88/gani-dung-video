@@ -768,3 +768,86 @@ def test_a_plain_render_on_a_folder_another_queue_holds_is_also_a_409(
     with pytest.raises(ApiError) as caught:
         create_jobs(ctx, JobCreate(project_id="0/footage", draft="A"))
     assert (caught.value.status, caught.value.code) == (409, "project_locked")
+
+
+# ─────────────── 6f: T8 in the job's QA ───────────────
+
+
+T8_NUMBERS = {"wer": 0.062, "median_drift_sec": 0.085, "voice_only_wer": None, "max_wer": 0.15,
+              "max_median_drift_sec": 0.15}  # fmt: skip
+
+
+def set_speech(root: Path) -> None:
+    """Make the project's plan speech-driven (after queue_one, which writes a music plan)."""
+    edit = root / "footage" / "edit"
+    plan = json.loads((edit / "plan.json").read_text(encoding="utf-8"))
+    plan["driver"] = "speech"
+    (edit / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+
+
+def add_t8(
+    out: Path, numbers: dict[str, Any] | None, findings: list[dict[str, Any]] | None = None
+) -> None:
+    path = out / "qc_report.json"
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if numbers is not None:
+        report["t8"] = numbers
+    report["findings"] = findings or []
+    path.write_text(json.dumps(report), encoding="utf-8")
+
+
+def final_speech_job(ctx: ApiContext, root: Path, **kw: Any) -> tuple[int, Path]:
+    jid = queue_one(ctx, root, final=True, **kw)
+    set_speech(root)
+    return jid, finish_job(ctx, jid)
+
+
+def test_a_final_speech_job_that_was_listened_to_shows_the_t8_row_and_says_ran(
+    ctx: ApiContext, root: Path
+) -> None:
+    jid, out = final_speech_job(ctx, root)
+    add_t8(out, T8_NUMBERS)
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "ran"
+    row = next(c for c in qa.checks if c.code == "T8")
+    assert row.passed and "6,2%" in row.detail and "85ms" in row.detail
+
+
+def test_a_failed_listen_is_a_failed_t8_row(ctx: ApiContext, root: Path) -> None:
+    jid, out = final_speech_job(ctx, root)
+    bad = {"code": "T8", "level": "error", "msg": "Whisper nghe lại thành phẩm sai 40% số từ."}
+    add_t8(out, {**T8_NUMBERS, "wer": 0.4}, [bad])
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "ran"
+    assert next(c for c in qa.checks if c.code == "T8").passed is False
+
+
+def test_a_preview_says_skipped_draft_and_has_no_t8_row(ctx: ApiContext, root: Path) -> None:
+    jid = queue_one(ctx, root)  # a 540p preview
+    set_speech(root)
+    finish_job(ctx, jid)
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "skipped_draft" and "T8" not in [c.code for c in qa.checks]
+
+
+def test_a_music_final_says_skipped_music(ctx: ApiContext, root: Path) -> None:
+    jid = queue_one(ctx, root, final=True)  # the plan of make_project drives by music
+    finish_job(ctx, jid)
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "skipped_music" and "T8" not in [c.code for c in qa.checks]
+
+
+def test_a_final_speech_job_rendered_without_asr_says_skipped_no_asr(
+    ctx: ApiContext, root: Path
+) -> None:
+    jid, _ = final_speech_job(ctx, root, no_asr=True)
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "skipped_no_asr" and "T8" not in [c.code for c in qa.checks]
+
+
+def test_an_old_report_without_t8_numbers_is_unavailable_not_a_crash(
+    ctx: ApiContext, root: Path
+) -> None:
+    jid, _ = final_speech_job(ctx, root)  # finish_job writes a report with no "t8" at all
+    qa = get_job(ctx, jid).qa
+    assert qa is not None and qa.t8 == "unavailable" and "T8" not in [c.code for c in qa.checks]

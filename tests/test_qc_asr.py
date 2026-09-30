@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from gani_dung_video.application.qc_service import check_speech_asr
+from gani_dung_video.application.qc_service import check_speech_asr, listen_speech_asr
+from gani_dung_video.domain.asr_check import T8Measures
 from gani_dung_video.domain.edl import Edl, MusicTrack, Shot
 from gani_dung_video.domain.glossary import Term
 from gani_dung_video.domain.speech import RawTranscript, SpokenWord
@@ -171,3 +172,40 @@ def test_check_does_not_mutate_the_edl() -> None:
 def test_almost_nothing_heard_is_a_failure(bad: list[SpokenWord]) -> None:
     [line] = run(edl(), FakeWhisper({VIDEO.name: bad}))
     assert line.startswith("error:T8:") and "100%" in line
+
+
+# ─────────────── 6f: the listen also returns the numbers ───────────────
+
+
+def listen(e: Edl, fake: FakeWhisper) -> tuple[list[str], T8Measures | None]:
+    found, measures = listen_speech_asr(VIDEO, e, RULES, fake, TERMS)
+    return [f.level for f in found], measures
+
+
+def test_a_clean_listen_has_no_findings_but_does_have_the_numbers() -> None:
+    levels, m = listen(edl(), FakeWhisper({VIDEO.name: words(SAID)}))
+    assert levels == [] and m is not None
+    assert m.wer == 0.0 and m.median_drift_sec == pytest.approx(0.0, abs=0.01)
+    assert (m.max_wer, m.max_median_drift_sec) == (
+        RULES["qc"]["t8"]["max_wer"],
+        RULES["qc"]["t8"]["max_median_drift_sec"],
+    )
+
+
+def test_a_bad_listen_has_findings_and_the_numbers() -> None:
+    levels, m = listen(edl(), FakeWhisper({VIDEO.name: words("ồn ào lắm")}))
+    assert levels == ["error"] and m is not None and m.wer > m.max_wer
+
+
+def test_a_recogniser_that_cannot_run_has_a_warning_and_no_numbers() -> None:
+    def broken(path: Path) -> RawTranscript:
+        raise AsrError("thiếu model")
+
+    found, m = listen_speech_asr(VIDEO, edl(), RULES, broken, TERMS)
+    assert [f.level for f in found] == ["warn"] and m is None
+
+
+def test_music_styles_have_neither_findings_nor_numbers() -> None:
+    fake = FakeWhisper({VIDEO.name: words(SAID)})
+    found, m = listen_speech_asr(VIDEO, edl(mode="music"), RULES, fake, TERMS)
+    assert found == [] and m is None and fake.heard == []
