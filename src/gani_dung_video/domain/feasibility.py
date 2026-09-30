@@ -75,6 +75,51 @@ def _names(blocks: Sequence[str]) -> str:
     return ", ".join(f"'{b}'" for b in blocks)
 
 
+def _clusters(plan: Plan) -> list[list[int]]:
+    """Blocks that belong together: the sub-blocks of a chapter form one cluster, every other
+    block (and every block of a short video) is a cluster of its own."""
+    out: list[list[int]] = []
+    where: dict[str, int] = {}
+    for i, b in enumerate(plan.blocks):
+        if b.chapter is not None and b.chapter in where:
+            out[where[b.chapter]].append(i)
+            continue
+        if b.chapter is not None:
+            where[b.chapter] = len(out)
+        out.append([i])
+    return out
+
+
+def _group_label(plan: Plan, idx: Sequence[int]) -> str:
+    """Names for a failing group: a whole chapter reads as "chương 'x'", other blocks by role."""
+    chosen = set(idx)
+    parts: list[str] = []
+    for cluster in _clusters(plan):
+        blocks = [plan.blocks[i] for i in cluster]
+        if blocks[0].chapter is not None and chosen.issuperset(cluster):
+            parts.append(f"chương '{blocks[0].chapter}'")
+        else:
+            parts += [f"'{plan.blocks[i].role}'" for i in cluster if i in chosen]
+    return ", ".join(parts)
+
+
+def _group_search(plan: Plan) -> Iterable[tuple[int, ...]]:
+    """Block groups to test, smallest first. Every block alone; then every subset inside a
+    cluster (a chapter has ~5 sub-blocks, so at most a few hundred); then every subset of
+    clusters pooled (only the whole plan when there are more than MAX_GROUP_BLOCKS clusters,
+    as before: 2^k subsets do not scale)."""
+    clusters = _clusters(plan)
+    for i in range(len(plan.blocks)):
+        yield (i,)
+    for cluster in clusters:
+        for size in range(2, len(cluster) + 1):
+            yield from itertools.combinations(cluster, size)
+    k = len(clusters)
+    for size in range(2, k + 1) if k <= MAX_GROUP_BLOCKS else [k]:
+        for chosen in itertools.combinations(range(k), size):
+            yield tuple(i for c in chosen for i in clusters[c])
+
+
 def _tags(block: PlanBlock) -> str:
     return f" (nhãn: {', '.join(block.required_tags)})" if block.required_tags else ""
 
@@ -113,19 +158,13 @@ def check_feasible(plan: Plan, pick: PickFile, rules: Rules, drafts: int) -> Sho
                 block=b.role, beats=plan.planned_beats if lone else b.beats, tol=tol,
                 count=count, have=have, per_clip=per_clip, tags=_tags(b))  # fmt: skip
             return Shortfall("block", roles, want, have, text)
-        text = msgs["FEASIBLE_GROUP"].format(blocks=_names(roles), need=want, count=count,
-                                             have=have, per_clip=per_clip)  # fmt: skip
+        text = msgs["FEASIBLE_GROUP"].format(blocks=_group_label(plan, idx), need=want,
+                                             count=count, have=have, per_clip=per_clip)  # fmt: skip
         return Shortfall("group", roles, want, have, text)
 
-    k = len(blocks)
-    for i in range(k):  # step 1: each block alone
-        if (found := group((i,))) is not None:
+    for idx in _group_search(plan):  # single blocks, inside chapters, then pooled chapters
+        if (found := group(idx)) is not None:
             return found
-    sizes = range(2, k + 1) if k <= MAX_GROUP_BLOCKS else [k]
-    for size in sizes:  # step 2: scenes cannot be shared between blocks
-        for idx in itertools.combinations(range(k), size):
-            if (found := group(idx)) is not None:
-                return found
     if drafts >= 2 and blocks:
         return _variety(plan, cands, rules, drafts)
     return None
