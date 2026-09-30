@@ -730,7 +730,7 @@ def test_the_job_list_takes_a_kind_filter(api: Api) -> None:
 def test_health_tells_the_ui_whether_a_key_exists_but_never_shows_it(api: Api) -> None:
     status, h = api.json("GET", "/api/health")
     assert status == 200 and h["ai_key_configured"] is False
-    assert h["budget"] == {"limit_vnd": None, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0}
+    assert h["budget"] == {"limit_vnd": 100_000.0, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0}
 
 
 def test_a_refused_body_is_read_out_before_closing_so_the_answer_is_not_lost(api: Api) -> None:

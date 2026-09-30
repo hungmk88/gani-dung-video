@@ -713,12 +713,16 @@ def test_health_reports_the_key_and_the_budget_without_leaking_the_key(
 ) -> None:
     h = health(ctx)
     assert h.ai_key_configured is False
-    assert (h.budget.limit_vnd, h.budget.spent_24h_vnd, h.budget.reserved_vnd) == (None, 0.0, 0.0)
-    keyed = ApiContext(ctx.db, {**RULES, "queue": {**RULES["queue"], "daily_budget_vnd": 100_000}},
+    assert (h.budget.limit_vnd, h.budget.spent_24h_vnd, h.budget.reserved_vnd) == (
+        100_000.0,
+        0.0,
+        0.0,
+    )  # the shipped daily limit
+    keyed = ApiContext(ctx.db, {**RULES, "queue": {**RULES["queue"], "daily_budget_vnd": None}},
                        Settings(gani_dv_allowed_roots=str(root),
                                 anthropic_api_key="test-key-not-real"))  # fmt: skip
     got = health(keyed)
-    assert got.ai_key_configured is True and got.budget.limit_vnd == 100_000.0
+    assert got.ai_key_configured is True and got.budget.limit_vnd is None  # limit switched off
     assert "test-key-not-real" not in got.model_dump_json()
 
 

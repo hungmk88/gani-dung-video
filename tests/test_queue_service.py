@@ -509,9 +509,10 @@ def test_an_approval_after_the_window_is_refused(db: QueueDb, root: Path) -> Non
         approve(db, jid)
 
 
-def paid_and_done(db: QueueDb, root: Path, name: str, approved: float, spent: float) -> None:
+def paid_and_done(db: QueueDb, root: Path, name: str, approved: float, spent: float,
+                  rules: Any = None) -> None:  # fmt: skip
     jid = waiting_job(db, root, name)
-    approve(db, jid, approved, 4207.3)
+    approve(db, jid, approved, 4207.3, rules=rules)
     db.claim(time.time(), 1)
     db.finish(jid, time.time(), "completed", "passed", 0, None, None, spent_vnd=spent)
 
@@ -519,11 +520,28 @@ def paid_and_done(db: QueueDb, root: Path, name: str, approved: float, spent: fl
 BUDGET = {**RULES, "queue": {**RULES["queue"], "daily_budget_vnd": 100_000}}
 
 
+NO_LIMIT = {**RULES, "queue": {**RULES["queue"], "daily_budget_vnd": None}}
+
+
+def test_the_shipped_configuration_limits_spending_to_100k_a_day() -> None:
+    assert RULES["queue"]["daily_budget_vnd"] == 100_000
+
+
 def test_without_a_daily_budget_nothing_limits_the_total(db: QueueDb, root: Path) -> None:
-    assert RULES["queue"]["daily_budget_vnd"] is None  # off by default
     for n in range(6):
-        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0)
-    approve(db, waiting_job(db, root, "last"), 20_000.0)
+        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0, rules=NO_LIMIT)
+    approve(db, waiting_job(db, root, "last"), 20_000.0, rules=NO_LIMIT)
+
+
+def test_the_shipped_limit_refuses_the_approval_that_would_cross_it(
+    db: QueueDb, root: Path
+) -> None:
+    for n in range(4):
+        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0)  # 80.000đ spent today
+    first, second = waiting_job(db, root, "a"), waiting_job(db, root, "b")
+    assert approve(db, first, 20_000.0).status == "queued"  # exactly 100.000đ is allowed
+    with pytest.raises(ApprovalRefused, match="hạn mức ngày"):
+        approve(db, second, 6_000.0)
 
 
 def test_the_daily_budget_counts_spent_reserved_and_the_new_maximum(db: QueueDb,
