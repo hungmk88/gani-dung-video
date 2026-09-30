@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, FileJson, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, FileJson, Info, RefreshCw, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { QaCheck, QaGroup as QaGroupData, QaReport, RenderJob } from '../../types/rules';
 
@@ -45,6 +45,12 @@ function QaGroup({ group }: { group: QaGroupData }) {
             <CheckRow key={i} c={c} />
           ))}
         </ul>
+      )}
+      {group.note && (
+        <p className="mt-1.5 flex items-start gap-1.5 border-t border-slate-800/60 pt-1.5 text-[11px] text-slate-500">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" />
+          {group.note}
+        </p>
       )}
     </div>
   );

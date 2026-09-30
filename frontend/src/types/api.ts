@@ -59,6 +59,9 @@ export interface ApiQa {
   lufs: number | null;
   true_peak_db: number | null;
   checks: ApiQaCheck[];
+  /** Whisper post-check (T8) status: ran | skipped_draft | skipped_music | skipped_no_asr |
+   *  unavailable. Optional: servers older than phase 6f do not send it. */
+  t8?: string;
 }
 
 export interface ApiCost {
