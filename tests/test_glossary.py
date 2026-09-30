@@ -77,6 +77,9 @@ BANNED = G.banned_claims
         # Decision 28/09/2026 (applied 29/09): bare "nhất" wrongly flagged these.
         ("Thống nhất quy trình từng mẻ", []),
         ("Nhất định phải thử", []),
+        # Dev Package 03, T0: text typed without tone marks is judged the same way.
+        ("Dac tri moi benh", ["đặc trị"]),
+        ("Gia tri that, quan tri chat luong", []),
     ],
 )
 def test_banned_claims_are_phrases(text: str, found: list[str]) -> None:
@@ -88,6 +91,8 @@ def test_banned_list_is_the_agreed_phrase_list() -> None:
         "100%", "duy nhất", "số 1", "hàn the", "điều trị", "đặc trị", "chữa trị",
         "chữa bệnh", "trị bệnh", "phòng bệnh", "ngon nhất", "tốt nhất", "rẻ nhất",
         "chất lượng nhất", "sạch nhất", "uy tín nhất",
+        # Dev Package 03, T0 (decision 01/10/2026): flat list, five more phrases.
+        "thần dược", "không chất bảo quản", "minh long", "atala", "foco",
     }  # fmt: skip
     assert "trị" not in BANNED and "chữa" not in BANNED and "nhất" not in BANNED
 

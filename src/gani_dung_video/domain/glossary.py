@@ -49,6 +49,22 @@ def tokens(text: str) -> list[str]:
     return _TOKEN.findall(unicodedata.normalize("NFC", text).lower())
 
 
+def fold_tokens(text: str) -> list[str]:
+    """Syllables with tone marks removed, so "Thần dược" and "than duoc" compare equal.
+
+    Used for claims only: people type on-screen text without tone marks, and a claim must
+    not slip through that way. The glossary spellings keep their marks (see tokens()).
+
+    Example: "Đặc TRỊ!" → ["dac", "tri"].
+    """
+    return [
+        "".join(c for c in unicodedata.normalize("NFD", t) if not unicodedata.combining(c)).replace(
+            "đ", "d"
+        )
+        for t in tokens(text)
+    ]
+
+
 def _match_at(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
     return bool(pattern) and list(toks[i : i + len(pattern)]) == list(pattern)
 
@@ -89,16 +105,19 @@ def apply_glossary(words: Sequence[Word], terms: Sequence[Term]) -> list[Word]:
 
 
 def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
-    """Return the banned phrases that appear in text as whole syllable sequences (V7).
+    """Return the banned phrases that appear in text as whole syllable sequences (V7, C1).
+
+    Tone marks and case are ignored on both sides ("Dac tri" matches "đặc trị"); syllables
+    still have to be next to each other, so "giá trị" never matches "trị bệnh".
 
     Example:
         >>> find_banned_claims("Giá trị thật, đặc trị mọi bệnh", ["trị bệnh", "đặc trị"])
         ['đặc trị']
     """
-    toks = tokens(text)
+    toks = fold_tokens(text)
     found: list[str] = []
     for phrase in banned:
-        pat = tokens(phrase)
+        pat = fold_tokens(phrase)
         if any(_match_at(toks, i, pat) for i in range(len(toks))):
             found.append(phrase)
     return found
