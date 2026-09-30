@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 
@@ -51,6 +51,9 @@ from gani_dung_video.domain.api_models import (
     ProjectView,
     QaView,
     RunInfo,
+    VerifyCheckView,
+    VerifyRoundView,
+    VerifyView,
     derive_steps,
     eta_sec,
     frontend_status,
@@ -67,10 +70,12 @@ from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules, preflight_check
+from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.queue_db import QueueDb
 from gani_dung_video.infrastructure.settings import Settings
+from gani_dung_video.infrastructure.verify_report_file import read_report, report_path
 
 JOB_KINDS = ("render", "draft", "analyze")
 _REPORT_SLACK_SEC = 2.0  # file systems round modification times
@@ -273,6 +278,44 @@ def _read_footage(folder: Path, job: Job, rules: Rules) -> FootageView | None:
     )  # fmt: skip
 
 
+def _read_verify(ctx: ApiContext, folder: Path, job: Job) -> VerifyView | None:
+    """What the checks said during THIS draft job (phase 6i). The report belongs to the project
+    folder, so one written outside the job's run window is another run's and is not shown."""
+    if job.kind != "draft" or job.status not in ("completed", "failed"):
+        return None
+    path = report_path(folder)
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    if job.started_at is None or mtime < job.started_at - _REPORT_SLACK_SEC:
+        return None
+    if job.finished_at is not None and mtime > job.finished_at + _REPORT_SLACK_SEC:
+        return None
+    report = read_report(path)
+    if report is None:
+        return None
+    rules = ctx.rules
+    labels: Mapping[str, str] = rules.get("verify_labels", {})
+
+    def rows(record: RoundRecord) -> list[VerifyCheckView]:
+        return [VerifyCheckView(code=r.code, label=labels.get(r.code, ""), status=r.status,
+                                detail=_scrub(ctx, job.project_dir, check_detail(r)) or "")
+                for r in check_rows(report.mode, record)]  # fmt: skip
+
+    rounds = [
+        VerifyRoundView(round=r.round, drafts=r.drafts, parsed=r.parsed, passed=r.passed,
+                        cost_vnd=r.cost_vnd, checks=rows(r))
+        for r in report.rounds
+    ]  # fmt: skip
+    final: Literal["passed", "failed", "cost_cap", "api_error", "interrupted"] = (
+        "interrupted" if report.final_status == "running" else report.final_status
+    )
+    return VerifyView(mode=report.mode, final_status=final, rounds_used=len(rounds),
+                      max_rounds=int(rules["ai"]["max_attempts"]),
+                      checks=rounds[-1].checks if rounds else [], rounds=rounds)  # fmt: skip
+
+
 def _plan_is_speech(folder: Path) -> bool | None:
     """Whether the project's plan is speech-driven; None when plan.json cannot be read."""
     with contextlib.suppress(OSError, ValidationError):
@@ -372,7 +415,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         options=_read_options(folder),
         video_url=urls["video"], cover_url=urls["cover"], srt_url=urls["srt"],
         steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
-        footage=_read_footage(folder, job, ctx.rules),
+        footage=_read_footage(folder, job, ctx.rules), verify=_read_verify(ctx, folder, job),
     )  # fmt: skip
 
 

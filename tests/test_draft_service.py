@@ -26,6 +26,7 @@ from gani_dung_video.domain.jobs import parse_estimate_line
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.pick import BlockCandidates, Candidate, PickFile
 from gani_dung_video.domain.plan import compile_plan
+from gani_dung_video.domain.verify_report import VerifyReportFile
 from gani_dung_video.infrastructure.claude_client import AiError, AiReply
 from gani_dung_video.infrastructure.config_files import ConfigError, load_glossary, load_rules
 from gani_dung_video.infrastructure.settings import Settings, SettingsError
@@ -442,3 +443,145 @@ def test_the_cli_prints_no_json_for_an_impossible_plan(
     starve(tmp_path)
     assert main(["draft", str(opt), str(tmp_path), "--dry-run", "--json"]) == 3
     assert parse_estimate_line(capsys.readouterr().out.strip().splitlines()[-1]) is None
+
+
+# ───────────── 6i: every round's V1–V9 findings are kept in edit/verify_report.json ─────────────
+
+
+def report_of(folder: Path) -> VerifyReportFile:
+    return VerifyReportFile.model_validate_json(
+        (folder / "edit" / "verify_report.json").read_text(encoding="utf-8")
+    )
+
+
+def test_a_draft_that_passed_at_once_leaves_a_one_round_report(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    run(tmp_path, FakeClaude({"drafts": [A, B]}))
+    rep = report_of(tmp_path)
+    assert (rep.mode, rep.final_status, len(rep.rounds)) == ("music", "passed", 1)
+    r = rep.rounds[0]
+    assert (r.round, r.passed, r.parsed, r.drafts) == (1, True, True, ["A", "B"])
+    assert (r.input_tokens, r.output_tokens, r.stop_reason) == (9000, 3000, "end_turn")
+    assert r.cost_vnd > 0 and r.findings == []
+
+
+def test_a_check_sent_back_and_fixed_shows_in_both_rounds(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    bad = json.loads(json.dumps(A))
+    bad["segments"][-1]["text"] = "Liên hệ ngay"  # V8: CTA text missing
+    run(tmp_path, FakeClaude({"drafts": [bad, B]}, {"drafts": [A]}))
+    rep = report_of(tmp_path)
+    assert rep.final_status == "passed" and [r.passed for r in rep.rounds] == [False, True]
+    assert [r.drafts for r in rep.rounds] == [["A", "B"], ["A"]]  # only A was asked again
+    first = [(f.code, f.level, f.draft) for f in rep.rounds[0].findings if f.level == "ai"]
+    assert first == [("V8", "ai", "A")] and rep.rounds[1].findings == []
+
+
+def test_auto_fixes_and_warnings_are_kept_but_do_not_fail_a_round(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    odd = json.loads(json.dumps(A))
+    odd["segments"][1]["beats"] = 5  # V3: rounded to an allowed size by code, not by Claude
+    odd["segments"][4]["beats"] = 3  # keeps the total at 20
+    run(tmp_path, FakeClaude({"drafts": [odd, B]}))
+    (r,) = report_of(tmp_path).rounds
+    assert r.passed is True
+    assert {f.code for f in r.findings if f.level == "auto"} == {"V3"}
+
+
+def test_three_failed_rounds_leave_the_whole_history_though_no_drafts_are_written(
+    tmp_path: Path,
+) -> None:
+    """The regression: before 6i a draft that failed wrote nothing, so the reason was lost."""
+    write_folder(tmp_path)
+    with pytest.raises(DraftError):
+        run(tmp_path, FakeClaude("not json", "not json", "not json"))
+    assert not (tmp_path / "edit" / "drafts.json").exists()
+    rep = report_of(tmp_path)
+    assert (rep.final_status, [r.round for r in rep.rounds]) == ("failed", [1, 2, 3])
+    assert all(not r.parsed and not r.passed for r in rep.rounds)
+    assert all([f.code for f in r.findings] == ["V1"] for r in rep.rounds)
+
+
+def test_the_repeated_scene_failure_keeps_each_rounds_messages(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    twice = json.loads(json.dumps(A))
+    twice["segments"][1]["scene_id"] = cid(0, 0)  # V4: the hook's scene used again
+    with pytest.raises(DraftError):
+        run(tmp_path, FakeClaude({"drafts": [twice, B]}, {"drafts": [twice]}, {"drafts": [twice]}))
+    rep = report_of(tmp_path)
+    assert rep.final_status == "failed" and len(rep.rounds) == 3
+    assert all(r.parsed for r in rep.rounds)
+    for r in rep.rounds:
+        v4 = [f for f in r.findings if f.code == "V4" and f.level == "ai"]
+        assert v4 and cid(0, 0) in v4[0].msg
+
+
+def test_cost_cap_is_recorded_with_the_rounds_paid_so_far(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    cap = {**RULES, "ai": {**RULES["ai"], "max_tokens": 4000, "cost_cap_vnd": {"60": 2500}}}
+    with pytest.raises(CostCapReached):
+        run(tmp_path, FakeClaude("not json", {"drafts": [A, B]}, tokens=(9000, 4000)), cap)
+    rep = report_of(tmp_path)
+    assert rep.final_status == "cost_cap" and [r.round for r in rep.rounds] == [1]
+
+
+def test_a_cap_hit_before_any_call_is_recorded_with_no_rounds(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    tight = {**RULES, "ai": {**RULES["ai"], "cost_cap_vnd": {"60": 1000}}}
+    with pytest.raises(CostCapReached):
+        run(tmp_path, FakeClaude({"drafts": [A, B]}), tight)
+    rep = report_of(tmp_path)
+    assert (rep.final_status, rep.rounds) == ("cost_cap", [])
+
+
+def test_a_failed_api_call_is_recorded_as_api_error(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+
+    def broken(system: str, user: str, schema: Mapping[str, Any]) -> AiReply:
+        raise AiError("Claude API trả lỗi 400: credit balance is too low")
+
+    with pytest.raises(AiError):
+        build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, caller=broken)
+    rep = report_of(tmp_path)
+    assert (rep.final_status, rep.rounds) == ("api_error", [])
+    assert "credit" not in (tmp_path / "edit" / "verify_report.json").read_text(encoding="utf-8")
+
+
+def test_the_report_grows_round_by_round_so_an_interrupted_job_keeps_its_history(
+    tmp_path: Path,
+) -> None:
+    write_folder(tmp_path)
+    seen: list[VerifyReportFile] = []
+    fake = FakeClaude("not json", {"drafts": [A, B]})
+
+    def spy(system: str, user: str, schema: Mapping[str, Any]) -> AiReply:
+        if fake.prompts:  # the second call: round 1 must already be on disk, still "running"
+            seen.append(report_of(tmp_path))
+        return fake(system, user, schema)
+
+    build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, caller=spy)
+    assert [(r.final_status, len(r.rounds)) for r in seen] == [("running", 1)]
+    assert report_of(tmp_path).final_status == "passed"
+
+
+def test_a_report_that_cannot_be_written_never_breaks_the_draft(tmp_path: Path) -> None:
+    """Money is already spent when the report is written: a disk fault must not lose the drafts."""
+    write_folder(tmp_path)
+    (tmp_path / "edit" / "verify_report.json").mkdir()  # a folder where the file should go
+    result, path = run(tmp_path, FakeClaude({"drafts": [A, B]}))
+    assert isinstance(result, DraftsFile) and path is not None and path.is_file()
+
+
+def test_the_next_run_replaces_the_old_report(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    with pytest.raises(DraftError):
+        run(tmp_path, FakeClaude("not json", "not json", "not json"))
+    run(tmp_path, FakeClaude({"drafts": [A, B]}))
+    rep = report_of(tmp_path)
+    assert rep.final_status == "passed" and len(rep.rounds) == 1
+
+
+def test_a_dry_run_writes_no_report(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, dry_run=True)
+    assert not (tmp_path / "edit" / "verify_report.json").exists()

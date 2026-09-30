@@ -29,6 +29,7 @@ from gani_dung_video.domain.pick import BlockCandidates, Candidate, PickFile
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.speech_edit import Phrase, PhrasesFile
+from gani_dung_video.domain.verify_report import VerifyReportFile
 from gani_dung_video.infrastructure.claude_client import AiError, AiReply
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
 from gani_dung_video.infrastructure.settings import Settings, SettingsError
@@ -335,3 +336,70 @@ def test_cli_draft_failure_exit_1_for_speech(
     monkeypatch.setattr(speech_draft_service, "make_caller",
                         lambda key, model, cfg: FakeClaude("x", "x", "x"))  # fmt: skip
     assert main(["draft", str(opt), str(tmp_path)]) == 1
+
+
+# ───────────── 6i: every round's S1–S6 findings are kept in edit/verify_report.json ─────────────
+
+
+def report_of(folder: Path) -> VerifyReportFile:
+    return VerifyReportFile.model_validate_json(
+        (folder / "edit" / "verify_report.json").read_text(encoding="utf-8")
+    )
+
+
+def test_a_speech_draft_that_passed_leaves_a_speech_mode_report(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    run(tmp_path, FakeClaude({"drafts": [A, B]}))
+    rep = report_of(tmp_path)
+    assert (rep.mode, rep.final_status, len(rep.rounds)) == ("speech", "passed", 1)
+    r = rep.rounds[0]
+    assert (r.round, r.passed, r.parsed, r.drafts) == (1, True, True, ["A", "B"])
+    assert (r.input_tokens, r.output_tokens) == (9000, 3000) and r.cost_vnd > 0
+
+
+def test_a_speech_check_sent_back_and_fixed_shows_in_both_rounds(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    bad = json.loads(json.dumps(A))
+    bad["segments"][0]["broll"] = "br0"  # S1: B-roll on the opening phrase
+    run(tmp_path, FakeClaude({"drafts": [bad, B]}, {"drafts": [A]}))
+    rep = report_of(tmp_path)
+    assert rep.final_status == "passed" and [r.passed for r in rep.rounds] == [False, True]
+    assert [r.drafts for r in rep.rounds] == [["A", "B"], ["A"]]
+    assert ("S1", "A") in [(f.code, f.draft) for f in rep.rounds[0].findings if f.level == "ai"]
+    assert not [f for f in rep.rounds[1].findings if f.level == "ai"]
+
+
+def test_three_failed_speech_rounds_leave_the_history_and_no_drafts(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    with pytest.raises(SpeechDraftError):
+        run(tmp_path, FakeClaude("not json", "not json", "not json"))
+    assert not (tmp_path / "edit" / "speech_drafts.json").exists()
+    rep = report_of(tmp_path)
+    assert (rep.mode, rep.final_status, [r.round for r in rep.rounds]) == (
+        "speech",
+        "failed",
+        [1, 2, 3],
+    )
+    assert all([f.code for f in r.findings] == ["S1"] and not r.parsed for r in rep.rounds)
+
+
+def test_speech_cost_cap_and_api_errors_are_recorded(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    tight = {**RULES, "ai": {**RULES["ai"], "cost_cap_vnd": {"60": 1000}}}
+    with pytest.raises(SpeechCostCapReached):
+        run(tmp_path, FakeClaude({"drafts": [A, B]}), tight)
+    assert (report_of(tmp_path).final_status, report_of(tmp_path).rounds) == ("cost_cap", [])
+
+    def broken(system: str, user: str, schema: Mapping[str, Any]) -> AiReply:
+        raise AiError("Claude API trả lỗi 400: credit balance is too low")
+
+    with pytest.raises(AiError):
+        build_speech_drafts(tmp_path / "o.json", tmp_path, RULES, caller=broken)
+    assert report_of(tmp_path).final_status == "api_error"
+
+
+def test_a_speech_report_that_cannot_be_written_never_breaks_the_draft(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    (tmp_path / "edit" / "verify_report.json").mkdir()
+    result, path = run(tmp_path, FakeClaude({"drafts": [A, B]}))
+    assert isinstance(result, SpeechDraftsResult) and path is not None and path.is_file()

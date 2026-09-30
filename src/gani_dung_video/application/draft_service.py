@@ -20,6 +20,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from gani_dung_video.application.verify_recorder import VerifyRecorder
 from gani_dung_video.domain.beats import (
     DraftSegment,
     SceneRef,
@@ -41,6 +42,7 @@ from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, beats_of
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.verify import Issue, VerifyContext, parse_response, verify_drafts
+from gani_dung_video.domain.verify_report import make_round
 from gani_dung_video.infrastructure.claude_client import AiError, AiReply, Caller, make_caller
 from gani_dung_video.infrastructure.config_files import (
     ConfigError,
@@ -207,7 +209,7 @@ def _check_budget(job: _Job, spent: float, prompt: str, rules: Rules) -> None:
             spent=spent, next=worst, cap=job.cap, duration=job.duration))  # fmt: skip
 
 
-def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
+def _loop(job: _Job, caller: Caller, model: str, rules: Rules, rec: VerifyRecorder) -> DraftsFile:
     letters_all = job.ctx.expected
     letters: list[str] = list(letters_all)
     kept: dict[str, AiDraft] = {}
@@ -237,6 +239,8 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
              input_tokens=reply.input_tokens, output_tokens=reply.output_tokens, cost_vnd=cost,
              spent_vnd=round(spent, 2), stop_reason=reply.stop_reason,
              issues=sorted({i.code for i in issues if i.level == "ai"}))  # fmt: skip
+        rec.add(make_round(attempt, letters, resp is not None, cost, reply.input_tokens,
+                           reply.output_tokens, reply.stop_reason, issues))  # fmt: skip
         if not bad:
             return DraftsFile(model=reply.model, attempts=attempt, input_tokens=tok_in,
                               output_tokens=tok_out, cost_vnd=round(spent, 2), cap_vnd=job.cap,
@@ -253,6 +257,24 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
     raise DraftError(rules["input_msgs"]["DRAFT_FAILED"].format(
         attempts=int(job.cfg["max_attempts"]), issues=left),
         [i for i in issues if i.level == "ai"])  # fmt: skip
+
+
+def _recorded(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
+    """Run the loop and leave edit/verify_report.json saying how it ended (6i)."""
+    rec = VerifyRecorder(job.folder, "music")
+    try:
+        result = _loop(job, caller, model, rules, rec)
+    except CostCapReached:
+        rec.finish("cost_cap")
+        raise
+    except AiError:
+        rec.finish("api_error")
+        raise
+    except DraftError:
+        rec.finish("failed")
+        raise
+    rec.finish("passed")
+    return result
 
 
 def build_drafts(
@@ -291,7 +313,7 @@ def build_drafts(
                       cap_vnd=job.cap, max_attempts=int(job.cfg["max_attempts"])), None  # fmt: skip
     if caller is None:
         caller = make_caller(require_api_key(settings), model, job.cfg)
-    result = _loop(job, caller, model, rules)
+    result = _recorded(job, caller, model, rules)
     path = folder / EDIT_DIR / OUT_FILE
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(result.model_dump_json(indent=1), encoding="utf-8")
