@@ -265,12 +265,14 @@
   },
   "font_px": {
    "caption": 72,
+   "chapter_title": 88,
    "cta": 80,
    "logo": 64,
    "end_card_logo": 160,
    "end_card_text": 64,
    "karaoke": 68
   },
+  "chapter_title_offset": 130,
   "speech_cta_extra_margin": 140,
   "brand": {
    "logo_text": "GANI",
@@ -286,6 +288,8 @@
  "qc": {
   "lufs_tolerance": 1.0,
   "max_true_peak_db": -1.0,
+  "min_true_peak_db": -6.0,
+  "peak_retry_margin_db": 0.3,
   "silence_lufs": -60.0,
   "black_min_sec": 0.2,
   "black_pix_th": 0.1,
@@ -304,7 +308,8 @@
    "span_margin_sec": 0.3
   }
  },
-  "_ghi_chu_queue": "Hàng đợi dựng (GĐ6a, chốt 29/09/2026, đặc tả §8.3.1 Option B). Daemon hỏi hàng đợi mỗi poll_sec giây, mỗi job là một tiến trình con gọi lệnh render của CLI (tuần tự, một job một lúc). Job tự thử lại tối đa max_attempts lần (kể cả lần đầu), chờ retry_delay_sec giữa các lần; QC không đạt KHÔNG thử lại; job tốn phí API (draft) không bao giờ tự thử lại. shutdown_grace_sec: dừng nhẹ nhàng chờ job đang chạy xong tối đa từng ấy giây rồi trả job về hàng đợi (--now: trả ngay). stall_sec: tiến trình con im lặng (không dòng nào, không file nào trong thư mục render đổi) quá từng ấy giây bị kill (spec ghi 5 phút, quá ngắn cho QC/Whisper trên CPU). daemon_stale_sec: nhịp tim daemon cũ hơn thì coi là đã chết. job_stale_sec: job đang chạy mà nhịp tim cũ hơn thì coi là mồ côi. leftover_kill_max_age_sec: sau sập, chỉ kill tiến trình con còn sót nếu nhịp tim cuối chưa cũ quá (tránh kill nhầm khi pid bị tái dùng sau khi máy khởi động lại). expected_sec: thời gian dựng dự kiến, chỉ để ước tính % tiến độ. analyze_stall_sec / analyze_timeout_sec (GĐ6c-1, chốt 29/09/2026): job phân tích (inventory → transcribe → scenes → semantics, mỗi giai đoạn là một tiến trình con) có ngưỡng treo riêng 1800s và trần tổng 4 giờ, vì CLIP trên Dell chạy ~17 phút cho 9 clip; nhờ dòng log tiến độ `[clip N/M]` của semantics nên watchdog vẫn có tín hiệu. stage_expected_sec: thời gian dự kiến từng giai đoạn, chỉ để ước tính % tiến độ. Job kịch bản (draft, GĐ6c-2, chốt 29/09/2026) gồm 2 pha: pha miễn phí (plan → pick → phrases nếu phong cách dẫn lời → `draft --dry-run --json`) rồi CHỜ DUYỆT (`queue approve ID --max-vnd N --estimate M`, cả hai bắt buộc); chỉ sau duyệt mới chạy pha tính phí (kiểm lại ước tính, rồi `draft --max-vnd N`). approval_ttl_sec: hết hạn duyệt (mặc định 24 giờ) thì job tự hủy. project_lock / project_lock_grace_sec (GĐ6d, chốt 30/09/2026): một thư mục dự án chỉ cho MỘT hàng đợi (queue.db) làm việc tại một thời điểm; tệp edit/.project.lock ghi queue.db đang giữ. Khóa còn hiệu lực khi hàng đợi đó còn job chờ/đang chạy/chờ duyệt cho thư mục (hoặc khóa mới hơn grace giây, vì chủ khóa lấy nó trong giao dịch chưa commit); hàng đợi chủ mất hoặc hết job thì khóa cũ và bị chiếm; đọc không được thì coi là còn hiệu lực (từ chối an toàn hơn cướp khóa). Lệnh chạy tay (plan/pick/draft/render) không kiểm tra khóa. Gỡ khẩn cấp: xóa tay tệp khóa; project_lock = false để tắt. daily_budget_vnd: hạn mức chi tiêu API mỗi 24 giờ, mặc định 100000đ (bật từ 30/09/2026, anh chốt; trần cost_cap_vnd chỉ áp cho MỘT lần chạy draft, `queue retry` mở một lần chạy mới, nên đây là lưới an toàn cộng dồn); từ chối duyệt khi (đã tiêu 24 giờ + đã đặt cọc + số duyệt mới) vượt hạn mức. null = tắt. draft_stall_sec / draft_timeout_sec: ngưỡng treo và trần cho các giai đoạn của job kịch bản. Job kịch bản không bao giờ tự thử lại (max_attempts = 1).",
+  "_ghi_chu_render_180": "Đo ngày 01/10/2026 trên Dell i5-8265U, 12 GB, video giả lập 180 giây (47 cảnh, đồ thị ffmpeg một lần, có tiêu đề chương): nháp 540p 147 giây mỗi vòng dựng (304 giây khi QC bắt dựng lại vòng 2), ffmpeg đỉnh ≈ 1,36 GB RAM; bản cuối 1080×1920 999 giây cho hai vòng (≈ 7–8 phút mỗi vòng), ffmpeg đỉnh ≈ 2,42 GB, file 209 MB. render_sec_per_video_sec = giây dựng mỗi giây video gồm cả vòng dựng lại (nháp 1,7; cuối 5,5): expected_sec của hàng đợi = max(expected_sec, hệ số × độ dài video) cho thanh tiến độ/ETA; cửa sổ treo stall_sec không thấp hơn expected (ffmpeg im lặng hàng phút trong một vòng); timeout không thấp hơn 2 × expected. Video 15–30 giây giữ nguyên giới hạn cũ.",
+ "_ghi_chu_queue": "Hàng đợi dựng (GĐ6a, chốt 29/09/2026, đặc tả §8.3.1 Option B). Daemon hỏi hàng đợi mỗi poll_sec giây, mỗi job là một tiến trình con gọi lệnh render của CLI (tuần tự, một job một lúc). Job tự thử lại tối đa max_attempts lần (kể cả lần đầu), chờ retry_delay_sec giữa các lần; QC không đạt KHÔNG thử lại; job tốn phí API (draft) không bao giờ tự thử lại. shutdown_grace_sec: dừng nhẹ nhàng chờ job đang chạy xong tối đa từng ấy giây rồi trả job về hàng đợi (--now: trả ngay). stall_sec: tiến trình con im lặng (không dòng nào, không file nào trong thư mục render đổi) quá từng ấy giây bị kill (spec ghi 5 phút, quá ngắn cho QC/Whisper trên CPU). daemon_stale_sec: nhịp tim daemon cũ hơn thì coi là đã chết. job_stale_sec: job đang chạy mà nhịp tim cũ hơn thì coi là mồ côi. leftover_kill_max_age_sec: sau sập, chỉ kill tiến trình con còn sót nếu nhịp tim cuối chưa cũ quá (tránh kill nhầm khi pid bị tái dùng sau khi máy khởi động lại). expected_sec: thời gian dựng dự kiến, chỉ để ước tính % tiến độ. analyze_stall_sec / analyze_timeout_sec (GĐ6c-1, chốt 29/09/2026): job phân tích (inventory → transcribe → scenes → semantics, mỗi giai đoạn là một tiến trình con) có ngưỡng treo riêng 1800s và trần tổng 4 giờ, vì CLIP trên Dell chạy ~17 phút cho 9 clip; nhờ dòng log tiến độ `[clip N/M]` của semantics nên watchdog vẫn có tín hiệu. stage_expected_sec: thời gian dự kiến từng giai đoạn, chỉ để ước tính % tiến độ. Job kịch bản (draft, GĐ6c-2, chốt 29/09/2026) gồm 2 pha: pha miễn phí (plan → pick → phrases nếu phong cách dẫn lời → `draft --dry-run --json`) rồi CHỜ DUYỆT (`queue approve ID --max-vnd N --estimate M`, cả hai bắt buộc); chỉ sau duyệt mới chạy pha tính phí (kiểm lại ước tính, rồi `draft --max-vnd N`). approval_ttl_sec: hết hạn duyệt (mặc định 24 giờ) thì job tự hủy. project_lock / project_lock_grace_sec (GĐ6d, chốt 30/09/2026): một thư mục dự án chỉ cho MỘT hàng đợi (queue.db) làm việc tại một thời điểm; tệp edit/.project.lock ghi queue.db đang giữ. Khóa còn hiệu lực khi hàng đợi đó còn job chờ/đang chạy/chờ duyệt cho thư mục (hoặc khóa mới hơn grace giây, vì chủ khóa lấy nó trong giao dịch chưa commit); hàng đợi chủ mất hoặc hết job thì khóa cũ và bị chiếm; đọc không được thì coi là còn hiệu lực (từ chối an toàn hơn cướp khóa). Lệnh chạy tay (plan/pick/draft/render) không kiểm tra khóa. Gỡ khẩn cấp: xóa tay tệp khóa; project_lock = false để tắt. daily_budget_vnd: hạn mức chi tiêu API mỗi 24 giờ, mặc định 100000đ (bật từ 30/09/2026, anh chốt; trần cost_cap_vnd chỉ áp cho MỘT lần chạy draft, `queue retry` mở một lần chạy mới, nên đây là lưới an toàn cộng dồn); từ chối duyệt khi (đã tiêu 24 giờ + đã đặt cọc + số duyệt mới) vượt hạn mức. null = tắt. draft_stall_sec / draft_timeout_sec: ngưỡng treo và trần cho các giai đoạn của job kịch bản. Job kịch bản không bao giờ tự thử lại (max_attempts = 1).",
  "queue": {
   "poll_sec": 2,
   "max_attempts": 2,
@@ -316,6 +321,7 @@
   "leftover_kill_max_age_sec": 1200,
   "timeout_sec": {"render_preview": 1800, "render_final": 5400},
   "expected_sec": {"render_preview": 60, "render_final": 300},
+  "render_sec_per_video_sec": {"render_preview": 1.7, "render_final": 5.5},
   "analyze_stall_sec": 1800,
   "analyze_timeout_sec": 14400,
   "stage_expected_sec": {

@@ -1153,3 +1153,15 @@ def test_a_chapter_plan_report_shows_the_v10_row_before_snap(ctx: ApiContext, ro
     assert codes[-3:] == ["V9", "V10", "SNAP"]
     row = next(c for c in v.checks if c.code == "V10")
     assert row.label == RULES["verify_labels"]["V10"] and row.status == "pass"
+
+
+def test_the_eta_of_a_three_minute_render_is_not_the_fixed_guess(ctx: ApiContext,
+                                                                 root: Path) -> None:  # fmt: skip
+    jid = queue_one(ctx, root)
+    (root / "footage" / "edit").mkdir(parents=True, exist_ok=True)
+    (root / "footage" / "edit" / "plan.json").write_text(
+        json.dumps({"options": {"duration": 180}}), encoding="utf-8"
+    )
+    ctx.db.claim(time.time() - 10, 1)
+    v = get_job(ctx, jid)
+    assert v.eta_sec is not None and v.eta_sec > RULES["queue"]["expected_sec"]["render_preview"]

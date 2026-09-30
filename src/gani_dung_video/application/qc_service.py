@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
@@ -39,6 +39,7 @@ from gani_dung_video.domain.qc import (
     check_measures,
     check_media,
     fit_font_px,
+    fit_keys,
 )
 from gani_dung_video.domain.speech import fix_names
 from gani_dung_video.infrastructure.ffmpeg_render import RenderError
@@ -46,7 +47,20 @@ from gani_dung_video.infrastructure.media_probe import measure as measure_file
 from gani_dung_video.infrastructure.media_probe import probe_media
 from gani_dung_video.infrastructure.whisper_asr import AsrError, Transcriber
 
-RenderFn = Callable[[Mapping[str, int], Mapping[str, float] | None], None]
+
+class RenderFn(Protocol):
+    """Render one round. `true_peak_db` (only given after a peak the encoder made, phase 7d)
+    replaces the ceiling the mix is limited to."""
+
+    def __call__(
+        self,
+        font_px: Mapping[str, int],
+        loudnorm: Mapping[str, float] | None,
+        /,
+        true_peak_db: float | None = None,
+    ) -> None: ...
+
+
 LoudnessPass1 = Callable[[], Mapping[str, float]]
 Prober = Callable[[Path, float], MediaFacts]
 Measurer = Callable[[Path, Mapping[str, Any], float, float], Measures]
@@ -98,7 +112,7 @@ def _finite(x: float | None) -> float | None:
 
 def _before_render(e: Edl, rules: Rules, width: WidthFn
                    ) -> tuple[dict[str, int] | None, list[str], list[Finding]]:  # fmt: skip
-    base = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in ("caption", "cta")}
+    base = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in fit_keys(e)}
     found = check_captions(e, rules, base, width)
     stop = [f for f in found if f.code == "T6"]
     if stop:
@@ -116,6 +130,15 @@ def _before_render(e: Edl, rules: Rules, width: WidthFn
     return sizes, fixes, []
 
 
+def _lower_ceiling(e: Edl, m: Measures, rules: Rules) -> float:
+    """The ceiling to limit the mix to on the next render: aim `margin` under the limit after the
+    encoder adds what it added this time (peak measured minus the ceiling that was asked for)."""
+    cfg = rules["qc"]
+    added = m.true_peak_db - e.true_peak_db
+    aim = float(cfg["max_true_peak_db"]) - added - float(cfg["peak_retry_margin_db"])
+    return round(max(aim, float(cfg["min_true_peak_db"])), 1)
+
+
 def render_checked(
     e: Edl, video: Path, rules: Rules, render: RenderFn, loudness_pass1: LoudnessPass1,
     width: WidthFn, probe: Prober = probe_media, measure: Measurer = measure_file,
@@ -126,17 +149,30 @@ def render_checked(
         return QcReport(video=video.name, passed=False, rounds=0, font_px={},
                         loudness_two_pass=False, fixes=[], findings=stop)  # fmt: skip
     loud: Mapping[str, float] | None = None
+    ceiling: float | None = None  # lowered true-peak ceiling, set once after an encoder peak
     found: list[Finding] = []
     measures: Measures | None = None
     rounds = 0
     for rounds in range(1, int(rules["qc"]["max_rounds"]) + 1):
-        render(sizes, loud)
+        if ceiling is None:
+            render(sizes, loud)
+        else:
+            render(sizes, loud, true_peak_db=ceiling)
         found, measures = check_file_measured(video, e, rules, probe, measure)
-        if any(f.level == "error" for f in found) or not any(f.fix == "loudness" for f in found):
+        fixable = {f.fix for f in found if f.fix in ("loudness", "peak")}
+        if any(f.level == "error" for f in found) or not fixable:
             break
-        if rounds < int(rules["qc"]["max_rounds"]):
+        if rounds >= int(rules["qc"]["max_rounds"]):
+            break
+        if "peak" in fixable and ceiling is None and measures is not None:
+            ceiling = _lower_ceiling(e, measures, rules)
+            fixes.append(f"T3: dựng lại vòng {rounds + 1} với trần đỉnh {ceiling:g} dBTP "
+                         "(bộ mã hóa AAC làm đỉnh cao hơn mức đã giới hạn)")  # fmt: skip
+        elif "loudness" in fixable:  # measured again each round, as before phase 7d
             loud = loudness_pass1()
             fixes.append(f"T3: dựng lại vòng {rounds + 1} với chuẩn hóa âm lượng 2 lượt")
+        else:
+            break  # a lower ceiling was already tried: report it instead of looping
     passed = not any(f.level in ("error", "fix") for f in found)
     return QcReport(video=video.name, passed=passed, rounds=rounds, font_px=sizes,
                     loudness_two_pass=loud is not None, fixes=fixes, findings=found,

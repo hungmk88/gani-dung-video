@@ -13,7 +13,7 @@ import json
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -146,6 +146,23 @@ def judge_run(
         return Verdict(status="completed", result="qc_failed", retry=False, message=msg)
     return Verdict(status="failed", result=None, retry=True,
                    message=f"Tiến trình dựng lỗi (mã thoát {exit_code}).")  # fmt: skip
+
+
+def render_limits(cfg: Mapping[str, Any], final: bool, video_sec: float | None
+                  ) -> tuple[float, float, float]:  # fmt: skip
+    """(expected, stall, timeout) seconds of a render job; they grow with the video (phase 7d).
+
+    The fixed `expected_sec` fit 15–30 s videos. A 182 s video measured 304 s in preview and
+    999 s in final (two render rounds each) on the Dell, and ffmpeg prints nothing for minutes
+    during a round, so the stall window cannot stay at 600 s: a healthy job would be killed.
+    """
+    kind = "render_final" if final else "render_preview"
+    base = float(cfg["expected_sec"][kind])
+    per = float(cfg.get("render_sec_per_video_sec", {}).get(kind, 0.0))
+    expected = max(base, per * (video_sec or 0.0))
+    stall = max(float(cfg["stall_sec"]), expected)
+    timeout = max(float(cfg["timeout_sec"][kind]), 2.0 * expected)
+    return expected, stall, timeout
 
 
 def estimate_progress(elapsed_sec: float, expected_sec: float) -> float:

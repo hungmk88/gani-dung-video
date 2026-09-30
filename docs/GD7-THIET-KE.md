@@ -256,3 +256,21 @@ Cho đến khi anh chốt Q1–Q4, em không mở nhánh hay viết code GĐ7.
 - **Đo trên bộ giả (ước tính offline, không gọi Claude):** 13 khối, 136 ứng viên, prompt ≈ 13.710 token vào; một lần gọi xấu nhất (vào + `max_tokens` 16.000) ≈ 4.779đ; câu trả lời hợp lệ của 2 bản ≈ 98 cảnh ≈ 6.000 token ra nhìn thấy (chưa tính token suy nghĩ). Khớp dự báo ở mục 3.2; số thật chỉ có ở 7e.
 - `SnappedDraft.chapter_titles` mang tiêu đề sang bước dựng (7d vẽ chữ đè `title_beats` phách đầu chương).
 
+### Ghi chú triển khai 7d (số đo thật trên máy dựng)
+
+Dự án giả: 47 cảnh lấy từ 9 clip thật, nhạc 84 BPM dài 200s, 3 chương có tiêu đề, bản 180s, đồ thị ffmpeg **một lần** (như bản ngắn). Máy: Dell i5-8265U, 12 GB RAM (còn trống ≈ 0,6–1,9 GB lúc đo vì các ứng dụng khác).
+
+| | Nháp 540p | Bản cuối 1080×1920 |
+|---|---|---|
+| Một vòng dựng + soát | 147 s | ≈ 7–8 phút |
+| Cả lượt (QC bắt dựng lại vòng 2) | 304 s | 999 s |
+| ffmpeg đỉnh RAM | ≈ 1,36 GB | ≈ 2,42 GB |
+| File | 63 MB | 209 MB |
+
+- **Kết luận đồ thị:** 47 ngõ vào không tràn RAM, không lệch timebase; **giữ đồ thị một lần**, không cần phương án dựng từng chương rồi nối. Phương án đó vẫn là đường lui nếu sau này cảnh nhiều hơn hoặc máy ít RAM hơn.
+- **Tiêu đề chương:** `Caption(kind="title")` từ `draft.chapter_titles`, vẽ bằng ASS (style `ChapterTitle`, giữa-trên, dưới hàng logo: `render.chapter_title_offset`, cỡ `font_px.chapter_title` 88) trong `title_beats` phách đầu chương, không chèn thời lượng. Tiêu đề không vào `phude.srt` (không phải phụ đề và sẽ chồng dòng đầu). QC: tiêu đề nằm làn trên, không tính T6 chồng chữ với chữ dưới; T7 co cỡ riêng `chapter_title`.
+- **Chuyển cảnh:** dissolve của phong cách chỉ diễn ra khi **đổi chương** (hook → chương → chương → CTA), không giữa các tiểu khối trong một chương.
+- **Đỉnh âm thanh (phát hiện nhờ bản 180s, không riêng độ dài):** mix trước khi mã hóa −14,0 LUFS / −1,9 dBTP, sau AAC −0,3 dBTP (QC trượt). Dựng hai lượt loudnorm không đổi gì (đo: −1,9 cả hai). Nay khi âm lượng đúng mà đỉnh vượt, QC dựng lại **một lần** với trần đỉnh thấp hơn bằng đúng phần bộ mã hóa đã cộng thêm (`qc.peak_retry_margin_db` 0,3, sàn `qc.min_true_peak_db` −6): trần −3 dBTP cho ra −14,3 LUFS / −1,6 dBTP, QC đạt. Còn trượt thì dừng, không lặp.
+- **Giới hạn hàng đợi theo độ dài:** `queue.render_sec_per_video_sec` (nháp 1,7; cuối 5,5). `expected_sec` (thanh tiến độ, ETA) = max(giá trị cũ, hệ số × độ dài video); cửa sổ treo `stall_sec` không thấp hơn `expected` (ffmpeg im lặng hàng phút trong một vòng: 600 s sẽ giết job khỏe); `timeout` không thấp hơn 2 × `expected`. Video 15–30s giữ nguyên.
+- **Chưa đo:** nhạc ngắn hơn 180s (đường lặp X13 ở quy mô này), clip HDR/4K, footage thật của xưởng (7e).
+

@@ -139,10 +139,10 @@ def check_measures(m: Measures, e: Edl, cfg: Mapping[str, Any]) -> list[Finding]
                            msg=f"Âm lượng {m.lufs:g} LUFS, đỉnh {m.true_peak_db:g} dBTP (cần "
                                f"{e.lufs:g} ±{tol:g} LU, đỉnh ≤ {peak_max:g})."))  # fmt: skip
     elif m.true_peak_db > peak_max:  # loudness right: the encoder made the peak, not the mix
-        out.append(Finding(code="T3", level="error",
+        out.append(Finding(code="T3", level="fix", fix="peak",
                            msg=f"Âm lượng đạt ({m.lufs:g} LUFS) nhưng đỉnh thật {m.true_peak_db:g} "
-                               f"dBTP > {peak_max:g} sau khi mã hóa — tăng bitrate âm thanh "
-                               "hoặc hạ trần đỉnh trong rules.json."))  # fmt: skip
+                               f"dBTP > {peak_max:g} sau khi mã hóa — dựng lại với trần đỉnh thấp "
+                               "hơn, hoặc tăng bitrate âm thanh trong rules.json."))  # fmt: skip
     end_card = [(e.content_end, e.duration)]
     for a, b in m.blacks:
         if _outside((a, b), end_card) >= float(cfg["black_min_sec"]):
@@ -177,11 +177,25 @@ def _usable_width(rules: Rules) -> float:
     return float(PLAY_W - int(safe["left"]) - int(safe["right"]))
 
 
+_SIZE_KEY = {"cta": "cta", "title": "chapter_title"}  # every other kind is "caption"
+
+
+def fit_keys(e: Edl) -> tuple[str, ...]:
+    """The font sizes T7 may step down for this video: the chapter title only when it has one."""
+    has_title = any(c.kind == "title" for c in e.captions)
+    return ("caption", "cta", "chapter_title") if has_title else ("caption", "cta")
+
+
+def size_key(kind: str) -> str:
+    """Which font size of rules.render.font_px a caption of this kind uses."""
+    return _SIZE_KEY.get(kind, "caption")
+
+
 def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
     max_lines, usable = int(rules["qc"]["max_lines"]), _usable_width(rules)
     out = []
     for c in e.captions:
-        size = int(px["cta" if c.kind == "cta" else "caption"])
+        size = int(px[size_key(c.kind)])
 
         def measure_line(t: str, s: int = size) -> float:
             return width(t, e.font, s)
@@ -195,19 +209,25 @@ def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> li
 
 
 def check_captions(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
-    """T6 two captions on screen at once; T7 a caption needs more than the allowed lines."""
+    """T6 two captions on screen at once; T7 a caption needs more than the allowed lines.
+
+    A chapter title is drawn at the top of the frame, the other captions at the bottom: they
+    are two lanes, and only captions in the same lane can overlap."""
     out = []
-    caps = sorted(e.captions, key=lambda c: c.start)
-    for a, b in itertools.pairwise(caps):
-        if b.start < a.end - 1e-6:
-            out.append(
-                Finding(
-                    code="T6",
-                    level="error",
-                    at_sec=b.start,
-                    msg=f"Chữ '{a.text}' và '{b.text}' hiện chồng lên nhau.",
+    for lane in (
+        [c for c in e.captions if c.kind == "title"],
+        [c for c in e.captions if c.kind != "title"],
+    ):
+        for a, b in itertools.pairwise(sorted(lane, key=lambda c: c.start)):
+            if b.start < a.end - 1e-6:
+                out.append(
+                    Finding(
+                        code="T6",
+                        level="error",
+                        at_sec=b.start,
+                        msg=f"Chữ '{a.text}' và '{b.text}' hiện chồng lên nhau.",
+                    )
                 )
-            )
     return out + _too_long(e, rules, px, width)
 
 
@@ -218,7 +238,7 @@ def fit_font_px(
     even the floor (64 px) does not fit — then the text itself must be shortened."""
     step, floor = int(rules["qc"]["font_step_px"]), int(rules["qc"]["font_min_px"])
     sizes = dict(px)
-    kind_of = {c.start: ("cta" if c.kind == "cta" else "caption") for c in e.captions}
+    kind_of = {c.start: size_key(c.kind) for c in e.captions}
     while found := _too_long(e, rules, sizes, width):
         over = {kind_of[f.at_sec] for f in found if f.at_sec is not None}
         if all(sizes[k] <= floor for k in over):

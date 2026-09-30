@@ -133,12 +133,17 @@ def test_loudness_off_asks_for_the_two_pass_fix(lufs: float, tp: float) -> None:
     assert codes(found) == ["T3"] and found[0].level == "fix" and found[0].fix == "loudness"
 
 
-def test_only_the_peak_too_high_is_an_error_a_second_pass_cannot_fix() -> None:
+def test_only_the_peak_too_high_asks_for_a_lower_ceiling_not_a_second_loudness_pass() -> None:
     # Found 29/09/2026: the mix was -1.8 dBTP, the AAC encoder pushed it to +0.6; three
-    # two-pass re-renders changed nothing. Loudness right + peak high = encoder problem.
+    # two-pass re-renders changed nothing. Loudness right + peak high = encoder problem, so the
+    # fix (phase 7d) is to lower the ceiling the mix is limited to by what the encoder added.
     found = check_measures(m(lufs=-14.2, tp=0.6), edl(), QC)
-    assert codes(found) == ["T3"] and found[0].level == "error" and found[0].fix is None
+    assert codes(found) == ["T3"] and found[0].level == "fix" and found[0].fix == "peak"
     assert "đỉnh" in found[0].msg
+
+
+def test_a_peak_just_inside_the_limit_needs_nothing() -> None:
+    assert check_measures(m(lufs=-14.2, tp=-1.0), edl(), QC) == []
 
 
 def test_a_video_planned_silent_skips_loudness() -> None:

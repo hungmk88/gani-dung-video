@@ -39,13 +39,18 @@ class Rig:
     """Fake render/probe/measure; `loud` is what each successive measurement returns."""
 
     def __init__(self, *loud: float, blacks: list[tuple[float, float]] | None = None,
-                 freezes: list[tuple[float, float]] | None = None) -> None:  # fmt: skip
+                 freezes: list[tuple[float, float]] | None = None,
+                 peaks: list[float] | None = None) -> None:  # fmt: skip
         self.loud, self.blacks, self.freezes = list(loud), blacks or [], freezes or []
+        self.peaks = peaks or [-1.4]  # what each successive measurement returns (last repeats)
         self.renders: list[tuple[dict[str, int], Mapping[str, float] | None]] = []
+        self.ceilings: list[float | None] = []  # the true-peak ceiling each render was given
         self.pass1 = 0
 
-    def render(self, font_px: Mapping[str, int], loudnorm: Mapping[str, float] | None) -> None:
+    def render(self, font_px: Mapping[str, int], loudnorm: Mapping[str, float] | None,
+               true_peak_db: float | None = None) -> None:  # fmt: skip
         self.renders.append((dict(font_px), loudnorm))
+        self.ceilings.append(true_peak_db)
 
     def loudness_pass1(self) -> Mapping[str, float]:
         self.pass1 += 1
@@ -58,7 +63,8 @@ class Rig:
     def measure(self, path: Path, cfg: Mapping[str, object], duration: float,
                 timeout: float) -> Measures:  # fmt: skip
         lufs = self.loud.pop(0) if len(self.loud) > 1 else self.loud[0]
-        return Measures(lufs=lufs, true_peak_db=-1.4, blacks=self.blacks, freezes=self.freezes)
+        peak = self.peaks.pop(0) if len(self.peaks) > 1 else self.peaks[0]
+        return Measures(lufs=lufs, true_peak_db=peak, blacks=self.blacks, freezes=self.freezes)
 
 
 def run(rig: Rig, e: Edl | None = None) -> object:
@@ -146,3 +152,46 @@ def test_a_report_written_before_6b_still_loads() -> None:
            '"loudness_two_pass": false, "fixes": [], "findings": []}')  # fmt: skip
     rep = QcReport.model_validate_json(old)
     assert rep.lufs is None and rep.true_peak_db is None
+
+
+# ─────────────── a peak the encoder made (phase 7d) ───────────────
+# Found on the first 180 s preview (01/10/2026): the mix was -14.0 LUFS / -1.9 dBTP, the AAC
+# encoder delivered -0.3 dBTP. A second loudness pass cannot help (the float mix was already
+# right); limiting the mix to a lower ceiling by the overshoot can.
+
+
+def test_a_peak_made_by_the_encoder_is_fixed_by_one_render_with_a_lower_ceiling() -> None:
+    rig = Rig(-14.1, peaks=[-0.3, -1.3])
+    rep = run(rig)
+    assert rep.passed and rep.rounds == 2 and rig.pass1 == 0  # type: ignore[attr-defined]
+    assert rig.ceilings[0] is None  # the first render uses the rules' ceiling
+    # the file was 1.2 dB above the -1.5 ceiling it asked for; aim 1.2 + 0.3 margin under the limit
+    assert rig.ceilings[1] == -2.5  # -1.0 (limit) - 1.2 (what the encoder added) - 0.3 (margin)
+    assert any("T3" in f and "-2.5" in f for f in rep.fixes)  # type: ignore[attr-defined]
+    assert rep.true_peak_db == -1.3  # type: ignore[attr-defined]
+
+
+def test_the_ceiling_is_not_lowered_below_the_floor() -> None:
+    rig = Rig(-14.1, peaks=[6.0, -1.3])
+    run(rig)
+    assert rig.ceilings[1] == RULES["qc"]["min_true_peak_db"]
+
+
+def test_if_the_lower_ceiling_does_not_help_it_stops_instead_of_looping() -> None:
+    rig = Rig(-14.1, peaks=[-0.3, -0.4, -0.5])
+    rep = run(rig)
+    assert not rep.passed and rep.rounds == 2 and len(rig.renders) == 2  # type: ignore[attr-defined]
+    assert [f.code for f in rep.findings] == ["T3"]  # type: ignore[attr-defined]
+    assert "đỉnh" in rep.findings[0].msg  # type: ignore[attr-defined]
+
+
+def test_a_good_peak_never_asks_for_a_lower_ceiling() -> None:
+    rig = Rig(-14.1, peaks=[-1.4])
+    run(rig)
+    assert rig.ceilings == [None]
+
+
+def test_loudness_off_still_uses_the_two_pass_fix_and_no_lower_ceiling() -> None:
+    rig = Rig(-16.0, -14.05)
+    run(rig)
+    assert rig.ceilings == [None, None] and rig.pass1 == 1

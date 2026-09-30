@@ -50,7 +50,12 @@ def _styles(edl: Edl, rules: Rules, sizes: Mapping[str, int] | None) -> list[str
     # Speech mode (5c-1): the karaoke line sits at the bottom safe margin, so the CTA moves
     # up by speech_cta_extra_margin to avoid sitting on top of it.
     cta_mv = safe["bottom"] + (int(r["speech_cta_extra_margin"]) if edl.mode == "speech" else 0)
+    title = [
+        _style("ChapterTitle", edl.font, int(px["chapter_title"]), "&H00FFFFFF", 8, safe["left"],
+               safe["right"], safe["top"] + int(r["chapter_title_offset"]), outline=5, bold=1)
+    ] if any(c.kind == "title" for c in edl.captions) else []  # fmt: skip
     return [
+        *title,
         _style("Caption", edl.font, int(px["caption"]), "&H00FFFFFF", 2, safe["left"],
                safe["right"], safe["bottom"]),
         _style("CTA", edl.font, int(px["cta"]), "&H0000E1FF", 2, safe["left"], safe["right"],
@@ -76,8 +81,9 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
     brand = r["brand"]
     fade = "" if edl.style in _POP_STYLES else r"{\fad(200,200)}"
     out = [_dialogue(0.0, edl.content_end, "Logo", escape_ass(brand["logo_text"]))]
+    style_of = {"cta": "CTA", "title": "ChapterTitle"}
     for c in edl.captions:
-        out.append(_dialogue(c.start, c.end, "CTA" if c.kind == "cta" else "Caption",
+        out.append(_dialogue(c.start, c.end, style_of.get(c.kind, "Caption"),
                              fade + escape_ass(c.text)))  # fmt: skip
     if edl.mode == "speech" and edl.karaoke:
         out += karaoke_dialogues(edl.karaoke, rules["speech_edit"]["karaoke"], "Karaoke")
@@ -114,7 +120,9 @@ def ass_document(edl: Edl, rules: Rules, font_px: Mapping[str, int] | None = Non
 
 
 def srt_document(edl: Edl) -> str:
-    """phude.srt: the captions only (platforms show it as closed captions)."""
+    """phude.srt: the captions only (platforms show it as closed captions). Chapter titles are
+    headings drawn at the top, not subtitles, and would overlap the first caption: left out."""
+    lines = [c for c in edl.captions if c.kind != "title"]
     blocks = [f"{i}\n{_srt_time(c.start)} --> {_srt_time(c.end)}\n{' '.join(c.text.split())}\n"
-              for i, c in enumerate(edl.captions, start=1)]  # fmt: skip
+              for i, c in enumerate(lines, start=1)]  # fmt: skip
     return "\n".join(blocks) + "\n"

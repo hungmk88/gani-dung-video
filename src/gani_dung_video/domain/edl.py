@@ -54,7 +54,7 @@ class Caption(BaseModel):
     start: float
     end: float
     text: str
-    kind: str  # text | cta
+    kind: str  # text | cta | title (chapter title, top of the frame)
 
 
 class Edl(BaseModel):
@@ -112,22 +112,30 @@ def _frame(t: float, fps: int) -> float:
     return round(t * fps) / fps
 
 
-def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int) -> list[float]:
-    """Seconds of cross-fade out of each shot: everywhere, only between blocks, or never."""
+def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int,
+               group_of: Mapping[str, str] | None = None) -> list[float]:  # fmt: skip
+    """Seconds of cross-fade out of each shot: everywhere, only between blocks, or never.
+
+    `group_of` maps a block to its chapter (3-minute videos): the sub-blocks inside a chapter are
+    one block as far as the style's "between blocks" rule goes."""
     n = len(segs)
     if style.get("transition") == "dissolve_all":
         d = int(style.get("dissolve_frames", 0)) / fps
         return [d if i < n - 1 else 0.0 for i in range(n)]
     between = int(style.get("dissolve_between_blocks", 0)) / fps
-    return [between if i < n - 1 and segs[i].block != segs[i + 1].block else 0.0
-            for i in range(n)]  # fmt: skip
+    group = group_of or {}
+
+    def key(i: int) -> str:
+        return group.get(segs[i].block, segs[i].block)
+
+    return [between if i < n - 1 and key(i) != key(i + 1) else 0.0 for i in range(n)]
 
 
-def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Clip], fps: int
-           ) -> list[Shot]:  # fmt: skip
+def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Clip], fps: int,
+           group_of: Mapping[str, str] | None = None) -> list[Shot]:  # fmt: skip
     segs = draft.segments
     out: list[Shot] = []
-    for seg, d in zip(segs, _dissolves(segs, style, fps), strict=True):
+    for seg, d in zip(segs, _dissolves(segs, style, fps, group_of), strict=True):
         source = _source(seg, clips)
         clip = clips[source]
         want = seg.src_out + d
@@ -151,7 +159,7 @@ def _captions(draft: SnappedDraft, plan: Plan, fps: int) -> list[Caption]:
     """One line per block stays for the whole block; otherwise a line pops for its shot."""
     cta = plan.blocks[-1].role
     per_block = "per_block" in plan.text_rules
-    out: list[Caption] = []
+    out: list[Caption] = _chapter_titles(draft, plan, fps)
     for seg in draft.segments:
         if not seg.text.strip():
             continue
@@ -161,6 +169,23 @@ def _captions(draft: SnappedDraft, plan: Plan, fps: int) -> list[Caption]:
         kind = "cta" if seg.block == cta else "text"
         out.append(Caption(start=_frame(seg.t_start, fps), end=_frame(end, fps),
                            text=seg.text.strip(), kind=kind))  # fmt: skip
+    return sorted(out, key=lambda c: c.start)
+
+
+def _chapter_titles(draft: SnappedDraft, plan: Plan, fps: int) -> list[Caption]:
+    """3-minute videos: each chapter's title over its first `title_beats` beats (no time added),
+    never past the end of the chapter."""
+    title_of = {t.chapter: t.title.strip() for t in draft.chapter_titles}
+    out: list[Caption] = []
+    for chapter in plan.chapters:
+        mine = [s for s in draft.segments if s.block in chapter.blocks]
+        text = title_of.get(chapter.id, "")
+        if not mine or not text:
+            continue
+        start = mine[0].t_start
+        end = min(start + chapter.title_beats * plan.beat_sec, mine[-1].t_end)
+        out.append(Caption(start=_frame(start, fps), end=_frame(end, fps), text=text,
+                           kind="title"))  # fmt: skip
     return out
 
 
@@ -177,7 +202,8 @@ def build_edl(
     style = rules["styles"][style_name]
     fps = int(r["fps"])
     size = r["preview"] if preview else r["final"]
-    shots = _shots(draft, style, clips, fps)
+    group_of = {b.role: b.chapter for b in plan.blocks if b.chapter is not None}
+    shots = _shots(draft, style, clips, fps, group_of)
     content_end = shots[-1].t_end if shots else 0.0
     end_card = float(r["end_card_sec"])
     m = plan.music
