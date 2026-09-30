@@ -312,7 +312,7 @@
   "project_lock_grace_sec": 10,
   "max_events_per_job": 500
  },
- "_ghi_chu_api": "API web cục bộ (GĐ6b, chốt 29/09/2026). Chỉ bind 127.0.0.1 (host bị từ chối nếu khác). Mọi yêu cầu phải có Host là 127.0.0.1 hoặc localhost cùng cổng (chặn DNS rebinding); yêu cầu POST phải có Content-Type application/json và, nếu có Origin, Origin phải nằm trong allowed_origins (mặc định: Vite dev server); Sec-Fetch-Site cross-site chỉ được nếu Origin hoặc Referer nằm trong allowed_origins. Thêm origin khác (bản triển khai thật) bằng cách sửa danh sách này. max_body_bytes: thân yêu cầu tối đa; socket_timeout_sec: chống kết nối treo; events_page: số dòng console cuối kèm trong chi tiết job; media_chunk_bytes: khối đọc khi phát video.",
+ "_ghi_chu_api": "API web cục bộ (GĐ6b, chốt 29/09/2026). Chỉ bind 127.0.0.1 (host bị từ chối nếu khác). Mọi yêu cầu phải có Host là 127.0.0.1 hoặc localhost cùng cổng (chặn DNS rebinding); yêu cầu POST phải có Content-Type application/json và, nếu có Origin, Origin phải nằm trong allowed_origins (mặc định: Vite dev server); Sec-Fetch-Site cross-site chỉ được nếu Origin hoặc Referer nằm trong allowed_origins. Thêm origin khác (bản triển khai thật) bằng cách sửa danh sách này. max_body_bytes: thân yêu cầu tối đa; socket_timeout_sec: chống kết nối treo; events_page: số dòng console cuối kèm trong chi tiết job; media_chunk_bytes: khối đọc khi phát video. Giao diện tĩnh (GĐ6g, chốt 30/09/2026): frontend_dist là thư mục giao diện đã build (`npm run build` trong frontend), tính từ gốc dự án, rỗng thì tắt; `serve` phục vụ nó ở '/' cho mọi GET/HEAD không thuộc /api hay /media. Chỉ phục vụ đuôi tệp trong bảng cố định, không bao giờ tệp ẩn (.env, .git). frontend_csp là chính sách Content-Security-Policy gắn vào trang HTML: mặc định chỉ cho tải từ chính server, cộng Google Fonts (fonts.googleapis.com, fonts.gstatic.com) và blob: cho video xem thử; muốn siết chặt hơn thì bỏ hai máy chủ font (giao diện tự dùng font hệ thống).",
  "api": {
   "host": "127.0.0.1",
   "port": 8765,
@@ -320,7 +320,9 @@
   "max_body_bytes": 65536,
   "socket_timeout_sec": 10,
   "events_page": 200,
-  "media_chunk_bytes": 65536
+  "media_chunk_bytes": 65536,
+  "frontend_dist": "frontend/dist",
+  "frontend_csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
  },
  "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
  "speech_edit": {

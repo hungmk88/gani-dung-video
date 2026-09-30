@@ -101,6 +101,7 @@ from gani_dung_video.infrastructure.media_probe import ProbeFailed
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.queue_db import QueueDb, QueueDbError
 from gani_dung_video.infrastructure.settings import SettingsError, load_settings
+from gani_dung_video.infrastructure.static_files import dist_root, has_index
 from gani_dung_video.infrastructure.whisper_asr import AsrError
 
 logger = logging.getLogger("gani_dung_video")
@@ -370,6 +371,10 @@ def _run_serve(port: int | None) -> int:
         real_port = int(server.server_address[1])
         sys.stdout.write(f"API đang chạy ở http://127.0.0.1:{real_port} (Ctrl+C để dừng). "
                          "Việc dựng vẫn do `daemon` đảm nhiệm.\n")  # fmt: skip
+        ui = dist_root(rules["api"])
+        if ui is not None and has_index(ui):
+            sys.stdout.write(f"Giao diện: mở http://127.0.0.1:{real_port}/ (bản build trong "
+                             f"{ui.parent.name}/{ui.name}).\n")  # fmt: skip
         if not ctx.roots:
             sys.stdout.write("Cảnh báo: chưa đặt GANI_DV_ALLOWED_ROOTS trong .env — chưa có dự án "
                              "nào được phép, mọi job sẽ bị từ chối.\n")  # fmt: skip

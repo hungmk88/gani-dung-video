@@ -18,6 +18,28 @@ Hai tiến trình **độc lập**, dùng chung `queue.db` (SQLite WAL): `serve`
 `.env` có `GANI_DV_ALLOWED_ROOTS` (thư mục chứa các dự án footage). Cổng và danh sách Origin
 nằm ở `config/rules.json` → `api`.
 
+### Giao diện chạy thẳng từ `serve` (Giai đoạn 6g)
+
+Không cần bật Vite: build giao diện một lần rồi mở địa chỉ của `serve`. Dùng `build:real`: `npm run build` mặc định là bản mô phỏng (mock) để xem thử không cần backend.
+
+```bash
+cd frontend && npm run build:real     # tạo frontend/dist, nối API thật (không phải bản mô phỏng)
+python -m gani_dung_video serve       # in "Giao diện: mở http://127.0.0.1:8765/"
+```
+
+- `serve` phục vụ `rules.api.frontend_dist` (mặc định `frontend/dist`, tính từ **gốc dự án**, không
+  phụ thuộc thư mục đang đứng; rỗng hoặc `null` là tắt) cho mọi `GET`/`HEAD` **không** thuộc
+  `/api/...` hay `/media/...`. Hai nhóm đó không bao giờ trả về tệp giao diện: `/api/khong-co`
+  vẫn là 404 JSON.
+- Đường dẫn giao diện không có đuôi tệp (`/studio`, `/queue/12`) trả `index.html` để tải lại
+  trang hoặc gõ tay địa chỉ vẫn chạy. Tệp thiếu có đuôi (`/assets/x.js`) là 404 thật.
+- Chưa build thì `serve` vẫn chạy bình thường, ghi cảnh báo một lần, `/` trả 404 JSON như cũ.
+  Build xong **không cần khởi động lại** `serve`.
+- Giao diện gọi API bằng đường dẫn tương đối (`/api/...`, `/media/...`) nên cùng nguồn gốc
+  (origin) với `serve`; mở bằng `127.0.0.1:8765` hoặc `localhost:8765` đều được.
+- Khi phát triển giao diện (`npm run dev`, cổng 5173) không đổi gì: Vite vẫn proxy `/api` và
+  `/media` sang `serve`.
+
 ## 2. Quy ước chung
 
 - Chỉ nghe ở **127.0.0.1**. Mọi yêu cầu phải có `Host: 127.0.0.1:8765` hoặc
@@ -461,11 +483,29 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
   `<gốc>` trước khi trả về.
 - **Lỗi** không lộ đường dẫn hay stack trace. Cổng bị chiếm được báo rõ (không chia sẻ cổng
   trên Windows).
+- **Giao diện tĩnh (6g)** đi qua đúng cổng kiểm Host / Origin / chéo trang ở trên. Thêm:
+  - *Đường dẫn*: mỗi đoạn được giải mã % đúng **một** lần rồi bị từ chối nếu chứa `/`, `\`, `:`
+    (chặn `x::$DATA` trên Windows), ký tự NUL/điều khiển, `.`/`..`, bắt đầu bằng dấu chấm (`.env`,
+    `.git`, `.gitkeep`) hoặc UTF-8 hỏng; đoạn rỗng giữa đường dẫn (`//`) cũng bị từ chối.
+  - *Ranh giới thư mục*: đường dẫn thật (sau khi đi theo symlink/junction) phải còn nằm trong
+    `frontend_dist`, nếu không là 404. `frontend_dist` trỏ ra ngoài thư mục dự án thì bị bỏ qua.
+  - *Loại tệp*: bảng đuôi cố định (`.html .js .mjs .css .json .map .txt .svg .png .jpg .jpeg .webp
+    .ico .woff2 .mp4 .m4a .mp3`), không đọc registry Windows; đuôi lạ (`.exe`, `.pem`, `.sqlite`…)
+    là 404, không bao giờ `application/octet-stream`.
+  - *Phương thức*: chỉ `GET`/`HEAD`; phương thức khác trả 405 kèm `Allow: GET, HEAD`.
+  - *HTML* mang `Content-Security-Policy` (`rules.api.frontend_csp`: mặc định chỉ cho tải từ chính
+    server, cộng Google Fonts và `blob:` cho video xem thử), `X-Frame-Options: DENY`,
+    `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`.
+  - *Bộ nhớ đệm*: `index.html` và tệp thường dùng `no-cache` + `ETag` (hỗ trợ `If-None-Match` →
+    304); tệp trong `/assets/` (Vite đặt tên có mã băm) `public, max-age=31536000, immutable`.
+    Phản hồi `/api/...` vẫn `no-store`. Tệp hỗ trợ HTTP `Range` (một khoảng).
+  - Bấm vào giao diện từ **trang khác** bị 403 `yeu_cau_cheo_trang`; gõ tay địa chỉ thì bình
+    thường (`Sec-Fetch-Site: none`).
 
 ## 8. Gợi ý cho `realApi` (phía frontend)
 
-Vite hiện chỉ proxy `/api`. Với video, hoặc thêm `'/media'` vào `proxy` của `vite.config.ts`,
-hoặc dùng URL tuyệt đối `http://127.0.0.1:8765` (đã được phép nhờ Referer).
+`frontend/vite.config.ts` đã proxy cả `/api` lẫn `/media` sang `serve`, nên giao diện dùng URL
+tương đối cho video. Có thể dùng URL tuyệt đối `http://127.0.0.1:8765` (được phép nhờ Referer).
 
 ```ts
 // Theo dõi một job bằng polling 1 giây (thay cho WebSocket mô phỏng của mockApi)
