@@ -38,6 +38,7 @@ from gani_dung_video.domain.api_models import (
 from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
+from gani_dung_video.domain.verify_report import Finding, RoundRecord, VerifyReportFile
 from gani_dung_video.infrastructure.config_files import load_rules
 from gani_dung_video.infrastructure.project_lock import acquire
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
@@ -970,3 +971,173 @@ def test_the_list_carries_the_same_block_as_the_detail(ctx: ApiContext, root: Pa
     draft_id, _ = waiting_draft(ctx, root)
     listed = next(j for j in list_jobs(ctx) if j.id == draft_id)
     assert listed.footage is not None and listed.footage.tight is True
+
+
+# ─────────────── 6i: the V1–V9 / S1–S6 record, shown for a finished draft job ───────────────
+
+
+def report_file(rounds: list[Any], mode: str = "music", final: str = "failed") -> str:
+    return VerifyReportFile(mode=mode, final_status=final, rounds=rounds).model_dump_json()
+
+
+def one_round(n: int, findings: list[tuple[str, str, str]] | None = None, parsed: bool = True,
+              cost: float = 900.0) -> Any:  # fmt: skip
+    fs = [Finding(code=c, level=lv, draft="A", msg=m) for c, lv, m in (findings or [])]
+    return RoundRecord(round=n, drafts=["A", "B"], parsed=parsed,
+                       passed=not any(f.level == "ai" for f in fs), cost_vnd=cost,
+                       input_tokens=4000, output_tokens=2000, stop_reason="end_turn",
+                       findings=fs)  # fmt: skip
+
+
+def finish_paid_draft(ctx: ApiContext, root: Path, text: str | None, result: str = "passed",
+                      status: str = "completed") -> tuple[int, Path]:  # fmt: skip
+    """Drive a draft job through approval and its paid phase; `text` is what the run wrote to
+    edit/verify_report.json DURING the run (None: it wrote nothing)."""
+    view = start(ctx, root)
+    draft_id = reach_approval(ctx, view)
+    approve(ctx, draft_id, ApproveRequest(max_vnd=6000, estimate_vnd=4166))
+    job = ctx.db.claim(time.time(), 1)
+    assert job is not None and job.id == draft_id
+    edit = root / "footage" / "edit"
+    edit.mkdir(parents=True, exist_ok=True)
+    if text is not None:
+        (edit / "verify_report.json").write_text(text, encoding="utf-8")
+    ctx.db.finish(
+        draft_id,
+        time.time(),
+        status,
+        result if status == "completed" else None,
+        0 if status == "completed" else 1,
+        None if status == "completed" else "lỗi",
+        None,
+    )
+    return draft_id, edit / "verify_report.json"
+
+
+V4_MSG = "Cảnh 'VID_150353_s0_2' dùng 2 lần."
+
+
+def test_a_failed_draft_keeps_its_three_rounds_and_says_which_check_failed(
+    ctx: ApiContext, root: Path
+) -> None:
+    rounds = [one_round(n, [("V4", "ai", V4_MSG)]) for n in (1, 2, 3)]
+    draft_id, _ = finish_paid_draft(ctx, root, report_file(rounds), status="failed")
+    v = get_job(ctx, draft_id).verify
+    assert v is not None
+    assert (v.mode, v.final_status, v.rounds_used, v.max_rounds) == ("music", "failed", 3, 3)
+    by_code = {c.code: c for c in v.checks}
+    assert list(by_code) == ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "SNAP"]
+    assert by_code["V4"].status == "fail" and V4_MSG in by_code["V4"].detail
+    assert by_code["V2"].status == "pass" and by_code["V2"].detail == ""
+    assert [r.round for r in v.rounds] == [1, 2, 3] and all(not r.passed for r in v.rounds)
+    assert v.rounds[0].checks[3].status == "fail" and v.rounds[0].cost_vnd == 900.0
+
+
+def test_a_passed_draft_shows_every_check_as_passed(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([one_round(1)], final="passed"))
+    v = get_job(ctx, draft_id).verify
+    assert v is not None and v.final_status == "passed" and v.rounds_used == 1
+    assert {c.status for c in v.checks} == {"pass"}
+
+
+def test_fixed_and_warned_checks_are_told_apart(ctx: ApiContext, root: Path) -> None:
+    rnd = one_round(1, [("V3", "auto", "5 phách → 4."), ("V6", "warn", "Khối thiếu cảnh nhãn.")])
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([rnd], final="passed"))
+    v = get_job(ctx, draft_id).verify
+    assert v is not None
+    assert {c.code: c.status for c in v.checks}["V3"] == "fixed"
+    assert {c.code: c.status for c in v.checks}["V6"] == "warn"
+
+
+def test_the_labels_come_from_the_rules_not_from_the_ui(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([one_round(1)], final="passed"))
+    v = get_job(ctx, draft_id).verify
+    assert v is not None
+    assert all(c.label == RULES["verify_labels"][c.code] and c.label for c in v.checks)
+
+
+def test_speech_mode_lists_s1_to_s6(ctx: ApiContext, root: Path) -> None:
+    rnd = one_round(1, [("S6", "ai", "Câu mở đầu trùng bản A.")])
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([rnd], mode="speech"), status="failed")
+    v = get_job(ctx, draft_id).verify
+    assert v is not None and v.mode == "speech"
+    assert [c.code for c in v.checks] == ["S1", "S2", "S3", "S4", "S5", "S6", "SNAP"]
+    assert {c.code: c.status for c in v.checks}["S6"] == "fail"
+
+
+def test_an_unreadable_answer_marks_the_other_checks_skipped(ctx: ApiContext, root: Path) -> None:
+    rnd = one_round(1, [("V1", "ai", "JSON không đúng cấu trúc.")], parsed=False)
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([rnd]), status="failed")
+    v = get_job(ctx, draft_id).verify
+    assert v is not None
+    st = {c.code: c.status for c in v.checks}
+    assert st["V1"] == "fail" and {st[c] for c in st if c != "V1"} == {"skipped"}
+
+
+@pytest.mark.parametrize("final", ["cost_cap", "api_error"])
+def test_a_stop_before_the_end_is_reported_as_such(ctx: ApiContext, root: Path,
+                                                   final: str) -> None:  # fmt: skip
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([one_round(1)], final=final),
+                                    status="failed")  # fmt: skip
+    v = get_job(ctx, draft_id).verify
+    assert v is not None and v.final_status == final
+
+
+def test_a_run_cut_off_midway_shows_as_interrupted(ctx: ApiContext, root: Path) -> None:
+    """The daemon stopped during the paid phase: the file still says "running"."""
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([one_round(1)], final="running"),
+                                    status="failed")  # fmt: skip
+    v = get_job(ctx, draft_id).verify
+    assert v is not None and v.final_status == "interrupted" and v.rounds_used == 1
+
+
+def test_the_verify_block_reaches_the_json_and_the_list(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([one_round(1)], final="passed"))
+    body = get_job(ctx, draft_id).model_dump(mode="json")["verify"]
+    assert set(body) == {"mode", "final_status", "rounds_used", "max_rounds", "checks", "rounds"}
+    assert set(body["checks"][0]) == {"code", "label", "status", "detail"}
+    assert set(body["rounds"][0]) == {"round", "drafts", "passed", "parsed", "cost_vnd", "checks"}
+    assert json.dumps(body)
+    listed = next(j for j in list_jobs(ctx) if j.id == draft_id)
+    assert listed.verify is not None and listed.verify.final_status == "passed"
+
+
+def test_absolute_paths_in_a_message_are_scrubbed(ctx: ApiContext, root: Path) -> None:
+    leaky = one_round(1, [("V4", "ai", f"mở {root / 'footage' / 'edit' / 'x.json'} thất bại")])
+    draft_id, _ = finish_paid_draft(ctx, root, report_file([leaky]), status="failed")
+    v = get_job(ctx, draft_id).verify
+    assert v is not None and str(root) not in json.dumps(v.model_dump(mode="json"))
+
+
+def test_only_a_finished_draft_has_a_verify_block(ctx: ApiContext, root: Path) -> None:
+    view = start(ctx, root)
+    folder = root / "footage" / "edit"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "verify_report.json").write_text(report_file([one_round(1)]), encoding="utf-8")
+    assert all(get_job(ctx, j.id).verify is None for j in view.jobs)  # nothing has run
+    draft_id = reach_approval(ctx, view)
+    assert get_job(ctx, draft_id).verify is None  # waiting for approval
+    assert all(get_job(ctx, j.id).verify is None for j in view.jobs if j.kind != "draft")
+
+
+@pytest.mark.parametrize("damage", ["missing", "bad_json", "wrong_shape", "unknown_mode"])
+def test_an_unusable_report_gives_null_not_an_error(ctx: ApiContext, root: Path,
+                                                    damage: str) -> None:  # fmt: skip
+    text = {
+        "missing": None,
+        "bad_json": "{not json",
+        "wrong_shape": '{"rounds": 3}',
+        "unknown_mode": '{"mode": "video", "final_status": "passed", "rounds": []}',
+    }[damage]
+    draft_id, _ = finish_paid_draft(ctx, root, text, status="failed")
+    assert get_job(ctx, draft_id).verify is None
+
+
+def test_a_report_from_an_older_run_is_not_shown(ctx: ApiContext, root: Path) -> None:
+    """The report belongs to the project; one left by an earlier run says nothing about this
+    job, which failed before it could write its own (same rule as qc_report.json)."""
+    draft_id, path = finish_paid_draft(ctx, root, report_file([one_round(1)]), status="failed")
+    job = ctx.db.get(draft_id)
+    assert job is not None and job.started_at is not None
+    os.utime(path, (job.started_at - 3600, job.started_at - 3600))
+    assert get_job(ctx, draft_id).verify is None

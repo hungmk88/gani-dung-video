@@ -325,6 +325,25 @@
   "frontend_dist": "frontend/dist",
   "frontend_csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
  },
+ "_ghi_chu_verify_labels": "Tên gọi các phép kiểm bản nháp (GĐ6i, chốt 01/10/2026): V1–V9 + SNAP cho dựng theo nhạc (domain/verify.py), S1–S6 cho dựng theo lời (domain/speech_verify.py). API trả nhãn này kèm mã để giao diện không phải tự đặt tên; đổi chữ ở đây, không đổi trong giao diện. V6/S5 chỉ cảnh báo, V3 do code tự sửa (không gửi lại cho Claude).",
+ "verify_labels": {
+  "V1": "Cấu trúc câu trả lời và mã cảnh",
+  "V2": "Tổng số phách từng khối",
+  "V3": "Số phách mỗi cảnh (code tự làm tròn)",
+  "V4": "Không dùng lặp cảnh",
+  "V5": "Cảnh thuộc đúng khối",
+  "V6": "Đủ cảnh bắt buộc (cảnh báo)",
+  "V7": "Độ dài chữ và cụm từ cấm",
+  "V8": "Lời kêu gọi và hạn khuyến mãi",
+  "V9": "Các bản không trùng nhau",
+  "S1": "Cấu trúc và không chèn B-roll ở câu đầu/cuối",
+  "S2": "Độ dài video đúng dung sai",
+  "S3": "Không dùng lặp câu và B-roll",
+  "S4": "B-roll lấy từ đúng khối",
+  "S5": "Đủ cảnh bắt buộc (cảnh báo)",
+  "S6": "Các bản không trùng nhau",
+  "SNAP": "Khớp phách"
+ },
  "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
  "speech_edit": {
   "sentence_end": ".?!…",

@@ -368,6 +368,50 @@ bấm duyệt tiền. Không chặn gì.
   (không có khối cảnh); `plan.json` / `candidates.json` thiếu, hỏng hoặc cũ hơn lần chạy của
   job (hai tệp dùng chung theo dự án, cùng luật với `qc_report.json`).
 
+### `verify`: các phép kiểm V1–V9 / S1–S6 theo từng vòng (Giai đoạn 6i)
+
+Trước 6i kết quả kiểm bản nháp chỉ nằm trong bộ nhớ: bản nháp trượt 3 vòng thì không còn dấu vết
+vì sao (ca thật: 30 giây, 3 vòng liền trượt V4 "dùng lặp cảnh", tốn 2.992đ). Nay mỗi lần chạy lưu
+`edit/verify_report.json` sau **từng vòng** (kể cả khi job bị dừng giữa chừng), và job `draft` **đã
+kết thúc** (`completed` hoặc `failed`) trả thêm `verify`.
+
+```json
+"verify": {
+  "mode": "music",
+  "final_status": "failed",
+  "rounds_used": 3,
+  "max_rounds": 3,
+  "checks": [
+    {"code": "V1", "label": "Cấu trúc câu trả lời và mã cảnh", "status": "pass", "detail": ""},
+    {"code": "V4", "label": "Không dùng lặp cảnh", "status": "fail",
+     "detail": "Cảnh 'VID_150353_s0_2' dùng 2 lần.; Cảnh 'VID_160553_s0_0' dùng 2 lần."}
+  ],
+  "rounds": [
+    {"round": 1, "drafts": ["A", "B"], "parsed": true, "passed": false, "cost_vnd": 702.42,
+     "checks": ["... cùng dạng với checks ..."]}
+  ]
+}
+```
+
+- `mode`: `music` (V1–V9 + `SNAP`) hoặc `speech` (S1–S6 + `SNAP`). `checks` là vòng **cuối**, mỗi
+  phép kiểm một dòng, đúng thứ tự; rỗng nếu chưa gọi Claude lần nào (chạm trần chi phí ngay từ đầu).
+- `status` của một phép kiểm: `pass`; `fail` (Claude phải sửa, gửi lại); `fixed` (code tự sửa, V3);
+  `warn` (chỉ cảnh báo, V6/S5); `skipped` (câu trả lời không đọc được nên phép kiểm chưa chạy: phép
+  đầu tiên nhận lỗi cấu trúc, các phép còn lại `skipped`). Nhiều phát hiện cùng một mã: `fail`
+  thắng `fixed` thắng `warn` thắng `pass`.
+- `detail`: các câu phát hiện khác nhau của phép kiểm, tối đa 3 câu rồi "(+N nữa)"; rỗng nếu sạch.
+  Đã bỏ đường dẫn tuyệt đối. `label` lấy từ `rules.verify_labels` — giao diện không tự đặt tên.
+- `final_status`: `passed`; `failed` (hết `max_rounds` vòng); `cost_cap` (chạm trần chi phí);
+  `api_error` (gọi API lỗi; không lưu nội dung lỗi); `interrupted` (job dừng giữa chừng, tệp còn
+  ở trạng thái đang chạy).
+- `rounds[]`: `drafts` là các bản được hỏi trong vòng đó (vòng 2 trở đi chỉ hỏi lại bản bị lỗi),
+  `parsed=false` nghĩa là câu trả lời không đọc được, `passed` là không còn lỗi Claude phải sửa,
+  `cost_vnd` là tiền của riêng vòng đó.
+- `verify` là `null` khi: job không phải `draft` hoặc chưa kết thúc (ví dụ đang chờ duyệt); tệp
+  thiếu, hỏng hoặc được ghi ngoài khoảng thời gian chạy của chính job (tệp dùng chung theo dự án,
+  cùng luật với `qc_report.json`; `started_at` được đặt lại mỗi lần daemon nhận job nên luôn tính
+  theo lần chạy trả phí cuối).
+
 ### `POST /api/jobs/{id}/approve`
 
 ```json
@@ -486,10 +530,9 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
 
 ## 6. Khoảng trống đã biết (nói thẳng)
 
-1. **`QaReport.pass1_sync` / `pass2_glossary` (kiểm tra V2–V9 của bước AI viết kịch bản) chưa có
-   dữ liệu thật**: kết quả V1–V9 không được lưu theo từng kiểm tra (chỉ còn ghi chú V3/V6 trong
-   `drafts.json`). API chỉ trả kiểm tra kỹ thuật T1–T8. Giao diện nên hiện phần V ở dạng "chưa
-   có dữ liệu" thay vì bịa số.
+1. **`QaReport.pass1_sync` / `pass2_glossary`** (kiểm tra V2–V9 của bước AI) vẫn không có trong
+   `qa` (báo cáo kỹ thuật T1–T8 của video). Kết quả V/S nay nằm ở `verify` (mục trên) của job
+   `draft`; chỉ có từ khi chạy bằng bản có 6i — job cũ có `verify: null`.
 2. **Wizard chạy cả chuỗi** dùng được từ 6c (`POST /api/pipelines`, mục 4b), nhưng footage vẫn
    phải nằm sẵn trên máy dựng (không tải lên qua HTTP). `frontend_status = "awaiting_approval"` là
    giá trị **mới** — giao diện phải xử lý (mở hộp thoại duyệt chi phí), backend không sửa nhánh

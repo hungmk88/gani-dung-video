@@ -208,6 +208,36 @@ class FootageView(BaseModel):
     blocks: list[FootageBlockView]
 
 
+class VerifyCheckView(BaseModel):
+    """One check (V1–V9 / S1–S6 / SNAP) as the UI shows it."""
+
+    code: str
+    label: str  # Vietnamese name from rules.verify_labels ("" for a code nobody named)
+    status: Literal["pass", "fail", "fixed", "warn", "skipped"]
+    detail: str  # what the check said; empty when it passed cleanly
+
+
+class VerifyRoundView(BaseModel):
+    round: int
+    drafts: list[str]  # drafts Claude was asked for in this round
+    parsed: bool  # False: the answer could not be read, so the checks never ran
+    passed: bool  # nothing left for Claude to fix
+    cost_vnd: float
+    checks: list[VerifyCheckView]
+
+
+class VerifyView(BaseModel):
+    """What the draft's V1–V9 (music) / S1–S6 (speech) checks said, round by round (phase 6i).
+    Only for a finished draft job whose run wrote edit/verify_report.json."""
+
+    mode: Literal["music", "speech"]
+    final_status: Literal["passed", "failed", "cost_cap", "api_error", "interrupted"]
+    rounds_used: int
+    max_rounds: int  # rules.ai.max_attempts
+    checks: list[VerifyCheckView]  # the last round (empty when no call was made)
+    rounds: list[VerifyRoundView]
+
+
 class JobView(BaseModel):
     id: int
     pipeline_id: int | None = None
@@ -241,6 +271,7 @@ class JobView(BaseModel):
     steps: list[StepView]
     qa: QaView | None
     footage: FootageView | None = None  # only a draft job at the approval gate, music modes
+    verify: VerifyView | None = None  # only a finished draft job (phase 6i)
 
 
 class JobDetail(JobView):

@@ -26,6 +26,7 @@ from pydantic import BaseModel, ValidationError
 
 from gani_dung_video.application.draft_service import DryRun
 from gani_dung_video.application.render_service import SpeechDraftsFile
+from gani_dung_video.application.verify_recorder import VerifyRecorder
 from gani_dung_video.domain.drafts import cost_vnd, estimate_tokens
 from gani_dung_video.domain.edl import BrollPlacement, SpeechDraft
 from gani_dung_video.domain.pick import PickFile
@@ -45,6 +46,7 @@ from gani_dung_video.domain.speech_verify import (
     parse_speech_response,
     verify_speech_drafts,
 )
+from gani_dung_video.domain.verify_report import make_round
 from gani_dung_video.infrastructure.claude_client import AiError, AiReply, Caller, make_caller
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules, read_options_file
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
@@ -211,7 +213,9 @@ def _check_budget(job: _Job, spent: float, prompt: str, rules: Rules) -> None:
             spent=spent, next=worst, cap=job.cap, duration=job.duration))  # fmt: skip
 
 
-def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> SpeechDraftsResult:
+def _loop(
+    job: _Job, caller: Caller, model: str, rules: Rules, rec: VerifyRecorder
+) -> SpeechDraftsResult:
     letters_all = job.ctx.expected
     letters: list[str] = list(letters_all)
     kept: dict[str, AiSpeechDraft] = {}
@@ -242,6 +246,8 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> SpeechDraftsRe
             input_tokens=reply.input_tokens, output_tokens=reply.output_tokens, cost_vnd=cost,
             spent_vnd=round(spent, 2), stop_reason=reply.stop_reason,
             issues=sorted({i.code for i in issues if i.level == "ai"}))  # fmt: skip
+        rec.add(make_round(attempt, letters, resp is not None, cost, reply.input_tokens,
+                           reply.output_tokens, reply.stop_reason, issues))  # fmt: skip
         if not bad:
             return SpeechDraftsResult(model=reply.model, attempts=attempt, input_tokens=tok_in,
                                       output_tokens=tok_out, cost_vnd=round(spent, 2),
@@ -259,6 +265,24 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules) -> SpeechDraftsRe
     raise SpeechDraftError(rules["input_msgs"]["SPEECH_DRAFT_FAILED"].format(
         attempts=int(job.cfg["max_attempts"]), issues=left),
         [i for i in issues if i.level == "ai"])  # fmt: skip
+
+
+def _recorded(job: _Job, caller: Caller, model: str, rules: Rules) -> SpeechDraftsResult:
+    """Run the loop and leave edit/verify_report.json saying how it ended (6i)."""
+    rec = VerifyRecorder(job.folder, "speech")
+    try:
+        result = _loop(job, caller, model, rules, rec)
+    except SpeechCostCapReached:
+        rec.finish("cost_cap")
+        raise
+    except AiError:
+        rec.finish("api_error")
+        raise
+    except SpeechDraftError:
+        rec.finish("failed")
+        raise
+    rec.finish("passed")
+    return result
 
 
 def build_speech_drafts(
@@ -295,7 +319,7 @@ def build_speech_drafts(
                       cap_vnd=job.cap, max_attempts=int(job.cfg["max_attempts"])), None  # fmt: skip
     if caller is None:
         caller = make_caller(require_api_key(settings), model, job.cfg)
-    result = _loop(job, caller, model, rules)
+    result = _recorded(job, caller, model, rules)
     path = folder / EDIT_DIR / OUT_FILE
     tmp = path.with_suffix(".json.tmp")
     out = SpeechDraftsFile(model=result.model, cost_vnd=result.cost_vnd, drafts=result.drafts)
