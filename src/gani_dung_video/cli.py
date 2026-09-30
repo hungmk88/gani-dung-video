@@ -54,7 +54,13 @@ from pydantic import ValidationError
 
 from gani_dung_video.application.api_service import ApiContext
 from gani_dung_video.application.daemon import Daemon, DaemonError
-from gani_dung_video.application.draft_service import DraftError, DraftsFile, DryRun, build_drafts
+from gani_dung_video.application.draft_service import (
+    DraftError,
+    DraftsFile,
+    DryRun,
+    InfeasibleError,
+    build_drafts,
+)
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
@@ -80,6 +86,7 @@ from gani_dung_video.application.speech_draft_service import (
 )
 from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
+from gani_dung_video.domain.feasibility import INFEASIBLE_EXIT_CODE
 from gani_dung_video.domain.jobs import Job, format_vnd
 from gani_dung_video.domain.plan import Plan, PlanError
 from gani_dung_video.domain.preflight import Rules
@@ -440,6 +447,9 @@ def _run_draft(file: Path, folder: Path, dry_run: bool, as_json: bool = False,
             r, out = build_speech_drafts(file, folder, dry_run=dry_run, max_vnd=max_vnd)
         else:
             r, out = build_drafts(file, folder, dry_run=dry_run, max_vnd=max_vnd)
+    except InfeasibleError as e:  # the footage cannot fill the plan: nothing was spent
+        sys.stdout.write(f"KHÔNG ĐẠT: {e}\n")
+        return INFEASIBLE_EXIT_CODE
     except (DraftError, SpeechDraftError) as e:
         sys.stdout.write(f"KHÔNG ĐẠT: {e}\n")
         return 1

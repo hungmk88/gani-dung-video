@@ -17,6 +17,8 @@ from gani_dung_video.application.draft_service import (
     CostCapReached,
     DraftError,
     DraftsFile,
+    DryRun,
+    InfeasibleError,
     build_drafts,
 )
 from gani_dung_video.cli import main
@@ -370,3 +372,73 @@ def test_cli_draft_failure_exit_1(
     monkeypatch.setattr(draft_service, "make_caller",
                         lambda key, model, cfg: FakeClaude("x", "x", "x"))  # fmt: skip
     assert main(["draft", str(opt), str(tmp_path)]) == 1
+
+
+# ─────────────── 6e: the free feasibility gate ───────────────
+
+
+def starve(folder: Path) -> None:
+    """Leave the 'main' block one scene that is only long enough for 4 beats (needs 12 ± 6)."""
+    path = folder / "edit" / "candidates.json"
+    pick = PickFile.model_validate_json(path.read_text(encoding="utf-8"))
+    thin = [
+        b.model_copy(
+            update={"candidates": [b.candidates[0].model_copy(update={"fits_beats": [4]})]}
+        )
+        if b.role == "main"
+        else b
+        for b in pick.blocks
+    ]
+    path.write_text(pick.model_copy(update={"blocks": thin}).model_dump_json(), encoding="utf-8")
+
+
+def test_an_impossible_plan_stops_before_any_call_and_costs_nothing(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    starve(tmp_path)
+    fake = FakeClaude({"drafts": [A, B]})
+    with pytest.raises(InfeasibleError) as caught:
+        run(tmp_path, fake)
+    assert "'main'" in str(caught.value) and str(caught.value).startswith("Dừng trước khi gọi")
+    assert fake.prompts == []  # never called
+    assert not (tmp_path / "edit" / "ai_log.jsonl").exists()  # nothing spent, nothing logged
+    assert not (tmp_path / "edit" / "drafts.json").exists()
+
+
+def test_the_estimate_is_not_given_for_an_impossible_plan_either(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    starve(tmp_path)
+    with pytest.raises(InfeasibleError):
+        build_drafts(tmp_path / "o.json", tmp_path, RULES, GLOSSARY, dry_run=True)
+
+
+def test_an_impossible_plan_is_a_draft_error_like_any_other_refusal() -> None:
+    assert issubclass(InfeasibleError, DraftError)
+
+
+def test_the_gate_can_be_switched_off_in_the_rules(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    starve(tmp_path)
+    off = {**RULES, "pick": {**RULES["pick"], "feasibility_gate": False}}
+    est, _ = build_drafts(tmp_path / "o.json", tmp_path, off, GLOSSARY, dry_run=True)
+    assert (
+        isinstance(est, DryRun) and est.worst_call_vnd > 0
+    )  # nothing stops it: the old behaviour, for debugging
+
+
+def test_the_cli_exits_3_and_prints_the_reason_for_an_impossible_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    opt = write_folder(tmp_path)
+    starve(tmp_path)
+    assert main(["draft", str(opt), str(tmp_path), "--dry-run"]) == 3
+    out = capsys.readouterr().out
+    assert out.startswith("KHÔNG ĐẠT: Dừng trước khi gọi Claude (0đ)") and "'main'" in out
+
+
+def test_the_cli_prints_no_json_for_an_impossible_plan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    opt = write_folder(tmp_path)
+    starve(tmp_path)
+    assert main(["draft", str(opt), str(tmp_path), "--dry-run", "--json"]) == 3
+    assert parse_estimate_line(capsys.readouterr().out.strip().splitlines()[-1]) is None

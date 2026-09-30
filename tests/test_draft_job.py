@@ -503,3 +503,44 @@ def test_an_approval_after_the_window_is_refused(db: QueueDb, folder: Path,
     with pytest.raises(Exception, match="hết hạn"):
         approve(db, jid, clock)
     assert job(db, jid).approved_vnd is None
+
+
+# ─────────────── 6e: an impossible plan ends the job at 0đ, with the reason ───────────────
+
+WHY = "Dừng trước khi gọi Claude (0đ): khối 'main' cần 12 phách nhưng chỉ có 1 cảnh ứng viên."
+
+
+def test_an_impossible_plan_fails_the_job_with_the_reason_and_no_wrapper(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    jid = add(db, folder)
+    runner = FakeRunner(estimate=fails(3, "KHÔNG ĐẠT: " + WHY))
+    d = make(db, runner, clock)
+    d.process_next()
+    j = job(db, jid)
+    assert (j.status, j.exit_code, j.spent_vnd) == ("failed", 3, None)
+    assert j.error_msg == WHY  # the person reads the reason, not "mã thoát 3"
+    assert runner.ran == ["plan", "pick", "estimate"] and "paid" not in runner.ran
+    clock.offset += 3600
+    assert d.process_next() is False  # never tried again on its own
+
+
+def test_an_ordinary_estimate_failure_keeps_its_technical_message(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    jid = add(db, folder)
+    make(db, FakeRunner(estimate=fails(1, "LỖI: candidates.json hỏng")), clock).process_next()
+    msg = job(db, jid).error_msg or ""
+    assert "mã thoát 1" in msg and "candidates.json hỏng" in msg
+
+
+def test_a_plan_that_became_impossible_before_the_paid_call_stops_without_spending(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    runner = FakeRunner(estimate=[says(), fails(3, "KHÔNG ĐẠT: " + WHY)])
+    d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock, max_vnd=6000.0)
+    d.process_next()
+    j = job(db, jid)
+    assert j.status == "failed" and j.error_msg == WHY and j.spent_vnd is None
+    assert "paid" not in runner.ran

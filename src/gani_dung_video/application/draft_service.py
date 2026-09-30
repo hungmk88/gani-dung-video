@@ -36,6 +36,7 @@ from gani_dung_video.domain.drafts import (
     estimate_tokens,
     response_schema,
 )
+from gani_dung_video.domain.feasibility import check_feasible
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, beats_of
 from gani_dung_video.domain.preflight import Rules
@@ -66,6 +67,10 @@ class DraftError(RuntimeError):
     def __init__(self, msg: str, issues: Sequence[Issue] = ()) -> None:
         super().__init__(msg)
         self.issues = list(issues)
+
+
+class InfeasibleError(DraftError):
+    """The picked footage cannot fill the plan (checked before any call; nothing was spent)."""
 
 
 class CostCapReached(DraftError):
@@ -259,6 +264,7 @@ def build_drafts(
 
     Raises:
         ConfigError: plan/candidates/options missing, corrupt or out of date.
+        InfeasibleError: the picked scenes cannot fill the plan (before any estimate or call).
         SettingsError: no API key (only when a real call is needed).
         CostCapReached / DraftError: budget or check rounds exhausted (nothing written).
         AiError: the API call itself failed.
@@ -269,6 +275,10 @@ def build_drafts(
     glossary = glossary if glossary is not None else load_glossary()
     folder = folder.expanduser().resolve()
     job = _job(options_file, folder, rules, glossary)
+    if rules["pick"].get("feasibility_gate", True):  # free: before the estimate and any call
+        problem = check_feasible(job.plan, job.pick, rules, len(job.ctx.expected))
+        if problem is not None:
+            raise InfeasibleError(problem.message)
     if max_vnd is not None and not dry_run:
         job.cap = min(job.cap, max_vnd)
     settings = settings if settings is not None else load_settings()

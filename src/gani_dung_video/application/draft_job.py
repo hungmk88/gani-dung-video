@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from gani_dung_video.application.analyze_job import JobEnv, run_stage, settle_stop
+from gani_dung_video.domain.feasibility import INFEASIBLE_EXIT_CODE
 from gani_dung_video.domain.jobs import (
     Estimate,
     Job,
@@ -81,6 +82,17 @@ def _stored(job: Job) -> Estimate:
     return Estimate(model="", input_tokens=job.cost_input_tokens or 0, input_only_vnd=0.0,
                     worst_call_vnd=job.cost_worst_call_vnd or 0.0,
                     cap_vnd=job.cost_cap_vnd or 0.0, max_attempts=1)  # fmt: skip
+
+
+def _infeasible(exit_code: int | None, tail: Sequence[str]) -> str | None:
+    """The reason `draft` gave when the footage cannot fill the plan (exit code 3), else None."""
+    if exit_code != INFEASIBLE_EXIT_CODE:
+        return None
+    marker = "KHÔNG ĐẠT: "
+    for line in reversed(tail):
+        if marker in line:
+            return line.split(marker, 1)[1].strip()
+    return None
 
 
 def _log_size(folder: Path) -> int:
@@ -159,6 +171,9 @@ def _run_estimate(env: JobEnv, job: Job) -> None:
             timeout_sec=float(cfg["draft_timeout_sec"]), tail=tail, capture=capture,
         )  # fmt: skip
         if verdict.status != "completed":
+            if stage == "estimate" and (why := _infeasible(res.exit_code, tail)) is not None:
+                _fail(env, job, why, None, res.exit_code)  # nothing here fixes itself: 0đ
+                return
             settle_stop(env, job, verdict, res, " | ".join(tail))
             return
         env.db.mark_stage_done(job.id, stage)
@@ -189,6 +204,9 @@ def _run_paid(env: JobEnv, job: Job) -> None:
                              stages=_PAID_STAGES, done=[], job_start=job_start, stall_sec=stall,
                              timeout_sec=timeout, tail=tail, capture=lines)  # fmt: skip
     if verdict.status != "completed":
+        if (why := _infeasible(res.exit_code, tail)) is not None:  # the data changed meanwhile
+            _fail(env, job, why, None, res.exit_code)
+            return
         settle_stop(env, job, verdict, res, " | ".join(tail))
         return
     fresh = _estimate_from(lines)

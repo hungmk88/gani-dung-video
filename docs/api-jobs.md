@@ -337,6 +337,8 @@ Claude ở trường hợp xấu nhất (job có thể gọi tối đa vài vòn
 
 ### Hành vi cần biết
 
+- **Cổng khả thi (chế độ nhạc, 0đ).** Ngay sau `pick` và trước bước ước tính chi phí, job `draft` kiểm tra footage đã chọn có thể lấp plan không (từng khối đủ sức chứa; nhóm khối dùng chung cảnh; nhiều bản nháp cần hook khác nhau và đủ cảnh khác nhau). Không đủ thì job **`failed` ngay, không tốn đồng nào**, không bao giờ vào `awaiting_approval`, và `error_msg` là thông điệp tiếng Việt nguyên văn, ví dụ: "Dừng trước khi gọi Claude (0đ): khối 'san_pham' cần 24 phách nhưng chỉ có 2 cảnh ứng viên, tối đa lấp được 8 phách …" — giao diện chỉ việc hiển thị `error_msg`. Thiếu **nhãn** mà đủ số cảnh thì không bị chặn. Kiểm tra chỉ dùng điều kiện cần (không từ chối oan): qua cổng không bảo đảm Claude sẽ dựng được. Chế độ lời không áp dụng. Lệnh `draft` chạy tay thoát mã 3 trong trường hợp này. Tắt bằng `pick.feasibility_gate = false`.
+
 - **Thử lại từng job** (`POST /api/jobs/{id}/retry`): không có thử lại cả pipeline. Job phân tích
   lỗi thì các job sau nó bị hủy dây chuyền; thử lại job phân tích **không** tự khôi phục các job
   đã hủy — giao diện thử lại từng job theo thứ tự (`analyze`, `draft`, `render`). Thử lại job

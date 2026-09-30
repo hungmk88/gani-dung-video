@@ -180,8 +180,9 @@
   ]
   }
  },
- "_ghi_chu_pick": "Chọn ứng viên cho từng khối (GĐ4b, chốt 29/09/2026, đặc tả §7.1 sửa S12): loại cảnh mờ/nhãn khac/quá ngắn → lọc nhãn bắt buộc (thiếu thì lấy cảnh gần nhất theo xác suất CLIP và ghi missing_shots bằng tag_names) → món nhắc trong ghi chú lên trước → điểm thẩm mỹ. Số ứng viên = 2 × số cảnh khối cần, kẹp [min_candidates, max_candidates]. dish_min_similarity: độ tương đồng chữ–ảnh CLIP tối thiểu để coi là đúng món, đo trên footage GANI.",
+ "_ghi_chu_pick": "Cổng khả thi (GĐ6e, chốt 30/09/2026): sau pick, trước ước tính chi phí, `draft` (cả --dry-run) kiểm tra footage đã chọn CÓ THỂ lấp plan không, chỉ bằng điều kiện cần nên không từ chối oan: (1) từng khối đủ sức chứa (tổng phách tối đa của ứng viên, mỗi cảnh một lần, mỗi clip tối đa max_segments_per_clip, ≥ phách khối − dung sai V2); (2) nhóm khối dùng chung cảnh; (3) nhiều bản nháp cần hook khác nhau và đủ cảnh khác nhau (V9). Thiếu NHÃN mà đủ cảnh thì KHÔNG chặn (X8). Không đủ thì `draft` thoát mã 3, job kịch bản failed 0đ. feasibility_gate: false để tắt (chỉ để gỡ lỗi). Chế độ lời không áp dụng. Chọn ứng viên cho từng khối (GĐ4b, chốt 29/09/2026, đặc tả §7.1 sửa S12): loại cảnh mờ/nhãn khac/quá ngắn → lọc nhãn bắt buộc (thiếu thì lấy cảnh gần nhất theo xác suất CLIP và ghi missing_shots bằng tag_names) → món nhắc trong ghi chú lên trước → điểm thẩm mỹ. Số ứng viên = 2 × số cảnh khối cần, kẹp [min_candidates, max_candidates]. dish_min_similarity: độ tương đồng chữ–ảnh CLIP tối thiểu để coi là đúng món, đo trên footage GANI.",
  "pick": {
+  "feasibility_gate": true,
   "min_candidates": 6,
   "max_candidates": 20,
   "dish_min_similarity": 0.25,
@@ -431,6 +432,10 @@
   "QUEUE_NO_PLAN": "Dự án chưa có edit/plan.json — chạy lệnh `plan` (rồi `pick`, `draft`) trước khi đưa vào hàng đợi.",
   "QUEUE_NO_DRAFTS": "Dự án chưa có edit/{file} — chạy lệnh `draft` trước khi đưa vào hàng đợi.",
   "QUEUE_NO_DEPENDENCY": "Không có job #{job} để chờ (`--after`).",
+  "FEASIBLE_BLOCK": "Dừng trước khi gọi Claude (0đ): khối '{block}' cần {beats} phách (được lệch tối đa {tol}) nhưng chỉ có {count} cảnh ứng viên, tối đa lấp được {have} phách (mỗi cảnh chỉ dùng một lần, mỗi clip tối đa {per_clip} đoạn). Quay thêm cảnh cho khối này{tags}, hoặc đổi phong cách/mục đích, hoặc giảm độ dài video.",
+  "FEASIBLE_GROUP": "Dừng trước khi gọi Claude (0đ): các khối {blocks} cùng cần ít nhất {need} phách nhưng chỉ có {count} cảnh khác nhau để chia (mỗi cảnh chỉ dùng một lần, mỗi clip tối đa {per_clip} đoạn), lấp được tối đa {have} phách. Quay thêm cảnh, đổi phong cách/mục đích hoặc giảm độ dài video.",
+  "FEASIBLE_VARIETY": "Dừng trước khi gọi Claude (0đ): {drafts} bản nháp cần ít nhất {need} cảnh khác nhau (mỗi bản cần từ {per} cảnh và bản sau chỉ được trùng {overlap}) nhưng footage chỉ có {have}. Giảm số bản nháp còn 1, hoặc quay thêm cảnh, hoặc giảm độ dài video.",
+  "FEASIBLE_HOOK": "Dừng trước khi gọi Claude (0đ): {drafts} bản nháp cần {drafts} cảnh mở đầu khác nhau nhưng khối '{block}' chỉ có {count} ứng viên. Giảm số bản nháp hoặc quay thêm cảnh cho khối này.",
   "PROJECT_LOCKED": "Dự án '{folder}' đang được một hàng đợi khác dùng{detail}. Chờ nó xong hoặc hủy các job ở hàng đợi đó rồi thử lại.",
   "PIPELINE_BUSY": "Dự án '{folder}' đang có job #{job} chạy hoặc chờ{pipeline}. Chờ nó xong hoặc hủy nó rồi tạo lại.",
   "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
