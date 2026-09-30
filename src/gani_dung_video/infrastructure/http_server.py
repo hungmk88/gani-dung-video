@@ -7,6 +7,9 @@ Every request passes the same gate before anything else runs:
 4. a POST body must be JSON (Content-Type application/json, size-limited, Content-Length).
 Errors are always {"error": {"code", "message"}} in Vietnamese and never carry paths or
 tracebacks. Threads serve connections independently, so a stalled client blocks nobody.
+
+From phase 6g the same server also hands out the built web UI (`rules.api.frontend_dist`) for
+any GET/HEAD path that is not /api/... or /media/...; see domain/static_paths.py for the rules.
 """
 
 from __future__ import annotations
@@ -31,6 +34,13 @@ from gani_dung_video.domain.api_models import (
     JobCreate,
     PipelineCreate,
     PreflightRequest,
+)
+from gani_dung_video.domain.static_paths import etag_matches, is_api_path, safe_segments
+from gani_dung_video.infrastructure.static_files import (
+    StaticFile,
+    dist_root,
+    has_index,
+    resolve_static,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,6 +173,10 @@ def make_server(ctx: ApiContext, host: str | None = None, port: int | None = Non
     if host != _LOOPBACK:
         raise ApiServerError(f"API chỉ được mở ở {_LOOPBACK} (nhận '{host}'): không bao giờ mở "
                              "ra mạng.")  # fmt: skip
+    ui = dist_root(cfg)
+    if ui is not None and not has_index(ui):
+        logger.warning("Chưa build giao diện (%s không có index.html): chạy `npm run build:real` "
+                       "trong frontend để `serve` phục vụ luôn giao diện.", ui.name)  # fmt: skip
     try:
         server = _Server((host, port), _make_handler(ctx, cfg))
     except OSError as e:
@@ -176,6 +190,8 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
     max_body = int(cfg["max_body_bytes"])
     chunk = int(cfg["media_chunk_bytes"])
     timeout_sec = float(cfg["socket_timeout_sec"])
+    ui_root = dist_root(cfg)
+    csp = str(cfg.get("frontend_csp") or "")
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -202,7 +218,9 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
 
         def _head(self, status: int, headers: Sequence[tuple[str, str]]) -> None:
             self.send_response(status)
-            for k, v in [("Cache-Control", "no-store"), ("X-Content-Type-Options", "nosniff"),
+            overridden = {k.lower() for k, _ in headers}
+            defaults = [("Cache-Control", "no-store"), ("X-Content-Type-Options", "nosniff")]
+            for k, v in [*(d for d in defaults if d[0].lower() not in overridden),
                          *self._cors(), *headers]:  # fmt: skip
                 self.send_header(k, v)
             self.end_headers()
@@ -338,11 +356,45 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
                     self.close_connection = True
                     self._send_error(405, "method_not_allowed", "Phương thức không được hỗ trợ.",
                                      [("Allow", allow)])  # fmt: skip
+                    self._linger()  # the refused request may carry a body we never read
                     return
                 query = parse_qs(parts.query, keep_blank_values=True)
                 getattr(self, f"_r_{name}")(query, *m.groups())
                 return
+            if ui_root is not None and not self._is_api_url(parts.path):
+                self._route_static(parts.path)
+                return
             raise ApiError(404, "not_found", "Không có đường dẫn này.")
+
+        def _is_api_url(self, path: str) -> bool:
+            segments = safe_segments(path)
+            return path == "/api" or path.startswith("/api/") or (
+                segments is not None and is_api_path(segments))  # fmt: skip
+
+        def _route_static(self, path: str) -> None:
+            """The built UI: GET/HEAD only. Anything unsafe or unknown is the same 404 as ever."""
+            assert ui_root is not None
+            if self.command not in ("GET", "HEAD"):
+                self.close_connection = True
+                self._send_error(405, "method_not_allowed", "Phương thức không được hỗ trợ.",
+                                 [("Allow", "GET, HEAD")])  # fmt: skip
+                self._linger()
+                return
+            found = resolve_static(ui_root, path)
+            if found is None:
+                raise ApiError(404, "not_found", "Không có đường dẫn này.")
+            self._send_static(found)
+
+        def _send_static(self, f: StaticFile) -> None:
+            extra = [("ETag", f.etag), ("Cache-Control", f.cache_control)]
+            if f.is_html:
+                extra += [("X-Frame-Options", "DENY"), ("Referrer-Policy", "no-referrer")]
+                if csp:
+                    extra.append(("Content-Security-Policy", csp))
+            if etag_matches(self.headers.get("If-None-Match"), f.etag):
+                self._head(304, extra)
+                return
+            self._send_file(f.path, f.size, [("Content-Type", f.content_type), *extra])
 
         def do_GET(self) -> None:
             self._handle()
@@ -419,10 +471,13 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
 
         def _r_media(self, query: Mapping[str, list[str]], job_id: str, kind: str) -> None:
             media = api_service.resolve_media(ctx, int(job_id), kind)
-            size = media.size
+            headers = [("Content-Type", media.content_type), ("Content-Disposition", "inline")]
+            self._send_file(media.path, media.size, headers)
+
+        def _send_file(self, path: Any, size: int, headers: Sequence[tuple[str, str]]) -> None:
+            """A file with HTTP Range (one range), for job videos and for UI files alike."""
             rng = parse_range(self.headers.get("Range"), size)
-            base = [("Content-Type", media.content_type), ("Accept-Ranges", "bytes"),
-                    ("Content-Disposition", "inline")]  # fmt: skip
+            base = [*headers, ("Accept-Ranges", "bytes")]
             if rng == "unsatisfiable":
                 self._head(416, [*base, ("Content-Range", f"bytes */{size}"),
                                  ("Content-Length", "0")])  # fmt: skip
@@ -434,7 +489,7 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
             self._head(status, [*base, *extra, ("Content-Length", str(length))])
             if self.command == "HEAD" or not length:
                 return
-            sent = _stream(media.path, self.wfile, start, length, chunk)
+            sent = _stream(path, self.wfile, start, length, chunk)
             if sent != length:
                 self.close_connection = True  # the file changed under us: length is now a lie
 

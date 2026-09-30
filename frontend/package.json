@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:real": "vite --mode real",
     "build": "tsc -b && vite build",
+    "build:real": "tsc -b && vite build --mode real",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "node --test src/services/mappers.test.ts src/services/pipelines.test.ts src/services/qa.test.ts src/lib/approval.test.ts"

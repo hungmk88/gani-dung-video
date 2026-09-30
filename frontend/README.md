@@ -13,6 +13,13 @@ npm install
 npm run dev
 ```
 
+## Chạy từ `serve` (không cần Vite)
+
+```bash
+npm run build:real                # bản nối API thật (`npm run build` là bản mô phỏng để xem thử)
+python -m gani_dung_video serve   # rồi mở http://127.0.0.1:8765/
+```
+
 ## Đồng bộ tài nguyên demo
 
 `public/audio/` và `public/preview/` không nằm trong git (xem `.gitignore`) — đó là file

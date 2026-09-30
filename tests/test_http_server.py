@@ -168,7 +168,10 @@ def api(tmp_path: Path) -> Iterator[Api]:
     root = tmp_path / "allowed"
     root.mkdir()
     project(root)
-    ctx = ApiContext(QueueDb(tmp_path / "q" / "queue.db"), RULES,
+    # These tests are about the API: a locally built UI (frontend/dist) must not change them.
+    # Serving the UI has its own tests in test_static_serve.py.
+    rules = {**RULES, "api": {**RULES["api"], "frontend_dist": None}}
+    ctx = ApiContext(QueueDb(tmp_path / "q" / "queue.db"), rules,
                      Settings(gani_dv_allowed_roots=str(root)))  # fmt: skip
     server = make_server(ctx, port=0)
     t = threading.Thread(target=server.serve_forever, daemon=True)
