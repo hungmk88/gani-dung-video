@@ -851,3 +851,122 @@ def test_an_old_report_without_t8_numbers_is_unavailable_not_a_crash(
     jid, _ = final_speech_job(ctx, root)  # finish_job writes a report with no "t8" at all
     qa = get_job(ctx, jid).qa
     assert qa is not None and qa.t8 == "unavailable" and "T8" not in [c.code for c in qa.checks]
+
+
+# ─────────────── 6h: footage that is only just enough, shown at the approval gate ───────────────
+
+FIT_BLOCKS = [("hook", 4), ("ve_sinh", 10), ("quy_trinh", 16), ("bang_chung", 6), ("cta", 6)]
+
+
+def write_fit_files(folder: Path, distinct: int, driver: str = "music") -> None:
+    """The plan and the picked scenes of the real 30s run that failed on V4: five blocks that all
+    draw on the same `distinct` scenes (one clip each)."""
+    from gani_dung_video.domain.pick import BlockCandidates, Candidate, PickFile
+    from gani_dung_video.domain.plan import Plan, PlanBlock
+
+    pool = [Candidate(id=f"s{i}", clip=f"c{i}.mp4", start=10.0 * i, end=10.0 * i + 5.0,
+                      peak=10.0 * i + 2.0, duration=5.0, fits_beats=[4, 6], labels=[],
+                      aesthetic=5.0) for i in range(distinct)]  # fmt: skip
+    total = sum(b for _, b in FIT_BLOCKS)
+    plan = Plan(rules_version="2.0", options={"style": "ke_chuyen_nghe", "drafts": 1},
+                driver=driver, music=None, beat_sec=0.7143, target_beats=total,
+                planned_beats=total, beats_per_scene_allowed=[4, 6],
+                blocks=[PlanBlock(role=r, beats=b) for r, b in FIT_BLOCKS], text_rules={},
+                draft_strategy=["toi_uu"])  # fmt: skip
+    pick = PickFile(rules_version="2.0", style="ke_chuyen_nghe", beat_sec=0.7143,
+                    beats_per_scene_allowed=[4, 6], dishes=[],
+                    blocks=[BlockCandidates(role=r, beats=b, required_tags=[], missing_tags=[],
+                                            candidates=pool) for r, b in FIT_BLOCKS],
+                    missing_shots=[], similar_pairs=[])  # fmt: skip
+    edit = folder / "edit"
+    edit.mkdir(parents=True, exist_ok=True)
+    (edit / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
+    (edit / "candidates.json").write_text(pick.model_dump_json(), encoding="utf-8")
+
+
+def waiting_draft(ctx: ApiContext, root: Path, distinct: int = 9, **kw: Any) -> tuple[int, Path]:
+    view = start(ctx, root)
+    folder = root / "footage"
+    write_fit_files(folder, distinct, **kw)
+    return reach_approval(ctx, view), folder
+
+
+def test_a_draft_waiting_for_approval_says_how_tight_the_footage_is(
+    ctx: ApiContext, root: Path
+) -> None:
+    draft_id, _ = waiting_draft(ctx, root, distinct=9)
+    fit = get_job(ctx, draft_id).footage
+    assert fit is not None
+    assert (fit.scenes_available, fit.scenes_needed_min, fit.scenes_needed_max) == (9, 8, 9)
+    assert fit.warn_below == 12 and fit.tight is True
+    assert [b.role for b in fit.blocks] == [r for r, _ in FIT_BLOCKS]
+    ve_sinh = fit.blocks[1]
+    assert (ve_sinh.candidates, ve_sinh.beats_needed, ve_sinh.max_fill) == (9, 10, 54)
+    assert (ve_sinh.scenes_min, ve_sinh.scenes_max, ve_sinh.tight) == (2, 2, False)
+
+
+def test_plenty_of_scenes_is_reported_as_not_tight(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = waiting_draft(ctx, root, distinct=20)
+    fit = get_job(ctx, draft_id).footage
+    assert fit is not None and fit.scenes_available == 20 and fit.tight is False
+
+
+def test_the_footage_block_reaches_the_json_the_ui_reads(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = waiting_draft(ctx, root)
+    body = get_job(ctx, draft_id).model_dump(mode="json")
+    assert set(body["footage"]) == {"scenes_available", "scenes_needed_min", "scenes_needed_max",
+                                    "warn_below", "tight", "blocks"}  # fmt: skip
+    assert set(body["footage"]["blocks"][0]) == {"role", "candidates", "beats_needed", "max_fill",
+                                                 "scenes_min", "scenes_max", "tight"}  # fmt: skip
+    assert json.dumps(body)  # plain JSON types only
+
+
+def test_only_a_draft_at_the_gate_has_footage_numbers(ctx: ApiContext, root: Path) -> None:
+    view = start(ctx, root)
+    write_fit_files(root / "footage", 9)
+    for j in view.jobs:  # nothing has run yet
+        assert get_job(ctx, j.id).footage is None
+    draft_id = reach_approval(ctx, view)
+    assert get_job(ctx, draft_id).footage is not None
+    approve(ctx, draft_id, ApproveRequest(max_vnd=6000, estimate_vnd=4166))
+    assert get_job(ctx, draft_id).footage is None  # approved: no longer a decision to help with
+    assert all(get_job(ctx, j.id).footage is None for j in view.jobs if j.kind != "draft")
+
+
+@pytest.mark.parametrize("damage", ["no_candidates", "no_plan", "bad_json", "wrong_shape"])
+def test_unreadable_files_give_null_not_an_error(ctx: ApiContext, root: Path,
+                                                 damage: str) -> None:  # fmt: skip
+    draft_id, folder = waiting_draft(ctx, root)
+    edit = folder / "edit"
+    if damage == "no_candidates":
+        (edit / "candidates.json").unlink()
+    elif damage == "no_plan":
+        (edit / "plan.json").unlink()
+    elif damage == "bad_json":
+        (edit / "candidates.json").write_text("{not json", encoding="utf-8")
+    else:
+        (edit / "candidates.json").write_text('{"blocks": 3}', encoding="utf-8")
+    assert get_job(ctx, draft_id).footage is None
+
+
+def test_files_from_before_this_run_are_not_shown(ctx: ApiContext, root: Path) -> None:
+    """The plan and candidates are shared by the project: a leftover from an older run says
+    nothing about the run that is waiting now (same rule as the QC report)."""
+    draft_id, folder = waiting_draft(ctx, root)
+    started = ctx.db.get(draft_id)
+    assert started is not None and started.started_at is not None
+    old = started.started_at - 3600
+    for name in ("plan.json", "candidates.json"):
+        os.utime(folder / "edit" / name, (old, old))
+    assert get_job(ctx, draft_id).footage is None
+
+
+def test_speech_mode_has_no_footage_numbers(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = waiting_draft(ctx, root, driver="speech")
+    assert get_job(ctx, draft_id).footage is None
+
+
+def test_the_list_carries_the_same_block_as_the_detail(ctx: ApiContext, root: Path) -> None:
+    draft_id, _ = waiting_draft(ctx, root)
+    listed = next(j for j in list_jobs(ctx) if j.id == draft_id)
+    assert listed.footage is not None and listed.footage.tight is True
