@@ -247,3 +247,12 @@ Cho đến khi anh chốt Q1–Q4, em không mở nhánh hay viết code GĐ7.
 - **Footage giả:** `tests/mock_footage.py` tạo 28 clip × 3 đoạn (không có video), dùng cho test 7b và các pha sau; 28 clip đủ cho kế hoạch 180s 2 bản, 9 clip thì bị cổng chặn.
 - **Chưa làm ở 7b:** `footage_fit` vẫn liệt kê từng tiểu khối (API/UI chưa gộp theo chương); prompt/schema/luật V để 7c.
 
+### Ghi chú triển khai 7c
+
+- **Schema/prompt:** khi plan có chương, `response_schema(letters, chapters)` thêm `chapter_titles` (mỗi chương một `{chapter, title}`, `chapter` là enum id chương) và `system_prompt_for(plan)` nối thêm `CHAPTERS_PROMPT` (luật 8–10). Video ngắn giữ nguyên prompt và schema. Dữ liệu gửi Claude có thêm mục `chapters` (id, beats, title_beats, blocks) và `text_rules.per_chapter`, `title_max_words` lấy từ `rules.json` (không chép số vào prompt).
+- **V1:** mỗi bản phải có đúng một tiêu đề cho mỗi chương. **V7:** `per_chapter` [3, 5] đếm dòng chữ của các tiểu khối trong chương (hook và CTA không tính). **V10 (mới, mức `ai`):** tiêu đề không rỗng, ≤ `title_max_words` (6) từ, không cụm cấm, không trùng tiêu đề chương khác trong cùng bản. Mỗi chương bắt đầu đúng phách là hiển nhiên (mọi cú cắt nằm trên lưới phách) nên không thêm phép kiểm riêng.
+- **Báo cáo V:** `verify_report.json` có thêm `extra_codes` (`["V10"]` khi plan có chương); API và giao diện thêm hàng V10 ngay trước SNAP. Video ngắn và báo cáo cũ không đổi.
+- **Trần:** `ai.cost_cap_vnd["180"] = 30000`. Mặc định 2 bản: `X15` cảnh báo 3 bản (bản nháp dễ bị cắt ở `max_tokens`); mặc định số bản ở wizard thuộc 7g.
+- **Đo trên bộ giả (ước tính offline, không gọi Claude):** 13 khối, 136 ứng viên, prompt ≈ 13.710 token vào; một lần gọi xấu nhất (vào + `max_tokens` 16.000) ≈ 4.779đ; câu trả lời hợp lệ của 2 bản ≈ 98 cảnh ≈ 6.000 token ra nhìn thấy (chưa tính token suy nghĩ). Khớp dự báo ở mục 3.2; số thật chỉ có ở 7e.
+- `SnappedDraft.chapter_titles` mang tiêu đề sang bước dựng (7d vẽ chữ đè `title_beats` phách đầu chương).
+

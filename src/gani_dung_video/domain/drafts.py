@@ -47,6 +47,15 @@ ghi "label" mô tả điểm khác biệt.
 warnings."""
 
 
+class ChapterTitle(BaseModel):
+    """The short title drawn over the first beats of a chapter (3-minute videos)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chapter: str
+    title: str
+
+
 class AiSegment(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -64,6 +73,7 @@ class AiDraft(BaseModel):
     segments: list[AiSegment]
     missing_shots: list[str]
     warnings: list[str]
+    chapter_titles: list[ChapterTitle] = []  # only asked for when the plan has chapters
 
 
 class AiResponse(BaseModel):
@@ -80,6 +90,26 @@ class SnappedDraft(BaseModel):
     segments: list[SnappedSegment]
     missing_shots: list[str]
     warnings: list[str]
+    chapter_titles: list[ChapterTitle] = []
+
+
+# Appended for plans with chapters (3-minute videos, phase 7c). The numbers (lines per chapter,
+# words per title) travel in the data message as text_rules, so they live in rules.json only.
+CHAPTERS_PROMPT = (
+    "\n\nVIDEO CÓ CHƯƠNG (khi dữ liệu có mục chapters):\n"
+    "8. Mỗi chương gồm nhiều tiểu khối có role dạng <chương>#<số>; mỗi tiểu khối có danh sách "
+    "ứng viên RIÊNG và tổng phách đúng plan. Hook và CTA không thuộc chương nào.\n"
+    "9. Mỗi chương có số dòng chữ trên hình trong khoảng text_rules.per_chapter [ít nhất, nhiều "
+    "nhất], rải đều theo thời gian (khoảng 1 dòng mỗi 10–15 giây), dẫn dắt người xem qua chương.\n"
+    "10. chapter_titles: đúng MỘT tiêu đề cho MỖI chương (đủ mọi id trong chapters, không trùng "
+    "nhau), tối đa text_rules.title_max_words từ, không cụm trong banned_claims. Tiêu đề hiện "
+    "trong title_beats phách đầu chương, nên ngắn và gọi tên nội dung chương."
+)
+
+
+def system_prompt_for(plan: Plan) -> str:
+    """The system prompt of this plan: Appendix B, plus the chapter rules for 3-minute videos."""
+    return SYSTEM_PROMPT + CHAPTERS_PROMPT if plan.chapters else SYSTEM_PROMPT
 
 
 def _obj(props: dict[str, Any]) -> dict[str, Any]:
@@ -87,14 +117,22 @@ def _obj(props: dict[str, Any]) -> dict[str, Any]:
             "additionalProperties": False}  # fmt: skip
 
 
-def response_schema(letters: Sequence[str]) -> dict[str, Any]:
-    """JSON schema for output_config.format (only keywords structured outputs support)."""
+def response_schema(letters: Sequence[str], chapters: Sequence[str] = ()) -> dict[str, Any]:
+    """JSON schema for output_config.format (only keywords structured outputs support).
+
+    `chapters` (ids of a 3-minute plan) adds one required title per chapter to every draft."""
     strings = {"type": "array", "items": {"type": "string"}}
     segment = _obj({"block": {"type": "string"}, "scene_id": {"type": "string"},
                     "beats": {"type": "integer"}, "text": {"type": "string"}})  # fmt: skip
-    draft = _obj({"draft": {"type": "string", "enum": list(letters)}, "label": {"type": "string"},
-                  "segments": {"type": "array", "items": segment},
-                  "missing_shots": strings, "warnings": strings})  # fmt: skip
+    props: dict[str, Any] = {"draft": {"type": "string", "enum": list(letters)},
+                             "label": {"type": "string"},
+                             "segments": {"type": "array", "items": segment},
+                             "missing_shots": strings, "warnings": strings}  # fmt: skip
+    if chapters:
+        title = _obj({"chapter": {"type": "string", "enum": list(chapters)},
+                      "title": {"type": "string"}})  # fmt: skip
+        props["chapter_titles"] = {"type": "array", "items": title}
+    draft = _obj(props)
     return _obj({"drafts": {"type": "array", "items": draft}})
 
 
@@ -129,6 +167,9 @@ def build_user_prompt(
         "candidates": _candidates(pick), "never_together": [list(p) for p in pick.similar_pairs],
         "missing_shots_known": pick.missing_shots, "dishes_in_note": pick.dishes,
     }  # fmt: skip
+    if plan.chapters:
+        data["chapters"] = [{"id": c.id, "beats": c.beats, "title_beats": c.title_beats,
+                             "blocks": c.blocks} for c in plan.chapters]  # fmt: skip
     parts = [f"<{DATA_TAG}>{json.dumps(data, ensure_ascii=False)}</{DATA_TAG}>"]
     if note and note.strip():
         safe = note.replace(f"</{NOTE_TAG}>", "").replace(f"<{NOTE_TAG}>", "")

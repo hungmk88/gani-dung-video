@@ -192,3 +192,31 @@ def test_a_damaged_report_is_rejected_not_half_read(raw: str) -> None:
 def test_finding_levels_are_limited() -> None:
     with pytest.raises(ValidationError):
         Finding(code="V1", level="nope", draft=None, msg="x")
+
+
+# ─────────────── extra checks (V10 of a 3-minute plan) ───────────────
+
+
+def test_an_extra_code_sits_just_before_snap() -> None:
+    rows = check_rows("music", rnd(), extra=["V10"])
+    assert [r.code for r in rows][-3:] == ["V9", "V10", "SNAP"]
+    assert {r.status for r in rows} == {"pass"}
+
+
+def test_an_extra_code_can_fail_and_is_skipped_for_an_unreadable_answer() -> None:
+    bad = check_rows("music", rnd(FakeIssue("V10", "ai", "Chương 'x' chưa có tiêu đề.", "A")),
+                     extra=["V10"])  # fmt: skip
+    assert {r.code: r.status for r in bad}["V10"] == "fail"
+    lost = check_rows("music", rnd(FakeIssue("V1", "ai", "x"), parsed=False), extra=["V10"])
+    assert {r.code: r.status for r in lost}["V10"] == "skipped"
+
+
+def test_extra_codes_default_to_none_and_round_trip() -> None:
+    report = VerifyReportFile(mode="music", final_status="passed", rounds=[rnd()],
+                              extra_codes=["V10"])  # fmt: skip
+    again = VerifyReportFile.model_validate_json(report.model_dump_json())
+    assert again.extra_codes == ["V10"]
+    old = VerifyReportFile.model_validate_json(
+        '{"mode": "music", "final_status": "passed", "rounds": []}'
+    )
+    assert old.extra_codes == []

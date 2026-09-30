@@ -393,7 +393,7 @@ kết thúc** (`completed` hoặc `failed`) trả thêm `verify`.
 }
 ```
 
-- `mode`: `music` (V1–V9 + `SNAP`) hoặc `speech` (S1–S6 + `SNAP`). `checks` là vòng **cuối**, mỗi
+- `mode`: `music` (V1–V9 + `SNAP`; kế hoạch 3 phút thêm V10 ngay trước `SNAP`) hoặc `speech` (S1–S6 + `SNAP`). `checks` là vòng **cuối**, mỗi
   phép kiểm một dòng, đúng thứ tự; rỗng nếu chưa gọi Claude lần nào (chạm trần chi phí ngay từ đầu).
 - `status` của một phép kiểm: `pass`; `fail` (Claude phải sửa, gửi lại); `fixed` (code tự sửa, V3);
   `warn` (chỉ cảnh báo, V6/S5); `skipped` (câu trả lời không đọc được nên phép kiểm chưa chạy: phép

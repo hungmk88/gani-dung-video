@@ -28,7 +28,6 @@ from gani_dung_video.domain.beats import (
     snap_to_beats,
 )
 from gani_dung_video.domain.drafts import (
-    SYSTEM_PROMPT,
     AiDraft,
     AiResponse,
     SnappedDraft,
@@ -36,6 +35,7 @@ from gani_dung_video.domain.drafts import (
     cost_vnd,
     estimate_tokens,
     response_schema,
+    system_prompt_for,
 )
 from gani_dung_video.domain.feasibility import check_feasible
 from gani_dung_video.domain.pick import PickFile
@@ -163,7 +163,8 @@ def _snap(d: AiDraft, job: _Job) -> tuple[SnappedDraft | None, Issue | None]:
     except SnapError as e:
         return None, Issue("SNAP", "ai", str(e), d.draft)
     return SnappedDraft(draft=d.draft, label=d.label, segments=segs,
-                        missing_shots=d.missing_shots, warnings=d.warnings), None  # fmt: skip
+                        missing_shots=d.missing_shots, warnings=d.warnings,
+                        chapter_titles=d.chapter_titles), None  # fmt: skip
 
 
 def _judge(
@@ -201,7 +202,9 @@ def _retry_errors(issues: Sequence[Issue], kept: Mapping[str, AiDraft]) -> list[
 
 
 def _check_budget(job: _Job, spent: float, prompt: str, rules: Rules) -> None:
-    est_in = estimate_tokens(SYSTEM_PROMPT + prompt, float(job.cfg["chars_per_token"]))
+    est_in = estimate_tokens(
+        system_prompt_for(job.plan) + prompt, float(job.cfg["chars_per_token"])
+    )
     worst = cost_vnd(est_in, int(job.cfg["max_tokens"]), job.cfg)
     if spent + worst > job.cap:
         _log(job.folder, stopped="cost_cap", spent_vnd=spent, next_worst_vnd=worst, cap_vnd=job.cap)
@@ -222,7 +225,11 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules, rec: VerifyRecord
                                    errors=errors, previous=previous)  # fmt: skip
         _check_budget(job, spent, prompt, rules)
         try:
-            reply = caller(SYSTEM_PROMPT, prompt, response_schema(letters))
+            reply = caller(
+                system_prompt_for(job.plan),
+                prompt,
+                response_schema(letters, [c.id for c in job.plan.chapters]),
+            )
         except AiError as e:  # nothing billed, but the incident belongs in the log
             _log(job.folder, attempt=attempt, model=model, drafts=letters, cost_vnd=0,
                  spent_vnd=round(spent, 2), error=str(e))  # fmt: skip
@@ -261,7 +268,8 @@ def _loop(job: _Job, caller: Caller, model: str, rules: Rules, rec: VerifyRecord
 
 def _recorded(job: _Job, caller: Caller, model: str, rules: Rules) -> DraftsFile:
     """Run the loop and leave edit/verify_report.json saying how it ended (6i)."""
-    rec = VerifyRecorder(job.folder, "music")
+    extra = ["V10"] if job.plan.chapters else []  # the title check only exists with chapters
+    rec = VerifyRecorder(job.folder, "music", extra)
     try:
         result = _loop(job, caller, model, rules, rec)
     except CostCapReached:
@@ -307,7 +315,9 @@ def build_drafts(
     model = settings.gani_dv_claude_model or str(job.cfg["model"])
     if dry_run:
         prompt = build_user_prompt(job.plan, job.pick, job.note, job.ctx.banned, job.ctx.expected)
-        est = estimate_tokens(SYSTEM_PROMPT + prompt, float(job.cfg["chars_per_token"]))
+        est = estimate_tokens(
+            system_prompt_for(job.plan) + prompt, float(job.cfg["chars_per_token"])
+        )
         return DryRun(model=model, input_tokens=est, input_only_vnd=cost_vnd(est, 0, job.cfg),
                       worst_call_vnd=cost_vnd(est, int(job.cfg["max_tokens"]), job.cfg),
                       cap_vnd=job.cap, max_attempts=int(job.cfg["max_attempts"])), None  # fmt: skip

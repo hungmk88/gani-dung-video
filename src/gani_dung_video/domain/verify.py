@@ -1,8 +1,8 @@
-"""Option-compliance checks V1–V9 on AI drafts (phase 4c, spec §7.4). Pure functions.
+"""Option-compliance checks V1–V10 on AI drafts (phase 4c, spec §7.4). Pure functions.
 
 Each finding says who fixes it: "ai" → sent back to Claude on the next round (max 3 rounds,
 risk R2), "auto" → code fixed it already (V3 rounding), "warn" → kept as a warning (V6).
-V10 (3-minute chapters) comes with phase 7.
+V10 (phase 7c) only exists for 3-minute plans: one short, distinct, claim-free title per chapter.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ LETTERS = "ABC"
 
 @dataclass(frozen=True)
 class Issue:
-    code: str  # V1..V9 or SNAP
+    code: str  # V1..V10 or SNAP
     level: str  # ai | auto | warn
     msg: str  # Vietnamese; also what Claude reads on a retry
     draft: str | None = None
@@ -78,6 +78,7 @@ def parse_response(raw: object, ctx: VerifyContext) -> tuple[AiResponse | None, 
         issues.append(Issue("V1", "ai", msg))
     roles = {b.role for b in ctx.plan.blocks}
     for d in resp.drafts:
+        issues += _title_structure(d, ctx)
         for s in d.segments:
             if s.block not in roles:
                 issues.append(Issue("V1", "ai", f"Khối '{s.block}' không có trong plan.", d.draft))
@@ -85,6 +86,19 @@ def parse_response(raw: object, ctx: VerifyContext) -> tuple[AiResponse | None, 
                 issues.append(Issue("V1", "ai", f"Cảnh '{s.scene_id}' không có trong danh "
                                                 "sách ứng viên.", d.draft))  # fmt: skip
     return (None, issues) if issues else (resp, [])
+
+
+def _title_structure(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
+    """V1 for chapters: exactly one title for each chapter of the plan, none for another."""
+    want = [c.id for c in ctx.plan.chapters]
+    if not want:
+        return []
+    got = [t.chapter for t in d.chapter_titles]
+    if sorted(got) == sorted(want):
+        return []
+    msg = (f"Cần đúng {len(want)} tiêu đề chương ({', '.join(want)}), mỗi chương một tiêu đề; "
+           f"nhận được {', '.join(got) or 'không có'}.")  # fmt: skip
+    return [Issue("V1", "ai", msg, d.draft)]
 
 
 # ─────────────── V2, V3 ───────────────
@@ -199,6 +213,13 @@ def _check_text(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
             if k > int(rules["per_block"]):
                 out.append(Issue("V7", "ai", f"Khối '{b.role}' có {k} dòng chữ, tối đa "
                                              f"{rules['per_block']}.", d.draft))  # fmt: skip
+    if "per_chapter" in rules:
+        lo, hi = (int(x) for x in rules["per_chapter"])
+        for c in ctx.plan.chapters:
+            k = sum(1 for s in texts if s.block in c.blocks)
+            if not lo <= k <= hi:
+                msg = f"Chương '{c.id}' có {k} dòng chữ, cần từ {lo} đến {hi}."
+                out.append(Issue("V7", "ai", msg, d.draft))
     if "every_n_scenes" in rules:
         limit = math.ceil(len(d.segments) / int(rules["every_n_scenes"]))
         if len(texts) > limit:
@@ -217,6 +238,37 @@ def _check_cta(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
     if ctx.promo_deadline and not any(_has(s.text, ctx.promo_deadline) for s in d.segments):
         out.append(Issue("V8", "ai", f"Khuyến mãi phải hiện thời hạn '{ctx.promo_deadline}' "
                                      "trên hình.", d.draft))  # fmt: skip
+    return out
+
+
+# ─────────────── V10 ───────────────
+
+
+def _check_titles(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
+    """V10: each chapter title is filled in, short, free of banned claims and unlike the others."""
+    if not ctx.plan.chapters:
+        return []
+    limit = ctx.plan.text_rules.get("title_max_words")
+    out: list[Issue] = []
+    seen: dict[tuple[str, ...], str] = {}
+    for t in d.chapter_titles:
+        words = t.title.split()
+        if not words:
+            out.append(Issue("V10", "ai", f"Chương '{t.chapter}' chưa có tiêu đề.", d.draft))
+            continue
+        if limit is not None and len(words) > int(limit):
+            msg = (
+                f"Tiêu đề '{t.title}' của chương '{t.chapter}' có {len(words)} từ, tối đa {limit}."
+            )
+            out.append(Issue("V10", "ai", msg, d.draft))
+        for phrase in find_banned_claims(t.title, ctx.banned):
+            out.append(Issue("V10", "ai", f"Tiêu đề '{t.title}' của chương '{t.chapter}' chứa "
+                                          f"cụm cấm '{phrase}'.", d.draft))  # fmt: skip
+        key = tuple(tokens(t.title))
+        if key in seen:
+            out.append(Issue("V10", "ai", f"Chương '{t.chapter}' trùng tiêu đề với chương "
+                                          f"'{seen[key]}'.", d.draft))  # fmt: skip
+        seen.setdefault(key, t.chapter)
     return out
 
 
@@ -253,7 +305,7 @@ def verify_drafts(resp: AiResponse, ctx: VerifyContext) -> tuple[AiResponse, lis
         fixed.append(d2)
         issues += auto
         for check in (_check_beats, _check_reuse, _check_candidates, _check_required,
-                      _check_text, _check_cta):  # fmt: skip
+                      _check_text, _check_cta, _check_titles):  # fmt: skip
             issues += check(d2, ctx)
     issues += _check_variety(fixed, ctx)
     return AiResponse(drafts=fixed), issues
