@@ -6,6 +6,7 @@
 
 import type {
   ApiEvent,
+  ApiFootage,
   ApiHealth,
   ApiJob,
   ApiJobDetail,
@@ -14,6 +15,8 @@ import type {
   ApiPreflightResult,
   ApiProject,
   ApiQa,
+  ApiVerify,
+  ApiVerifyCheck,
 } from '../types/api.ts';
 import {
   DURATION_IDS,
@@ -26,6 +29,7 @@ import type {
   ApprovalInfo,
   ConsoleLine,
   DraftOutput,
+  FootageInfo,
   HealthInfo,
   JobStatus,
   PipelineJobInfo,
@@ -37,6 +41,10 @@ import type {
   QaGroup,
   QaReport,
   RenderJob,
+  VerifyCheck,
+  VerifyFinal,
+  VerifyReport,
+  VerifyStatus,
   VideoOptions,
 } from '../types/rules.ts';
 
@@ -148,7 +156,59 @@ const QA_GROUP_ORDER = [
   'Âm thanh (T3)',
 ];
 
-export function toQaReport(qa: ApiQa): QaReport {
+const VERIFY_STATUSES: readonly VerifyStatus[] = ['pass', 'fail', 'fixed', 'warn', 'skipped'];
+const VERIFY_FINALS: readonly VerifyFinal[] = ['passed', 'failed', 'cost_cap', 'api_error', 'interrupted'];
+
+function toVerifyCheck(c: ApiVerifyCheck): VerifyCheck {
+  // A status this UI does not know must stay visible, so it reads as a warning, not a pass.
+  const status = (VERIFY_STATUSES as readonly string[]).includes(c.status)
+    ? (c.status as VerifyStatus)
+    : 'warn';
+  return { code: c.code, label: c.label, status, detail: c.detail };
+}
+
+/** V1–V9 / S1–S6 history of a draft job (phase 6i), tolerant of values a newer server adds. */
+export function toVerify(v: ApiVerify): VerifyReport {
+  return {
+    mode: v.mode === 'speech' ? 'speech' : 'music',
+    finalStatus: (VERIFY_FINALS as readonly string[]).includes(v.final_status)
+      ? (v.final_status as VerifyFinal)
+      : 'interrupted',
+    roundsUsed: v.rounds_used,
+    maxRounds: v.max_rounds,
+    checks: v.checks.map(toVerifyCheck),
+    rounds: v.rounds.map((r) => ({
+      round: r.round,
+      drafts: r.drafts,
+      parsed: r.parsed,
+      passed: r.passed,
+      costVnd: r.cost_vnd,
+      checks: r.checks.map(toVerifyCheck),
+    })),
+  };
+}
+
+/** Footage room for the approval dialog (phase 6h). */
+export function toFootage(f: ApiFootage): FootageInfo {
+  return {
+    available: f.scenes_available,
+    neededMin: f.scenes_needed_min,
+    neededMax: f.scenes_needed_max,
+    warnBelow: f.warn_below,
+    tight: f.tight,
+    blocks: f.blocks.map((b) => ({
+      role: b.role,
+      candidates: b.candidates,
+      beatsNeeded: b.beats_needed,
+      scenesMin: b.scenes_min,
+      scenesMax: b.scenes_max,
+      tight: b.tight,
+    })),
+  };
+}
+
+/** `hasVerify`: the job's own V/S table is shown elsewhere, so no "no data" placeholder. */
+export function toQaReport(qa: ApiQa, hasVerify = false): QaReport {
   const groups: QaGroup[] = QA_GROUP_ORDER.map((title) => ({ title, checks: [] }));
   const other: QaGroup = { title: 'Khác', checks: [] };
   for (const c of qa.checks) {
@@ -164,11 +224,15 @@ export function toQaReport(qa: ApiQa): QaReport {
   if (note && text) text.note = note;
   const visible = groups.filter((g) => g.checks.length > 0 || g.emptyNote || g.note);
   if (other.checks.length > 0) visible.push(other);
-  visible.push({
-    title: 'AI viết kịch bản (V1–V9)',
-    checks: [],
-    emptyNote: 'Chưa có dữ liệu thật: backend chưa lưu kết quả V1–V9 theo từng kiểm tra.',
-  });
+  if (!hasVerify) {
+    visible.push({
+      title: 'AI viết kịch bản (V1–V9)',
+      checks: [],
+      emptyNote:
+        'Chưa có dữ liệu: kịch bản này chạy trước khi backend lưu kết quả V1–V9, ' +
+        'hoặc job kịch bản không nằm trong chuỗi đang xem.',
+    });
+  }
   return {
     groups: visible,
     rounds_used: qa.rounds,
@@ -215,7 +279,8 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     logLines: 'events' in job ? job.events.map(toConsoleLine) : [],
     previewUrl: newestUrl(group, 'preview'),
     finalUrl: newestUrl(group, 'final'),
-    qa: job.qa ? toQaReport(job.qa) : null,
+    qa: job.qa ? toQaReport(job.qa, job.verify != null) : null,
+    verify: job.verify ? toVerify(job.verify) : null,
   };
 }
 
@@ -301,6 +366,7 @@ function toApproval(jobs: ApiJob[]): ApprovalInfo | undefined {
     worstCallVnd: j.cost.worst_call_vnd,
     capVnd: j.cost.cap_vnd,
     expiresAt: j.approval_expires_at ?? null,
+    ...(j.footage ? { footage: toFootage(j.footage) } : {}),
   };
 }
 
@@ -317,7 +383,7 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
   };
 }
 
-function toOutputs(jobs: ApiJob[]): DraftOutput[] {
+function toOutputs(jobs: ApiJob[], hasVerify: boolean): DraftOutput[] {
   const renders = jobs.filter((j) => j.kind === 'render');
   const letters = [...new Set(renders.map((j) => j.draft))].sort();
   return letters.map((draft) => {
@@ -329,7 +395,7 @@ function toOutputs(jobs: ApiJob[]): DraftOutput[] {
       draft,
       previewUrl: newestUrl(own, 'preview'),
       finalUrl: newestUrl(own, 'final'),
-      qa: withQa?.qa ? toQaReport(withQa.qa) : null,
+      qa: withQa?.qa ? toQaReport(withQa.qa, hasVerify) : null,
     };
   });
 }
@@ -359,7 +425,11 @@ function pipelineLog(details: ApiJobDetail[]): ConsoleLine[] {
  */
 export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): RenderJob {
   const jobs = [...p.jobs].sort((a, b) => a.id - b.id);
-  const outputs = toOutputs(jobs);
+  // The chain has one draft job; the newest report wins should a retry have left several.
+  const draftWithVerify = jobs
+    .filter((j) => j.kind === 'draft' && j.verify != null)
+    .sort((a, b) => b.id - a.id)[0];
+  const outputs = toOutputs(jobs, draftWithVerify !== undefined);
   const first = outputs[0];
   const planJob = jobs.find((j) => Object.keys(j.options).length > 0);
   return {
@@ -379,6 +449,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
     previewUrl: first?.previewUrl ?? null,
     finalUrl: first?.finalUrl ?? null,
     qa: first?.qa ?? null,
+    verify: draftWithVerify?.verify ? toVerify(draftWithVerify.verify) : null,
   };
 }
 

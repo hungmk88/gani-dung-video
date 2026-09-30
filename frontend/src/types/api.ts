@@ -72,6 +72,54 @@ export interface ApiCost {
   spent_vnd: number | null;
 }
 
+export interface ApiFootageBlock {
+  role: string;
+  candidates: number;
+  beats_needed: number;
+  max_fill: number;
+  scenes_min: number;
+  scenes_max: number;
+  tight: boolean;
+}
+
+/** How much room the picked footage leaves a draft waiting for approval (phase 6h). */
+export interface ApiFootage {
+  scenes_available: number;
+  scenes_needed_min: number;
+  scenes_needed_max: number;
+  warn_below: number;
+  tight: boolean;
+  blocks: ApiFootageBlock[];
+}
+
+export interface ApiVerifyCheck {
+  code: string;
+  label: string;
+  /** pass | fail | fixed | warn | skipped */
+  status: string;
+  detail: string;
+}
+
+export interface ApiVerifyRound {
+  round: number;
+  drafts: string[];
+  parsed: boolean;
+  passed: boolean;
+  cost_vnd: number;
+  checks: ApiVerifyCheck[];
+}
+
+/** V1–V9 (music) / S1–S6 (speech) results of a finished draft job (phase 6i). */
+export interface ApiVerify {
+  mode: string;
+  /** passed | failed | cost_cap | api_error | interrupted */
+  final_status: string;
+  rounds_used: number;
+  max_rounds: number;
+  checks: ApiVerifyCheck[];
+  rounds: ApiVerifyRound[];
+}
+
 export interface ApiJob {
   id: number;
   pipeline_id?: number | null;
@@ -105,6 +153,10 @@ export interface ApiJob {
   srt_url: string | null;
   steps: ApiStep[];
   qa: ApiQa | null;
+  /** Only a draft job at the approval gate, music modes (phase 6h). */
+  footage?: ApiFootage | null;
+  /** Only a finished draft job whose run left a report (phase 6i). */
+  verify?: ApiVerify | null;
 }
 
 export interface ApiJobDetail extends ApiJob {

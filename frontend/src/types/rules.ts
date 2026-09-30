@@ -185,6 +185,56 @@ export type JobStatus =
   | 'done'
   | 'error';
 
+export interface FootageBlockInfo {
+  role: string;
+  candidates: number;
+  beatsNeeded: number;
+  scenesMin: number;
+  scenesMax: number;
+  tight: boolean;
+}
+
+/** Room the picked footage leaves the plan (phase 6h); `tight` is the server's own verdict. */
+export interface FootageInfo {
+  available: number;
+  neededMin: number;
+  neededMax: number;
+  warnBelow: number;
+  tight: boolean;
+  blocks: FootageBlockInfo[];
+}
+
+export type VerifyStatus = 'pass' | 'fail' | 'fixed' | 'warn' | 'skipped';
+export type VerifyFinal = 'passed' | 'failed' | 'cost_cap' | 'api_error' | 'interrupted';
+
+export interface VerifyCheck {
+  code: string;
+  label: string;
+  status: VerifyStatus;
+  detail: string;
+}
+
+export interface VerifyRound {
+  round: number;
+  /** Drafts Claude was asked for in this round (later rounds only re-ask the failed ones). */
+  drafts: string[];
+  parsed: boolean;
+  passed: boolean;
+  costVnd: number;
+  checks: VerifyCheck[];
+}
+
+/** What V1–V9 (music) / S1–S6 (speech) said about a draft job, round by round (phase 6i). */
+export interface VerifyReport {
+  mode: 'music' | 'speech';
+  finalStatus: VerifyFinal;
+  roundsUsed: number;
+  maxRounds: number;
+  /** The last round, one row per check. */
+  checks: VerifyCheck[];
+  rounds: VerifyRound[];
+}
+
 /** A Claude call waiting for a person's cost approval (draft job, phase 6c). */
 export interface ApprovalInfo {
   /** Server id of the draft job to approve. */
@@ -195,6 +245,8 @@ export interface ApprovalInfo {
   /** Ceiling for this video length. */
   capVnd: number;
   expiresAt: string | null;
+  /** Yellow-warning data; absent for speech mode and whenever the server cannot tell. */
+  footage?: FootageInfo;
 }
 
 /** One server job inside a pipeline card (analyze / draft / render). */
@@ -222,6 +274,8 @@ export interface RenderJob {
   /** Real API: set for a whole analyze → draft → render chain (`id` is then `p:<n>`). */
   pipelineId?: number;
   approval?: ApprovalInfo;
+  /** V/S check history of the chain's draft job (real API, finished draft only). */
+  verify?: VerifyReport | null;
   jobs?: PipelineJobInfo[];
   outputs?: DraftOutput[];
   /** Real API only: the project/draft/size this job renders (needed to re-render). */
