@@ -61,6 +61,20 @@ class PlanBlock(BaseModel):
     beats: int
     required_tags: list[str] = []
     text: str | None = None
+    chapter: str | None = None  # 3-minute videos: the chapter this sub-block belongs to
+
+
+class PlanChapter(BaseModel):
+    """A chapter of a 3-minute video (phase 7a): its sub-blocks, where it starts, its title."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    role: str  # the purpose block it comes from (required tags, candidates)
+    start_beat: int
+    beats: int
+    title_beats: int  # the title is drawn over the first beats; no time is added
+    blocks: list[str]  # roles of its sub-blocks, in order
 
 
 class Plan(BaseModel):
@@ -75,6 +89,7 @@ class Plan(BaseModel):
     planned_beats: int
     beats_per_scene_allowed: list[int]
     blocks: list[PlanBlock]
+    chapters: list[PlanChapter] = []  # empty below 180 s
     text_rules: dict[str, Any]  # Any: the style's text rules from rules.json, copied as they are
     draft_strategy: list[str]
     warnings: list[str] = []
@@ -146,6 +161,42 @@ def allocate_blocks(
     return list(zip(roles, _settle(sizes, target, allowed), strict=True))
 
 
+def _even_parts(total: int, parts: int, reach: Sequence[int]) -> list[int]:
+    """`parts` reachable sizes adding up to `total`, closest to equal (least squares), or []."""
+    mean = total / parts
+    best: list[dict[int, tuple[float, int]]] = [{} for _ in range(parts + 1)]
+    best[0][0] = (0.0, 0)
+    for i in range(1, parts + 1):
+        for prev, (cost, _) in best[i - 1].items():
+            for r in reach:
+                if prev + r > total:
+                    break
+                c = cost + (r - mean) ** 2
+                if prev + r not in best[i] or c < best[i][prev + r][0]:
+                    best[i][prev + r] = (c, r)
+    if total not in best[parts]:
+        return []
+    out, left = [], total
+    for i in range(parts, 0, -1):
+        r = best[i][left][1]
+        out.append(r)
+        left -= r
+    return out[::-1]
+
+
+def split_exact(total: int, parts: int, allowed: Sequence[int]) -> list[int]:
+    """Cut `total` beats into `parts` sizes that are each a sum of allowed scene sizes, add up
+    exactly and differ as little as possible; fewer parts when `total` is too small."""
+    reach = _reachable(allowed, total)
+    parts = max(1, min(parts, total // min(allowed)))
+    while parts > 1:
+        got = _even_parts(total, parts, reach)
+        if got:
+            return got
+        parts -= 1
+    return [total]
+
+
 # ─────────────── compile ───────────────
 
 
@@ -194,6 +245,67 @@ def _music_setup(
     return "music", 60.0 / eff, pm, []
 
 
+def _chapter_blocks(
+    o: VideoOptions, purpose: Mapping[str, Any], dur_cfg: Mapping[str, Any], beat_sec: float,
+    allowed: Sequence[int], target: int, cta: str,
+) -> tuple[list[PlanBlock], list[PlanChapter]]:  # fmt: skip
+    """Hook + chapters + CTA of a 3-minute video (design GD7 §2): the hook and the CTA get real
+    seconds, the chapters share the rest by weight, each chapter is cut into sub-blocks."""
+    lay = dur_cfg["layouts"].get(o.muc_dich)
+    if lay is None:
+        raise PlanError("PLAN_CHAPTERS", f"Mục đích '{o.muc_dich}' không có bố cục 3 phút.")
+    tags: Mapping[str, list[str]] = purpose.get("required_tags", {})
+    hook = _floor_size(float(dur_cfg["hook_sec"]) / beat_sec, allowed)
+    end = snap_size(float(dur_cfg["cta_sec"]) / beat_sec, allowed)
+    rest, weights = target - hook - end, [float(w) for _, _, w in lay["chapters"]]
+    sizes = [hook, *(snap_size(w / sum(weights) * rest, allowed) for w in weights), end]
+    sizes = _settle(sizes, target, allowed)
+    title = max(1, math.floor(float(dur_cfg["chapter_title_sec"]) / beat_sec + 0.5))
+    blocks = [PlanBlock(role=lay["hook"], beats=sizes[0], required_tags=tags.get(lay["hook"], []))]
+    chapters: list[PlanChapter] = []
+    for (cid, source, _), beats in zip(lay["chapters"], sizes[1:-1], strict=True):
+        subs = split_exact(beats, round(beats / int(dur_cfg["sub_block_beats"])), allowed)
+        roles = [f"{cid}#{k}" for k in range(1, len(subs) + 1)]
+        blocks += [PlanBlock(role=r, beats=n, required_tags=list(tags.get(source, [])), chapter=cid)
+                   for r, n in zip(roles, subs, strict=True)]  # fmt: skip
+        start = sum(b.beats for b in blocks) - sum(subs)
+        chapters.append(PlanChapter(id=cid, role=source, start_beat=start, beats=sum(subs),
+                                    title_beats=title, blocks=roles))  # fmt: skip
+    blocks.append(PlanBlock(role=lay["cta"], beats=sizes[-1], text=cta,
+                            required_tags=list(tags.get(lay["cta"], []))))  # fmt: skip
+    return blocks, chapters
+
+
+def _short_blocks(
+    o: VideoOptions, purpose: Mapping[str, Any], dur_cfg: Mapping[str, Any], beat_sec: float,
+    allowed: Sequence[int], target: int, cta: str,
+) -> list[PlanBlock]:  # fmt: skip
+    """The blocks of a 15–60 s video: the purpose's ratios, rounded to what scenes can sum to."""
+    ratios, tags = _block_specs(purpose, dur_cfg)
+    roles = [r for r, _ in ratios]
+    sizes = [snap_size(x * target, allowed) for _, x in ratios]
+    if dur_cfg.get("blocks_merge"):  # fixed hook/cta lengths of a 15 s video
+        sizes[-1] = snap_size(float(dur_cfg["cta_sec"]) / beat_sec, allowed)
+        sizes[0] = min(sizes[0], _floor_size(float(dur_cfg["hook_max_sec"]) / beat_sec, allowed))
+    sizes = _settle(sizes, target, allowed)
+    return [
+        PlanBlock(role=r, beats=n, required_tags=tags.get(r, []),
+                  text=cta if i == len(roles) - 1 else None)
+        for i, (r, n) in enumerate(zip(roles, sizes, strict=True))
+    ]  # fmt: skip
+
+
+def _check_chapters_open(o: VideoOptions, rules: Rules, style: Mapping[str, Any],
+                         dur_cfg: Mapping[str, Any]) -> None:  # fmt: skip
+    """Raise PlanError while 3-minute videos are switched off or need the speech driver (7f)."""
+    if not dur_cfg.get("chapters"):
+        return
+    if not dur_cfg.get("enabled"):
+        raise PlanError("PLAN_CHAPTERS", rules["input_msgs"]["PLAN_CHAPTERS"])
+    if style["driver"] == "speech":
+        raise PlanError("PLAN_CHAPTERS_SPEECH", rules["input_msgs"]["PLAN_CHAPTERS_SPEECH"])
+
+
 def compile_plan(
     options: VideoOptions, rules: Rules, *, music: MusicInfo | None,
     available_tags: Collection[str],
@@ -207,13 +319,13 @@ def compile_plan(
             it raises the X8 warning.
 
     Raises:
-        PlanError: 3-minute video (chapters come with phase 7).
+        PlanError: 3-minute video while it is switched off (`durations.180.enabled`), or in the
+            speech-driven style (phase 7f).
     """
     o = options
     style, purpose = rules["styles"][o.phong_cach], rules["purposes"][o.muc_dich]
     dur_cfg = rules["durations"][str(o.do_dai_giay)]
-    if dur_cfg.get("chapters"):
-        raise PlanError("PLAN_CHAPTERS", rules["input_msgs"]["PLAN_CHAPTERS"])
+    _check_chapters_open(o, rules, style, dur_cfg)
     speech = style["driver"] == "speech"  # 5c: speech cuts; beats only place B-roll
     allowed = [int(n) for n in style["broll_beats" if speech else "beats_allowed"]]
     driver, beat_sec, pm, warnings = _music_setup(o, rules, style, music, allowed)
@@ -221,20 +333,15 @@ def compile_plan(
         driver, warnings = "speech", [w for w in warnings if not w.startswith("W_GRID_NO_MUSIC")]
     target = max(1, math.floor(o.do_dai_giay / beat_sec + 0.5))
 
-    ratios, tags = _block_specs(purpose, dur_cfg)
-    roles = [r for r, _ in ratios]
-    sizes = [snap_size(x * target, allowed) for _, x in ratios]
-    if dur_cfg.get("blocks_merge"):  # fixed hook/cta lengths of a 15 s video
-        sizes[-1] = snap_size(float(dur_cfg["cta_sec"]) / beat_sec, allowed)
-        sizes[0] = min(sizes[0], _floor_size(float(dur_cfg["hook_max_sec"]) / beat_sec, allowed))
-    sizes = _settle(sizes, target, allowed)
-
     cta = str(purpose["cta"]).replace("[ngày]", o.khuyen_mai.thoi_han if o.khuyen_mai else "")
-    blocks = [
-        PlanBlock(role=r, beats=n, required_tags=tags.get(r, []),
-                  text=cta if i == len(roles) - 1 else None)
-        for i, (r, n) in enumerate(zip(roles, sizes, strict=True))
-    ]  # fmt: skip
+    text_rules = dict(style.get("text", {}))
+    chapters: list[PlanChapter] = []
+    if dur_cfg.get("chapters"):
+        blocks, chapters = _chapter_blocks(o, purpose, dur_cfg, beat_sec, allowed, target, cta)
+        text_rules.pop("per_block", None)  # a chapter is long: count the lines per chapter
+        text_rules.update(dur_cfg.get("text", {}))
+    else:
+        blocks = _short_blocks(o, purpose, dur_cfg, beat_sec, allowed, target, cta)
     missing = list(dict.fromkeys(t for b in blocks for t in b.required_tags
                                  if t not in available_tags))  # fmt: skip
     if missing:
@@ -244,8 +351,8 @@ def compile_plan(
         options={"style": o.phong_cach, "purpose": o.muc_dich, "duration": o.do_dai_giay,
                  "drafts": o.so_ban_nhap, "music": o.nhac},
         driver=driver, music=pm, beat_sec=beat_sec, target_beats=target,
-        planned_beats=sum(sizes), beats_per_scene_allowed=allowed, blocks=blocks,
-        text_rules=dict(style.get("text", {})),
+        planned_beats=sum(b.beats for b in blocks), beats_per_scene_allowed=allowed,
+        blocks=blocks, chapters=chapters, text_rules=text_rules,
         draft_strategy=list(rules["drafts"]["strategy"][str(o.so_ban_nhap)]),
         warnings=warnings,
     )  # fmt: skip
