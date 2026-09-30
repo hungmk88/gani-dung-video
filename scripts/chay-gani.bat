@@ -45,13 +45,14 @@ if errorlevel 1 (
 
 if defined GANI_NO_BROWSER exit /b 0
 
+rem --start-maximized: cua so ung dung mac dinh chi rong ~1050 px va bi cat khung kiem tra ben phai.
 set "EDGE=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 if not exist "%EDGE%" set "EDGE=%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
 set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 if exist "%EDGE%" (
-  start "" "%EDGE%" --app=http://127.0.0.1:8765/
+  start "" "%EDGE%" --app=http://127.0.0.1:8765/ --start-maximized
 ) else if exist "%CHROME%" (
-  start "" "%CHROME%" --app=http://127.0.0.1:8765/
+  start "" "%CHROME%" --app=http://127.0.0.1:8765/ --start-maximized
 ) else (
   start "" http://127.0.0.1:8765/
 )
