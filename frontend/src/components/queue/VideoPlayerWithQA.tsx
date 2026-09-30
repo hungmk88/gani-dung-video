@@ -1,6 +1,8 @@
-import { CheckCircle2, Download, FileJson, Info, RefreshCw, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, Download, FileJson, Info, RefreshCw, Wrench, XCircle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { seekTarget } from '../../lib/structure';
 import type { QaCheck, QaGroup as QaGroupData, QaReport, RenderJob } from '../../types/rules';
+import { ChapterTimeline } from './ChapterTimeline';
 
 function CheckRow({ c }: { c: QaCheck }) {
   return (
@@ -65,6 +67,18 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
           vòng {qa.rounds_used}/{qa.max_rounds}
         </span>
       </div>
+      {qa.fixes.length > 0 && (
+        <ul className="space-y-1 rounded-lg border border-sky-800/50 bg-sky-950/20 px-3 py-2 text-[11px] text-sky-200">
+          {qa.fixes.map((f, i) => (
+            <li key={i} className="flex items-start gap-1.5">
+              <Wrench className="mt-0.5 h-3 w-3 shrink-0 text-sky-400" />
+              <span>
+                <strong>Tự chỉnh:</strong> {f}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
         {qa.groups.map((g) => (
           <QaGroup key={g.title} group={g} />
@@ -86,12 +100,14 @@ export function VideoPlayerWithQA({
 }) {
   const [chosenTab, setChosenTab] = useState<'preview' | 'final' | null>(null);
   const [chosenDraft, setChosenDraft] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   // A pipeline carries one result per draft (A/B/C); a lone job shows its own files.
   const outputs = job.outputs ?? [];
   const output = outputs.find((o) => o.draft === chosenDraft) ?? outputs[0];
   const previewUrl = output ? output.previewUrl : job.previewUrl;
   const finalUrl = output ? output.finalUrl : job.finalUrl;
   const qa = output ? output.qa : job.qa;
+  const structure = output?.structure ?? job.structure;
   // Until the user picks a tab, show whichever file exists (a final-only job has no preview).
   const tab = chosenTab ?? (previewUrl || !finalUrl ? 'preview' : 'final');
   const setTab = setChosenTab;
@@ -143,7 +159,7 @@ export function VideoPlayerWithQA({
 
       <div className="flex justify-center rounded-lg bg-black">
         {src ? (
-          <video key={src} src={src} controls className="max-h-[520px] rounded-lg" />
+          <video ref={videoRef} key={src} src={src} controls className="max-h-[520px] rounded-lg" />
         ) : (
           <div className="flex h-64 w-full items-center justify-center text-xs text-slate-600">
             Chưa có file — chờ bước "Dựng bản xem trước" hoàn tất.
@@ -156,6 +172,22 @@ export function VideoPlayerWithQA({
         {onShowPlan && <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />}
         <ActionButton icon={RefreshCw} label="Render lại" onClick={onRerender} />
       </div>
+
+      {structure && (
+        <ChapterTimeline
+          structure={structure}
+          onSeek={
+            src
+              ? (sec) => {
+                  const v = videoRef.current;
+                  if (!v) return;
+                  v.currentTime = seekTarget(sec, v.duration);
+                  void v.play().catch(() => undefined);
+                }
+              : undefined
+          }
+        />
+      )}
 
       {qa && <QaReportPanel qa={qa} />}
     </div>

@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.qc_service import QcReport
 from gani_dung_video.application.queue_service import (
     ApprovalRefused,
@@ -40,6 +41,7 @@ from gani_dung_video.domain.api_models import (
     BudgetView,
     CostView,
     EventView,
+    FeaturesView,
     FootageBlockView,
     FootageView,
     HealthView,
@@ -52,6 +54,8 @@ from gani_dung_video.domain.api_models import (
     ProjectView,
     QaView,
     RunInfo,
+    StructureItemView,
+    StructureView,
     VerifyCheckView,
     VerifyRoundView,
     VerifyView,
@@ -137,7 +141,9 @@ def health(ctx: ApiContext) -> HealthView:
                       jobs=ctx.db.counts(), allowed_roots_configured=bool(ctx.roots),
                       ai_key_configured=ai_key_configured(ctx.settings),
                       budget=BudgetView(limit_vnd=float(limit) if limit is not None else None,
-                                        spent_24h_vnd=spent, reserved_vnd=reserved))  # fmt: skip
+                                        spent_24h_vnd=spent, reserved_vnd=reserved),
+                      features=FeaturesView(long_video=bool(
+                          ctx.rules["durations"]["180"].get("enabled", False))))  # fmt: skip
 
 
 def _flags(folder: Path) -> tuple[bool, bool, bool]:
@@ -317,6 +323,43 @@ def _read_verify(ctx: ApiContext, folder: Path, job: Job) -> VerifyView | None:
                       checks=rounds[-1].checks if rounds else [], rounds=rounds)  # fmt: skip
 
 
+def _read_structure(folder: Path, job: Job) -> StructureView | None:
+    """Hook / chapters / CTA on the timeline, with the chapter titles of this job's draft when
+    drafts.json has them. None for short videos, analyze jobs and unreadable files."""
+    if job.kind == "analyze":
+        return None
+    edit = folder / EDIT_DIR
+    try:
+        plan = Plan.model_validate_json((edit / "plan.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not plan.chapters:
+        return None
+    titles: dict[str, str] = {}
+    with contextlib.suppress(OSError, ValueError):
+        drafts = DraftsFile.model_validate_json((edit / "drafts.json").read_text("utf-8"))
+        mine = next((d for d in drafts.drafts if d.draft == job.draft), None)
+        titles = {t.chapter: t.title for t in mine.chapter_titles} if mine else {}
+    beat, total = plan.beat_sec, plan.planned_beats * plan.beat_sec
+    first, last = plan.chapters[0], plan.chapters[-1]
+    end_of_chapters = (last.start_beat + last.beats) * beat
+    items = [StructureItemView(kind="opening", id=plan.blocks[0].role, start_sec=0.0,
+                               end_sec=first.start_beat * beat, title=None)]  # fmt: skip
+    items += [StructureItemView(kind="chapter", id=c.id, start_sec=c.start_beat * beat,
+                                end_sec=(c.start_beat + c.beats) * beat,
+                                title=titles.get(c.id) or None) for c in plan.chapters]  # fmt: skip
+    items.append(
+        StructureItemView(
+            kind="closing",
+            id=plan.blocks[-1].role,
+            start_sec=end_of_chapters,
+            end_sec=total,
+            title=None,
+        )
+    )
+    return StructureView(duration_sec=total, items=items)
+
+
 def _plan_is_speech(folder: Path) -> bool | None:
     """Whether the project's plan is speech-driven; None when plan.json cannot be read."""
     with contextlib.suppress(OSError, ValidationError):
@@ -417,6 +460,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         video_url=urls["video"], cover_url=urls["cover"], srt_url=urls["srt"],
         steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
         footage=_read_footage(folder, job, ctx.rules), verify=_read_verify(ctx, folder, job),
+        structure=_read_structure(folder, job),
     )  # fmt: skip
 
 

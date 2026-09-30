@@ -238,6 +238,23 @@ class VerifyView(BaseModel):
     rounds: list[VerifyRoundView]
 
 
+class StructureItemView(BaseModel):
+    """One stretch of a 3-minute video on its timeline (seconds from the first beat)."""
+
+    kind: Literal["opening", "chapter", "closing"]
+    id: str  # the chapter id, or the hook / CTA block role
+    start_sec: float
+    end_sec: float
+    title: str | None  # chapter title written by Claude (chapters of a finished draft only)
+
+
+class StructureView(BaseModel):
+    """The hook / chapters / CTA layout of a 3-minute plan (phase 7g), for the timeline."""
+
+    duration_sec: float
+    items: list[StructureItemView]
+
+
 class JobView(BaseModel):
     id: int
     pipeline_id: int | None = None
@@ -272,6 +289,7 @@ class JobView(BaseModel):
     qa: QaView | None
     footage: FootageView | None = None  # only a draft job at the approval gate, music modes
     verify: VerifyView | None = None  # only a finished draft job (phase 6i)
+    structure: StructureView | None = None  # only a draft / render job of a chapter plan (7g)
 
 
 class JobDetail(JobView):
@@ -297,6 +315,13 @@ class BudgetView(BaseModel):
     reserved_vnd: float  # approved but not yet spent by jobs that are waiting or running
 
 
+class FeaturesView(BaseModel):
+    """What this server lets the UI offer. `long_video`: 3-minute videos are open (phase 7e
+    switches `durations.180.enabled` on after the real acceptance run)."""
+
+    long_video: bool
+
+
 class HealthView(BaseModel):
     ok: bool
     rules_version: str
@@ -307,6 +332,7 @@ class HealthView(BaseModel):
     allowed_roots_configured: bool
     ai_key_configured: bool  # yes or no, never the key
     budget: BudgetView
+    features: FeaturesView
 
 
 class ErrorBody(BaseModel):

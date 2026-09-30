@@ -274,3 +274,11 @@ Dự án giả: 47 cảnh lấy từ 9 clip thật, nhạc 84 BPM dài 200s, 3 c
 - **Giới hạn hàng đợi theo độ dài:** `queue.render_sec_per_video_sec` (nháp 1,7; cuối 5,5). `expected_sec` (thanh tiến độ, ETA) = max(giá trị cũ, hệ số × độ dài video); cửa sổ treo `stall_sec` không thấp hơn `expected` (ffmpeg im lặng hàng phút trong một vòng: 600 s sẽ giết job khỏe); `timeout` không thấp hơn 2 × `expected`. Video 15–30s giữ nguyên.
 - **Chưa đo:** nhạc ngắn hơn 180s (đường lặp X13 ở quy mô này), clip HDR/4K, footage thật của xưởng (7e).
 
+### Ghi chú triển khai 7g (giao diện)
+
+- **API:** `GET /api/health` có `features.long_video` (= `durations.180.enabled`); job `draft`/`render` của plan có chương có `structure` (mở đầu / chương / kêu gọi theo giây, kèm tiêu đề chương của bản nháp đó). Xem `docs/api-jobs.md`.
+- **Wizard:** nút "3 phút" bị khóa (kèm lời giải thích) khi máy chủ chưa mở; chọn 3 phút thì 3 bản tự hạ còn 2 (quyết định Q3). Máy chủ cũ không nói gì → không khóa.
+- **Chi tiết job:** dòng thời gian các chương (bấm để tua video tới đầu chương), kèm một hàng riêng cho tiêu đề chương ("đầu khung hình", tách khỏi phụ đề ở cuối khung hình, đúng Q1); mỗi bản nháp A/B có tiêu đề riêng. Hộp duyệt chi phí hiện cấu trúc theo kế hoạch (chưa có tiêu đề).
+- **Soát chất lượng:** các việc QC tự chỉnh (ví dụ "dựng lại vòng 2 với trần đỉnh −3 dBTP") hiện thành một dòng "Tự chỉnh" thay vì chỉ thấy "vòng 2/3".
+- Kiểm bằng chính bản dựng thật 180s của 7d: bấm "Quy trình" tua video 182s tới 0:50 và phát; các đoạn rộng đúng tỉ lệ 2,4 / 25 / 42 / 23 / 7%.
+

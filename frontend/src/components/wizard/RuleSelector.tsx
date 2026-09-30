@@ -2,6 +2,7 @@ import { Copy, Gauge, Music, Radio } from 'lucide-react';
 import { PACING_LABELS, RULES } from '../../data/rules';
 import { countWords } from '../../lib/format';
 import { derivePacing } from '../../lib/preflight';
+import { draftsFor } from '../../lib/structure';
 import {
   DRAFT_COUNTS,
   DURATION_IDS,
@@ -29,9 +30,12 @@ function SectionTitle({ icon: Icon, children }: { icon: typeof Music; children: 
 export function RuleSelector({
   options,
   onChange,
+  longVideo = true,
 }: {
   options: VideoOptions;
   onChange: (patch: Partial<VideoOptions>) => void;
+  /** false = the server has not opened 3-minute videos yet (phase 7e); null/true = no lock. */
+  longVideo?: boolean | null;
 }) {
   const pacing = derivePacing(options);
   const noteWords = countWords(options.ghi_chu);
@@ -166,15 +170,22 @@ export function RuleSelector({
             {DURATION_IDS.map((d) => {
               const selected = options.do_dai_giay === d;
               const compat = options.phong_cach && RULES.compatStyleDuration[options.phong_cach][String(d)];
+              const locked = d === 180 && longVideo === false;
               return (
                 <button
                   key={d}
                   type="button"
-                  onClick={() => onChange({ do_dai_giay: d })}
+                  disabled={locked}
+                  title={locked ? 'Video 3 phút chưa mở: đang chờ nghiệm thu bằng footage thật.' : undefined}
+                  onClick={() =>
+                    onChange({ do_dai_giay: d, so_ban_nhap: draftsFor(d, options.so_ban_nhap) })
+                  }
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    selected
-                      ? 'border-amber-500 bg-amber-500/10 text-amber-100'
-                      : 'border-slate-800 bg-slate-900/40 text-slate-300 hover:border-slate-600'
+                    locked
+                      ? 'cursor-not-allowed border-slate-800 bg-slate-900/20 text-slate-600'
+                      : selected
+                        ? 'border-amber-500 bg-amber-500/10 text-amber-100'
+                        : 'border-slate-800 bg-slate-900/40 text-slate-300 hover:border-slate-600'
                   }`}
                 >
                   {compat && <span className={`h-1.5 w-1.5 rounded-full ${COMPAT_DOT[compat]}`} />}
@@ -183,6 +194,11 @@ export function RuleSelector({
               );
             })}
           </div>
+          {longVideo === false && (
+            <p className="mt-2 text-[11px] text-slate-500">
+              Video 3 phút chưa mở trên máy chủ này (chờ nghiệm thu bằng footage thật).
+            </p>
+          )}
         </div>
 
         <div>
@@ -193,6 +209,11 @@ export function RuleSelector({
                 key={n}
                 type="button"
                 onClick={() => onChange({ so_ban_nhap: n })}
+                title={
+                  options.do_dai_giay === 180 && n === 3
+                    ? 'Video 3 phút: 3 bản dễ bị cắt và tốn gấp đôi, nên chọn 2 bản.'
+                    : undefined
+                }
                 className={`h-9 w-9 rounded-lg border text-sm font-semibold transition ${
                   options.so_ban_nhap === n
                     ? 'border-amber-500 bg-amber-500/10 text-amber-100'
