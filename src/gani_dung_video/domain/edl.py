@@ -82,6 +82,7 @@ class Edl(BaseModel):
     karaoke: list[list[SpokenWord]] = []  # speech: word groups on the timeline
     denoise: str | None = None  # T-A: afftdn for the camera-sound layer; None = off
     grade: str | None = None  # T-D: eq/colorbalance for the picture; None = off
+    emphasis: list[str] = []  # T-C: approved keywords to highlight in captions (set by the gate)
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:

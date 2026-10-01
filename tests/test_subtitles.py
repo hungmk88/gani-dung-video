@@ -157,6 +157,78 @@ def test_karaoke_groups_become_dialogue_lines_with_one_word_highlighted() -> Non
     assert all(rf"\c{lit}" in ln for ln in events)
 
 
+# ─────────────── keyword emphasis (Dev Package 03, T-C) ───────────────
+
+KW_CFG = R["keyword_highlight"]
+_POP = KW_CFG["scale_pct"]
+KW_ON = rf"{{\c{ass_colour(str(KW_CFG['colour']))}\fscx{_POP}\fscy{_POP}}}"
+KW_OFF = r"{\c&H00FFFFFF&\fscx100\fscy100}"
+
+
+def dialogues(doc: str, style: str) -> list[str]:
+    return [ln for ln in doc.splitlines() if ln.startswith("Dialogue:") and f",{style}," in ln]
+
+
+def with_keywords(e: Edl, *kw: str) -> Edl:
+    return e.model_copy(update={"emphasis": list(kw)})
+
+
+def test_a_keyword_in_a_caption_gets_the_highlight_colour_and_a_small_pop() -> None:
+    caps = [Caption(start=0, end=3, text="Đạt chuẩn HACCP Codex 2022", kind="text")]
+    doc = ass_document(with_keywords(edl(captions=caps), "HACCP"), RULES)
+    [line] = dialogues(doc, "Caption")
+    assert f"Đạt chuẩn {KW_ON}HACCP{KW_OFF} Codex 2022" in line
+    assert 100 < KW_CFG["scale_pct"] <= 120  # a pop, not a shout
+
+
+def test_without_keywords_the_document_is_unchanged() -> None:
+    caps = [Caption(start=0, end=3, text="Đạt chuẩn HACCP", kind="text")]
+    plain = ass_document(edl(captions=caps), RULES)
+    assert ass_document(with_keywords(edl(captions=caps)), RULES) == plain
+    assert "fscx" not in plain
+
+
+def test_cta_lines_are_never_emphasised_and_chapter_titles_are() -> None:
+    caps = [Caption(start=0, end=3, text="Nhắn HACCP ngay", kind="cta"),
+            Caption(start=0, end=3, text="Chuẩn HACCP", kind="title")]  # fmt: skip
+    doc = ass_document(with_keywords(edl(captions=caps), "HACCP"), RULES)
+    assert "fscx" not in dialogues(doc, "CTA")[0]  # CTA is already the accent colour
+    assert KW_ON in dialogues(doc, "ChapterTitle")[0]
+
+
+def test_emphasis_cannot_be_used_to_smuggle_ass_commands() -> None:
+    caps = [Caption(start=0, end=3, text=r"{\an5}HACCP {\fs200}ok", kind="text")]
+    [line] = dialogues(ass_document(with_keywords(edl(captions=caps), "HACCP"), RULES), "Caption")
+    assert r"\an5" not in line and r"\fs200" not in line  # still escaped
+    assert f"{KW_ON}HACCP{KW_OFF}" in line
+
+
+def test_the_srt_stays_plain_text() -> None:
+    caps = [Caption(start=0, end=3, text="Đạt chuẩn HACCP", kind="text")]
+    srt = srt_document(with_keywords(edl(captions=caps), "HACCP"))
+    assert "Đạt chuẩn HACCP" in srt and "{" not in srt
+
+
+def test_karaoke_keeps_the_keyword_big_in_every_line_of_its_group() -> None:
+    ws = words("Nhà máy đạt HACCP")
+    doc = ass_document(with_keywords(edl(mode="speech", karaoke=[ws]), "HACCP"), RULES)
+    lines = dialogues(doc, "Karaoke")
+    assert len(lines) == 4
+    pop = rf"\fscx{KW_CFG['scale_pct']}\fscy{KW_CFG['scale_pct']}"
+    assert all(pop in ln for ln in lines)  # the keyword is big the whole time it is on screen
+    lit = ass_colour(str(RULES["speech_edit"]["karaoke"]["highlight"]))
+    assert rf"\c{lit}{pop}" in lines[3]  # spoken: the usual highlight colour, plus the pop
+    base = ass_colour(str(RULES["speech_edit"]["karaoke"]["base"]))
+    # waiting: big but still the base colour, so the lit colour keeps meaning "being said"
+    assert rf"{{\c{base}{pop}}}HACCP" in lines[0]
+
+
+def test_karaoke_without_keywords_is_unchanged() -> None:
+    ws = words("Nhà máy đạt HACCP")
+    plain = ass_document(edl(mode="speech", karaoke=[ws]), RULES)
+    assert ass_document(with_keywords(edl(mode="speech", karaoke=[ws])), RULES) == plain
+
+
 def test_no_karaoke_lines_outside_speech_mode() -> None:
     ws = words("Giò lụa GANI")
     doc = ass_document(edl(mode="music", karaoke=[ws]), RULES)

@@ -151,6 +151,18 @@ thực tế. **Lưu ý khử ồn ở chế độ lời:** bước T8 nghe lại
 nghe âm thanh đã khử ồn. Phép thử A/B trên 8 clip xưởng chưa cho thấy khử ồn giúp Whisper nghe đúng
 hơn, nên đừng bật khử ồn cho chế độ lời trước khi người nghe thử xác nhận.
 
+## 6b. Từ nhấn trong phụ đề và chốt chặn C1
+
+- **Từ nhấn:** danh sách nằm ở `config/glossary.json` → `caption_highlight_keywords` (hiện chỉ
+  `"HACCP"`, vì đã có giấy chứng nhận HACCP Codex 2022 do VCA cấp). Bản nhạc: từ nhấn đổi sang vàng và
+  phóng nhẹ; bản có lời: từ nhấn luôn to hơn, vàng khi được đọc. Không áp cho dòng CTA và không áp
+  cho file `.srt`. Muốn thêm từ: chỉ thêm khi chủ và NVH đã xác nhận có chứng cứ (không thêm
+  "không hàn the", "thịt sạch" khi chưa có kiểm nghiệm).
+- **C1 (Claims & Compliance):** trước khi gọi ffmpeg, mọi chữ của video (chữ trên màn hình, tiêu đề
+  chương, CTA, lời nói trong chế độ lời, từ nhấn) bị soát với `banned_claims`. Có vi phạm thì **dừng,
+  không dựng**, và báo "C1: …" kèm nguồn chữ và cụm cấm. Ngoài ra, nạp `glossary.json` cũng dừng nếu một
+  từ nhấn chứa cụm cấm, trống hay bị lặp. Soát không phân biệt hoa thường và dấu thanh.
+
 ## 7. Nhãn QC T8 (chế độ lời)
 
 T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch lời và độ lệch phụ đề; chỉ chạy cho
