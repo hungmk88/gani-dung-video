@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.drafts import SnappedDraft
+from gani_dung_video.domain.finish import FinishError, denoise_filter, grade_filter
 from gani_dung_video.domain.footage import Clip
 from gani_dung_video.domain.karaoke import group_words
 from gani_dung_video.domain.plan import Plan
@@ -79,6 +80,20 @@ class Edl(BaseModel):
     duck_db: float | None = None
     duck_fade_sec: float = 0.15
     karaoke: list[list[SpokenWord]] = []  # speech: word groups on the timeline
+    denoise: str | None = None  # T-A: afftdn for the camera-sound layer; None = off
+    grade: str | None = None  # T-D: eq/colorbalance for the picture; None = off
+
+
+def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """T-A / T-D filter strings (denoise, grade) for the Edl, None = off.
+
+    Raises:
+        EdlError: a finishing setting in rules.json is out of range.
+    """
+    try:
+        return denoise_filter(r), grade_filter(r)
+    except FinishError as e:
+        raise EdlError(str(e)) from e
 
 
 class BrollPlacement(BaseModel):
@@ -210,6 +225,7 @@ def build_edl(
     music = MusicTrack(track=m.track, audio_in_sec=m.audio_in_sec, loop_sec=m.loop_sec,
                        fade_out_sec=float(r["music_fade_sec"])) if m else None  # fmt: skip
     amb = style.get("ambient_db")
+    denoise, grade = _finishing(r)
     return Edl(
         style=style_name, width=int(size["width"]), height=int(size["height"]), fps=fps,
         video_kbps=int(size["video_kbps"]), shots=shots, content_end=content_end,
@@ -217,7 +233,7 @@ def build_edl(
         ambient_db=float(amb) if amb is not None else None, lufs=float(r["lufs"]),
         true_peak_db=float(r["true_peak_db"]),
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
-        captions=_captions(draft, plan, fps),
+        captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
     )  # fmt: skip
 
 
@@ -259,6 +275,7 @@ def build_speech_edl(
                        fade_out_sec=float(r["music_fade_sec"])) if m else None  # fmt: skip
     cta = plan.blocks[-1].text
     words = [w for c in cuts for w in c.words]
+    denoise, grade = _finishing(r)
     return Edl(
         style=style_name, width=int(size["width"]), height=int(size["height"]), fps=fps,
         video_kbps=int(size["video_kbps"]), shots=shots, content_end=end,
@@ -269,7 +286,7 @@ def build_speech_edl(
         mode="speech", overlays=[_broll_shot(b, clips, fps) for b in broll],
         duck=duck_intervals(cuts, float(se["duck_merge_gap_sec"])),
         duck_db=float(style["duck_db"]), duck_fade_sec=float(se["duck_fade_sec"]),
-        karaoke=_karaoke_groups(words, se),
+        karaoke=_karaoke_groups(words, se), denoise=denoise, grade=grade,
     )  # fmt: skip
 
 

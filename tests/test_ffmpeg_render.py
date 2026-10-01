@@ -88,6 +88,30 @@ def test_audio_is_placed_on_the_timeline_music_looped_and_loudness_normalised() 
     assert "loudnorm=I=-14.0:TP=-1.5" in g
 
 
+def test_denoise_cleans_only_the_camera_sound_before_anything_is_mixed() -> None:
+    m = MusicTrack(track="t.m4a", audio_in_sec=0.0, loop_sec=None, fade_out_sec=0.5)
+    base = edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 2)], music=m)
+    off = build_graph(base, has_audio=[True, False], music_idx=2)
+    assert "afftdn" not in off
+    on = build_graph(base.model_copy(update={"denoise": "afftdn=nr=12:nf=-40"}),
+                     has_audio=[True, False], music_idx=2)  # fmt: skip
+    assert on.count("afftdn=nr=12:nf=-40") == 1  # one shot has sound; the silent one has none
+    line = next(ln for ln in on.splitlines() if ln.startswith("[0:a]"))
+    assert line.index("afftdn") < line.index("volume=") < line.index("adelay=")  # voice layer only
+    assert "afftdn" not in next(ln for ln in on.splitlines() if ln.startswith("[2:a]"))  # music
+    assert on.index("amix=") > on.index("afftdn") and "afftdn" not in on.split("amix=")[1]
+
+
+def test_grade_goes_on_the_picture_only_not_on_the_captions_or_the_end_card() -> None:
+    base = edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 2)])
+    assert "[vgrade]" not in build_graph(base, has_audio=[True, True], ass_name="s.ass")
+    tone = "eq=saturation=1.06:contrast=1.016,lutyuv=u='val-1.6':v='val+1.6'"
+    g = build_graph(base.model_copy(update={"grade": tone}), has_audio=[True, True],
+                    ass_name="s.ass")  # fmt: skip
+    assert f"[vjoin]{tone}[vgrade]" in g
+    assert "[vgrade][vend]concat=n=2:v=1:a=0,subtitles=" in g  # captions drawn after the grade
+
+
 MEASURED = {
     "input_i": -20.3,
     "input_tp": -4.1,

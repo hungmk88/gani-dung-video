@@ -93,9 +93,10 @@ def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
     out = [f"anullsrc=r={SAMPLE_RATE}:cl=stereo,atrim=0:{_n(e.duration)}[abase]"]
     labels = ["[abase]"]
     if e.ambient_db is not None:
+        clean = f",{e.denoise}" if e.denoise else ""  # T-A: the camera-sound layer only
         for i, (s, has) in enumerate(zip(e.shots, has_audio, strict=True)):
             length, ms = s.t_end - s.t_start, round(s.t_start * 1000)
-            src = (f"[{i}:a]{fmt},atrim=0:{_n(length)}" if has else
+            src = (f"[{i}:a]{fmt},atrim=0:{_n(length)}{clean}" if has else
                    f"anullsrc=r={SAMPLE_RATE}:cl=stereo,atrim=0:{_n(length)}")  # fmt: skip
             out.append(f"{src},asetpts=PTS-STARTPTS,volume={_n(e.ambient_db)}dB,"
                        f"adelay={ms}|{ms}[a{i}]")  # fmt: skip
@@ -158,7 +159,11 @@ def build_graph(
     lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(e.end_card_sec)},"
                  "format=yuv420p,setsar=1[vend]")  # fmt: skip
     subs = f",subtitles=filename={ass_name}:fontsdir=fonts" if ass_name else ""
-    lines.append(f"[vjoin][vend]concat=n=2:v=1:a=0{subs}[vout]")
+    pic = "vjoin"
+    if e.grade:  # T-D: tone the picture before the end card and captions are added
+        lines.append(f"[vjoin]{e.grade}[vgrade]")
+        pic = "vgrade"
+    lines.append(f"[{pic}][vend]concat=n=2:v=1:a=0{subs}[vout]")
     lines += _audio(e, has_audio, music_idx, measured=loudnorm)
     return ";\n".join(lines)
 
