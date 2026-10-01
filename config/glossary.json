@@ -12,6 +12,8 @@
     {"correct": "chả quế", "heard_as": ["chà quế", "chả quê"]},
     {"correct": "giò bò", "heard_as": ["dò bò", "rò bò"]}
   ],
+  "_ghi_chu_caption_highlight_keywords": "Từ nhấn trong phụ đề (Dev Package 03, T-C, 01/10/2026): chỉ từ có căn cứ. 'HACCP' có giấy chứng nhận HACCP Codex 2022 do VCA cấp (chủ đã kiểm hồ sơ). KHÔNG thêm 'không hàn the', 'thịt sạch' hay tuyên bố tương tự cho đến khi chủ và NVH xác nhận đã có kiểm nghiệm/chứng cứ. Mỗi từ phải qua kiểm tra C1 (không chứa cụm trong banned_claims) khi nạp file, nếu không app dừng và báo từ nào.",
+  "caption_highlight_keywords": ["HACCP"],
   "banned_claims": ["100%", "duy nhất", "số 1", "hàn the", "điều trị", "đặc trị", "chữa trị", "chữa bệnh", "trị bệnh", "phòng bệnh", "ngon nhất", "tốt nhất", "rẻ nhất", "chất lượng nhất", "sạch nhất", "uy tín nhất", "thần dược", "không chất bảo quản", "minh long", "atala", "foco"],
  "_ghi_chu_visual": "Từ điển hình ảnh (GĐ4b, chốt 29/09/2026, sửa S3 của đặc tả): món nhắc trong ghi chú yeu-cau.md được so với khung hình bằng CLIP qua 1–3 câu tiếng Anh tả hình dạng, màu, bề mặt cắt. 5 mục đầu lấy từ Phụ lục D; giò bò, chả quế, nem chua, giò chả do dev soạn. Ảnh mẫu (so ảnh–ảnh) để sau khi có footage đúng món.",
  "visual": {

@@ -6,9 +6,16 @@ import json
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
-from gani_dung_video.domain.glossary import Term
+from gani_dung_video.domain.glossary import Term, find_banned_claims, fold_tokens
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.yeu_cau import parse_yeu_cau
 
@@ -54,7 +61,25 @@ class GlossaryFile(BaseModel):
     model_config = ConfigDict(extra="ignore")
     terms: list[_TermModel]
     banned_claims: list[str]
+    caption_highlight_keywords: list[str] = []
     visual: dict[_Text, _Prompts] = {}
+
+    @model_validator(mode="after")
+    def _keywords_are_clean(self) -> GlossaryFile:
+        """C1 at load time: a highlight keyword must be non-blank, unique and claim-free."""
+        seen: set[str] = set()
+        for k in self.caption_highlight_keywords:
+            folded = " ".join(fold_tokens(k))
+            if not folded:
+                raise ValueError("từ nhấn không được để trống (caption_highlight_keywords).")
+            if folded in seen:
+                raise ValueError(f"từ nhấn '{k}' bị lặp (caption_highlight_keywords).")
+            seen.add(folded)
+            hits = find_banned_claims(k, self.banned_claims)
+            if hits:
+                raise ValueError(f"C1: từ nhấn '{k}' chứa cụm cấm '{hits[0]}': bỏ nó khỏi "
+                                 "caption_highlight_keywords hoặc xin chủ duyệt lại.")  # fmt: skip
+        return self
 
     def term_objects(self) -> list[Term]:
         return [Term(t.correct, tuple(t.heard_as)) for t in self.terms]

@@ -11,6 +11,7 @@ from collections.abc import Mapping
 
 from gani_dung_video.domain.ass_text import ass_time, escape_ass
 from gani_dung_video.domain.edl import Edl
+from gani_dung_video.domain.emphasis import emphasise
 from gani_dung_video.domain.karaoke import ass_colour, karaoke_dialogues
 from gani_dung_video.domain.preflight import Rules
 
@@ -82,11 +83,17 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
     fade = "" if edl.style in _POP_STYLES else r"{\fad(200,200)}"
     out = [_dialogue(0.0, edl.content_end, "Logo", escape_ass(brand["logo_text"]))]
     style_of = {"cta": "CTA", "title": "ChapterTitle"}
+    pop = r["keyword_highlight"]
+    on = rf"{{\c{ass_colour(str(pop['colour']))}\fscx{pop['scale_pct']}\fscy{pop['scale_pct']}}}"
+    off = r"{\c&H00FFFFFF&\fscx100\fscy100}"  # Caption and ChapterTitle are white at full size
     for c in edl.captions:
-        out.append(_dialogue(c.start, c.end, style_of.get(c.kind, "Caption"),
-                             fade + escape_ass(c.text)))  # fmt: skip
+        text = escape_ass(c.text)  # first: the keyword tags added below must stay live
+        if edl.emphasis and c.kind != "cta":  # the CTA line is already the accent colour
+            text = emphasise(text, edl.emphasis, on, off)
+        out.append(_dialogue(c.start, c.end, style_of.get(c.kind, "Caption"), fade + text))
     if edl.mode == "speech" and edl.karaoke:
-        out += karaoke_dialogues(edl.karaoke, rules["speech_edit"]["karaoke"], "Karaoke")
+        out += karaoke_dialogues(edl.karaoke, rules["speech_edit"]["karaoke"], "Karaoke",
+                                 edl.emphasis, pop)  # fmt: skip
     t0, t1 = edl.content_end, edl.duration
     cx = PLAY_W // 2
     out += [

@@ -236,6 +236,7 @@
  },
  "_ghi_chu_render": "Dựng video (GĐ5a, chốt 29/09/2026, đặc tả §7.5): 30fps, nháp 540p, bản cuối 1080×1920 H.264 ~9 Mbps, AAC 48kHz 320 kbps, −14 LUFS, trần đỉnh −2,0 dBTP khi chuẩn hóa (29/09/2026: AAC 192 kbps làm đỉnh thật nhô thêm tới 1,2 dB, 320 kbps chỉ 0,1 dB; soát T3 yêu cầu ≤ −1,0 dBTP trên file xuất). speech_cta_extra_margin: ở chế độ lời (GĐ5c-1), CTA được đẩy lên thêm quãng này (px) so với lề an toàn dưới để không đè phụ đề karaoke. Chữ bằng phụ đề ASS, font Be Vietnam Pro (OFL, trong assets/fonts), Sang trọng dùng Light, cỡ ≥ 64px; vùng an toàn trên 250 / dưới 420 / phải 140 px. Logo chữ 'GANI' TẠM (placeholder) góc trên trái mờ 80%; khung kết 2s: logo + số Zalo TẠM + dòng 'GANI FOODY – Đạt chuẩn HACCP Codex 2022'. Hòa tan: kéo dài cảnh trước thêm đúng số khung hòa tan để điểm cắt vẫn trúng phách.",
  "_ghi_chu_finish": "Bộ lọc hoàn thiện (Dev Package 03, chốt 01/10/2026), MẶC ĐỊNH TẮT, chỉ bật sau khi chủ nghiệm thu. denoise (T-A): afftdn chỉ trên lớp tiếng camera/tiếng nói, trước khi trộn nhạc; nr = dB giảm ồn (0,01–97), nf = sàn ồn dB (−80…−20). grade (T-D): eq + lutyuv chỉ trên hình, không đụng chữ và khung kết (không dùng colorbalance vì làm render chậm thêm 35%); strength 0–1 nhân mọi mức chỉnh (0 = không đổi); saturation/contrast = cộng thêm so với 1; warmth = dịch sắc độ theo mức mã 0–255 (xanh − , đỏ +). Đây là tông màu, không phải cân bằng màu giữa các clip; giữ nhẹ để giò chả không ngả hồng/đỏ hơn thực tế.",
+ "_ghi_chu_keyword_highlight": "Từ khóa nhấn trong phụ đề (Dev Package 03, T-C, chốt 01/10/2026): danh sách từ nằm ở glossary.json → caption_highlight_keywords (chỉ từ có căn cứ; mỗi từ phải qua kiểm tra C1 khi nạp file). Từ nhấn đổi sang colour và phóng scale_pct % so với chữ thường; chỉ áp cho chữ thường và tiêu đề chương, không áp cho dòng CTA (đã là màu nhấn) và không áp cho file .srt. Chế độ lời: từ nhấn chỉ phóng to (giữ cỡ phóng suốt thời gian hiện trên màn), không đổi màu khi chờ, vì màu vàng của phụ đề từng từ có nghĩa là 'từ đang được đọc'.",
  "render": {
   "fps": 30,
   "final": {
@@ -252,6 +253,7 @@
   "audio_kbps": 320,
   "lufs": -14.0,
   "true_peak_db": -2.0,
+  "keyword_highlight": {"colour": "#FFE100", "scale_pct": 110},
   "denoise": {"enabled": false, "nr": 12, "nf": -40},
   "grade": {"enabled": false, "strength": 0.4, "saturation": 0.15, "contrast": 0.04, "warmth": 4},
   "end_card_sec": 2.0,

@@ -97,6 +97,42 @@ def test_banned_list_is_the_agreed_phrase_list() -> None:
     assert "trị" not in BANNED and "chữa" not in BANNED and "nhất" not in BANNED
 
 
+# ─────────────── caption highlight keywords (Dev Package 03, T-C) ───────────────
+
+
+def test_the_approved_highlight_list_starts_with_haccp_only() -> None:
+    assert load_glossary().caption_highlight_keywords == ["HACCP"]
+
+
+def _glossary_file(tmp_path: Path, **extra: object) -> Path:
+    import json
+
+    g = tmp_path / "glossary.json"
+    g.write_text(json.dumps({"terms": [], "banned_claims": ["tốt nhất", "thần dược"], **extra}),
+                 encoding="utf-8")  # fmt: skip
+    return g
+
+
+def test_a_file_without_the_list_means_no_highlighting(tmp_path: Path) -> None:
+    assert load_glossary(_glossary_file(tmp_path)).caption_highlight_keywords == []
+
+
+@pytest.mark.parametrize("keyword", ["tốt nhất", "Than Duoc", "giò lụa tốt nhất Sài Gòn"])
+def test_a_highlight_keyword_that_holds_a_banned_claim_stops_loading(
+    tmp_path: Path, keyword: str
+) -> None:
+    g = _glossary_file(tmp_path, caption_highlight_keywords=["HACCP", keyword])
+    with pytest.raises(ConfigError, match="từ nhấn") as err:
+        load_glossary(g)
+    assert keyword in str(err.value) and "cụm cấm" in str(err.value)  # says what to fix
+
+
+@pytest.mark.parametrize("bad", [[""], ["   "], ["HACCP", "haccp"]])
+def test_blank_or_repeated_highlight_keywords_are_refused(tmp_path: Path, bad: list[str]) -> None:
+    with pytest.raises(ConfigError, match="từ nhấn"):
+        load_glossary(_glossary_file(tmp_path, caption_highlight_keywords=bad))
+
+
 # ─────────────── visual dictionary (phase 4b, decision 29/09/2026) ───────────────
 
 

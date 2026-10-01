@@ -23,7 +23,7 @@ from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import Plan, beats_of, compile_plan
 from gani_dung_video.domain.speech import RawTranscript, SpokenWord
 from gani_dung_video.domain.speech_edit import Overlay, SpeechCut
-from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
+from gani_dung_video.infrastructure.config_files import ConfigError, GlossaryFile, load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import render_voice_only
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
@@ -135,6 +135,69 @@ def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> No
     qc = json.loads((out / "qc_report.json").read_text(encoding="utf-8"))
     assert qc["passed"] is True and qc["rounds"] >= 1 and res.qc_passed
     assert log["qc"]["passed"] is True
+
+
+def _glossary(banned: list[str], keywords: list[str]) -> GlossaryFile:
+    # model_construct: skip load-time validation so a bad list can reach the render-time gate
+    return GlossaryFile.model_construct(terms=[], banned_claims=banned, visual={},
+                                        caption_highlight_keywords=keywords)  # fmt: skip
+
+
+def _no_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace every ffmpeg entry point; the list records what would have run."""
+    ran: list[str] = []
+
+    def boom(*a: Any, **k: Any) -> None:
+        ran.append("ffmpeg")
+        raise AssertionError("ffmpeg must not run")
+
+    monkeypatch.setattr(render_service, "render", boom)
+    monkeypatch.setattr(render_service, "measure_loudnorm", boom)
+    return ran
+
+
+def test_c1_stops_a_caption_with_a_banned_claim_before_ffmpeg_runs(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(render_service, "load_glossary", lambda: _glossary(["giòn ngon"], []))
+    ran = _no_ffmpeg(monkeypatch)
+    with pytest.raises(ConfigError, match=r"C1.*giòn ngon") as err:
+        build_render(folder, draft="A", preview=True, rules=RULES)
+    assert ran == [] and "chữ" in str(err.value)  # names where the text came from
+
+
+def test_c1_also_reads_the_spoken_words_of_a_speech_video(
+    speech_folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(render_service, "load_glossary", lambda: _glossary(["lụa gani"], []))
+    ran = _no_ffmpeg(monkeypatch)
+    with pytest.raises(ConfigError, match=r"C1.*lụa gani") as err:
+        build_render(speech_folder, draft="A", preview=True, rules=RULES, asr=False)
+    assert ran == [] and "lời" in str(err.value)
+
+
+def test_c1_checks_the_highlight_keywords_too(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A keyword list that skipped load-time validation (edited in memory) is still caught here.
+    monkeypatch.setattr(
+        render_service, "load_glossary", lambda: _glossary(["tốt nhất"], ["tốt nhất"])
+    )
+    ran = _no_ffmpeg(monkeypatch)
+    with pytest.raises(ConfigError, match=r"C1.*tốt nhất") as err:
+        build_render(folder, draft="A", preview=True, rules=RULES)
+    assert ran == [] and "từ nhấn" in str(err.value)
+
+
+def test_a_clean_render_highlights_the_approved_keyword_in_the_ass_file(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(render_service, "load_glossary", lambda: _glossary(["tốt nhất"], ["giòn"]))
+    [res] = build_render(folder, draft="A", preview=True, rules=RULES)
+    ass = (res.video.parent / "sub.ass").read_text(encoding="utf-8")
+    assert r"\fscx" in ass and "giòn".lower() in ass.lower()
+    srt = (res.video.parent / "phude.srt").read_text(encoding="utf-8")
+    assert "Giòn ngon" in srt and "{" not in srt  # the closed captions stay plain
 
 
 def test_unknown_draft_letter_is_refused(folder: Path) -> None:
