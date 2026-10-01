@@ -1,6 +1,6 @@
 # Thiết kế Giai đoạn 8: sản xuất theo mẻ (khung, chưa duyệt)
 
-Trạng thái: **KHUNG để anh góp ý, chưa phải thiết kế chốt, chưa có dòng code nào.** Soạn trên `main` = `ed196e5` (01/10/2026), trong lúc chờ footage cho 7e. Chỉ viết sau khi anh đồng ý "phác khung"; các mục 9 (câu hỏi) cần anh chốt trước khi em chuyển khung này thành thiết kế đầy đủ và mở pha 8a.
+Trạng thái: **KHUNG, đã chốt Q1–Q6 ngày 01/10/2026 (mục 10), chưa có dòng code nào.** Soạn trên `main` = `ed196e5`, trong lúc chờ footage cho 7e. PR chứa tài liệu này **giữ mở làm tài liệu tham chiếu, không merge** cho đến khi 7e nghiệm thu, để `main` sạch cho đợt thử 7e. Pha 8a chỉ mở sau 7e.
 
 Cách đọc số: **[đo]** = đo thật trên máy/lượt chạy; **[đọc]** = đọc từ code hoặc `rules.json`; **[tính]** = tính từ số khác; **[ước]** = ngoại suy, phải đo lại ở 8f trước khi tin. Chỗ nào em chưa kiểm được thì ghi **[cần kiểm]**.
 
@@ -86,7 +86,7 @@ Một danh sách bộ tùy chọn, không phải "N bản sao". Mỗi phần t�
 1. `analyze` **một lần** trên kho (nếu `analysis_stamp.json` còn khớp thì bỏ qua, như hiện nay).
 2. Dựng N thư mục video (hardlink + bản sao phân tích).
 3. Mỗi video: `plan` → `pick` (miễn phí) → job `draft` ở pha `estimate`.
-4. **Duyệt cấp mẻ:** tổng ước tính = Σ ước tính từng video; một lần duyệt `max_vnd` cho cả mẻ; hệ thống chia phần cho từng job theo tỉ lệ ước tính. Quy tắc từng lời gọi giữ nguyên (đã chi + lời gọi xấu nhất tiếp theo ≤ phần đã duyệt). Từ chối duyệt nếu `đã chi hôm nay + tổng ước tính mẻ > 100.000đ` (ngân sách ngày).
+4. **Duyệt cấp mẻ (Q2, đã chốt):** bảng duyệt liệt kê N video, cấu hình từng video, ước tính tệ nhất từng video, **tổng trần cả mẻ** và **ngân sách ngày còn lại**; một lần duyệt `max_vnd` cho cả mẻ; hệ thống chia phần cho từng job theo tỉ lệ ước tính. Quy tắc từng lời gọi giữ nguyên (đã chi + lời gọi xấu nhất tiếp theo ≤ phần đã duyệt). Từ chối duyệt nếu `đã chi hôm nay + tổng ước tính mẻ > 100.000đ` (ngân sách ngày).
 5. Gọi Claude tuần tự (hoặc song song hạn chế, xem rủi ro), sau đó dựng **bản nháp 540p** cho cả mẻ (miễn phí).
 6. Trạng thái mẻ: `đang phân tích` → `chờ duyệt chi` → `đang viết kịch bản` → `đang dựng nháp` → `chờ duyệt hình` → `đang dựng bản cuối` → `xong`.
 7. Duyệt xong, các video được chấp nhận vào hàng dựng **bản cuối 1080p**.
@@ -102,6 +102,8 @@ Một danh sách bộ tùy chọn, không phải "N bản sao". Mỗi phần t�
 ### 4.1 Hai cơ chế khác nhau
 
 - **Phòng ngừa (lúc chọn cảnh):** khi xếp hạng ứng viên cho video thứ k, **trừ điểm** cảnh đã được dùng ở các video 1..k-1 của mẻ. Là tham số mới của hàm xếp hạng (`used_elsewhere`), hàm thuần, kiểm thử dễ. Hiện không có nút nào tạo khác biệt giữa các video cùng tùy chọn, nên đây là đòn bẩy chính. (Đề nghị làm sau khi có số đo ở 8b, không làm trước.)
+- **Xoay vòng khi sinh mẻ (chủ chốt 01/10/2026):** công cụ tạo mẻ xoay vòng (round-robin) giữa các phong cách (Kể chuyện nghề, Giới thiệu xưởng, Bán hàng…) và các cặp nhạc/BPM khác nhau, để các video khác nhau ngay từ tùy chọn.
+- **Gợi ý cho Claude (chủ chốt 01/10/2026):** truyền danh sách các đoạn footage đã dùng nhiều ở các video trước vào lời nhắc, để Claude ưu tiên góc còn mới. Lưu ý đánh đổi: Claude có thể bỏ qua gợi ý (không bảo đảm), lời nhắc dài thêm một chút (chi phí token nhỏ, đo ở 8f), trong khi trừ điểm ở bước chọn cảnh thì chắc chắn và miễn phí. Đề nghị **làm cả hai**, trừ điểm ở bước chọn cảnh là lớp chắc chắn, gợi ý trong lời nhắc là lớp bổ sung; V4/V5 vẫn kiểm cảnh Claude chọn nằm trong ứng viên.
 - **Đo và cảnh báo (sau khi có bản nháp):** ma trận trùng liên video (8b).
 
 ### 4.2 Cách đo trùng (đề nghị)
@@ -125,11 +127,15 @@ Hai video chọn k cảnh từ kho S cảnh, ngẫu nhiên: trùng kỳ vọng �
 | 78 | 10 | ~13% |
 | 78 | 70–78 (180 giây) | ~90–100% |
 
-Hệ quả: ngưỡng "40% giữa hai video liên tiếp" chỉ có nghĩa khi kho đủ lớn; với kho 25 cảnh nó báo gần như mọi cặp. Hai video 180 giây từ một kho: **nên tối đa một video dài mỗi kho mỗi đợt đăng**, hoặc chấp nhận trùng cao (câu hỏi Q3). Cảnh báo **mềm** (không chặn), theo ý anh; ngưỡng chốt sau 8f.
+Hệ quả: một ngưỡng kiểu "40% giữa hai video" chỉ có nghĩa khi kho đủ lớn; với kho 25 cảnh nó báo gần như mọi cặp. Hai video 180 giây từ một kho trùng gần như hoàn toàn nên đã chốt **tối đa một video 180 giây mỗi kho mỗi đợt** (Q3). Không đặt ngưỡng mặc định: chỉ hiển thị % trùng, cảnh báo vàng/đỏ chốt sau 8f (Q6).
 
-### 4.4 Thứ tự đăng
+### 4.4 Thứ tự đăng: không làm ở GĐ8 (Q4)
 
-"Liên tiếp" cần thứ tự đăng dự kiến. `batch.json` có trường `thu_tu_dang` (số thứ tự hoặc ngày). Không có thì chỉ hiện cả ma trận, không đánh dấu "liên tiếp".
+Đã chốt: không nhập thứ tự/ngày đăng trong GĐ8; lên lịch phân phối thuộc giai đoạn tích hợp mạng xã hội riêng. Hệ quả: không có khái niệm "hai video liên tiếp"; giao diện hiện **cả ma trận** trùng, không đánh dấu cặp nào.
+
+### 4.5 Video dài với video ngắn trong cùng mẻ [tính]
+
+Mẻ chuẩn đã chốt có 1 video 180 giây + 5–8 video ngắn từ cùng một kho. Video dài dùng ~70–78 trong ~78 cảnh, nên **mỗi video ngắn sẽ trùng ~90% với video dài theo cách đo này** (gần như mọi cảnh của nó nằm trong video dài), kể cả khi các video ngắn không trùng nhau. Đây là hệ quả tự nhiên của "cắt ngắn từ cùng nguồn", không phải lỗi thuật toán. Việc cần làm ở 8b/8f: **tách riêng** cặp dài-ngắn khỏi cặp ngắn-ngắn khi hiển thị và khi chốt ngưỡng; ngưỡng cho ngắn-ngắn mới là con số đáng chú ý. Có nên đăng video dài và các bản cắt từ nó gần nhau hay không là quyết định của chủ.
 
 ---
 
@@ -147,7 +153,7 @@ Hệ quả: ngưỡng "40% giữa hai video liên tiếp" chỉ có nghĩa khi k
 
 **Đo UX:** gắn bộ đếm thời gian nhỏ (thời điểm mở video, thời điểm chấp nhận) để biết thời gian duyệt thật trên 10 video đầu. Mục tiêu 30 giây mỗi clip là mục tiêu để đo, chưa phải cam kết.
 
-**Video bị từ chối:** hai lựa chọn rẻ nhất: đổi cảnh (0đ) hoặc tạo lại bản nháp (một lần gọi Claude, ~800đ). Q5.
+**Video bị từ chối (Q5, đã chốt):** ưu tiên **đổi cảnh trên Storyboard (0đ)**. Nếu vẫn không ưng cả mạch kịch bản: nút "Tạo lại kịch bản (Re-draft)" kèm cảnh báo chi phí ước tính (≈ 800đ) và **bắt buộc xác nhận một lần nữa** (đi qua cổng duyệt chi như mọi lần gọi Claude, tính vào ngân sách ngày).
 
 ---
 
@@ -191,21 +197,31 @@ Hệ quả: ngưỡng "40% giữa hai video liên tiếp" chỉ có nghĩa khi k
 
 ---
 
-## 9. Câu hỏi cần anh chốt (chưa chốt = chưa mở 8a)
+## 9. Câu hỏi Q1–Q6: đã chốt ngày 01/10/2026
 
-- **Q1. Thư mục video:** phương án B (thư mục dự án thật + hardlink, **đề nghị**) hay A (sửa dịch vụ, sạch hơn nhưng động ~15 file)?
-- **Q2. Duyệt chi:** một lần duyệt cho cả mẻ (**đề nghị**) hay duyệt từng video?
-- **Q3. Video 180 giây trong mẻ:** tối đa một video dài mỗi kho mỗi đợt (**đề nghị**) hay chấp nhận trùng cao giữa các video dài?
-- **Q4. Thứ tự đăng:** anh có nhập thứ tự/ngày đăng dự kiến khi tạo mẻ không (để đánh dấu "liên tiếp")?
-- **Q5. Video bị từ chối khi duyệt:** ưu tiên đổi cảnh (0đ), hay cho phép tạo lại bản nháp (~800đ) ngay trong màn duyệt?
-- **Q6. Ngưỡng cảnh báo:** đề nghị **chưa đặt ngưỡng mặc định**, chỉ hiển thị số trùng cho tới khi có số đo 8f. Anh đồng ý?
+Các câu hỏi đã được trả lời; kết quả nằm ở mục 10. Phần này giữ lại để biết mỗi câu hỏi hỏi gì:
+Q1 thư mục video (A hay B), Q2 cách duyệt chi, Q3 số video 180 giây mỗi kho, Q4 thứ tự đăng, Q5 video bị từ chối, Q6 ngưỡng cảnh báo trùng.
 
 ---
 
 ## 10. Quyết định đã chốt (01/10/2026)
 
-1. GĐ8 chỉ bắt đầu sau khi 7e nghiệm thu; khung này chỉ để chuẩn bị.
+**Về thứ tự và phạm vi**
+1. GĐ8 chỉ bắt đầu sau khi 7e nghiệm thu; khung này chỉ để chuẩn bị. PR chứa tài liệu này giữ mở, không merge, để `main` sạch cho đợt thử 7e.
 2. Cả mẻ dùng chung một lần phân tích footage; xếp hạng ứng viên chạy riêng theo `plan.json` từng video.
-3. Mẻ chuẩn: 5–10 video 15–30 giây, xen 1–2 video 180 giây; không chạy mẻ 30 × 180 giây.
-4. Trùng đo theo thời gian chồng lấn thật; cảnh báo mềm; ngưỡng chốt sau khi đo thật ở 8f.
-5. Kho nhạc thương mại và bảng metadata do anh và NVH lo; em làm 8e khi nhận file.
+3. Mẻ chuẩn: 5–10 video ngắn (15–45 giây) và tối đa 1 video 180 giây mỗi kho; không chạy mẻ 30 × 180 giây.
+4. Kho nhạc thương mại và bảng metadata do chủ và NVH lo; em làm 8e khi nhận file.
+
+**Q1–Q6**
+- **Q1 (thư mục):** thư mục dự án thật + hardlink (phương án B).
+- **Q2 (duyệt chi):** duyệt một lần ở cấp mẻ. Bảng duyệt liệt kê N video, cấu hình từng video, ước tính tệ nhất từng video, tổng trần cả mẻ, ngân sách ngày còn lại. Trần cứng 100.000đ mỗi ngày vẫn là chốt chặn cao nhất.
+- **Q3 (180 giây):** tối đa 1 video 180 giây mỗi kho trong một đợt mẻ. Mẻ chuẩn: 1 video 180 giây + 5–8 video ngắn 15–45 giây.
+- **Q4 (thứ tự đăng):** chưa nhập thứ tự đăng ở GĐ8; lên lịch phân phối để giai đoạn tích hợp mạng xã hội riêng.
+- **Q5 (video bị từ chối):** đổi cảnh trên Storyboard (0đ) là chính; nút "Tạo lại kịch bản (Re-draft)" kèm cảnh báo chi phí ≈ 800đ và xác nhận lần nữa.
+- **Q6 (ngưỡng):** chưa đặt ngưỡng cứng mặc định; chỉ hiển thị % chồng lấn thời gian giữa các video. Ngưỡng vàng/đỏ chính thức chốt sau số đo thực nghiệm ở 8f.
+
+**Về đa dạng hóa**
+- Sinh mẻ xoay vòng giữa các phong cách và các cặp nhạc/BPM; truyền danh sách đoạn footage đã dùng nhiều vào lời nhắc để Claude ưu tiên góc mới (mục 4.1; em đề nghị thêm lớp trừ điểm ở bước chọn cảnh vì chắc chắn và miễn phí).
+
+**Điều em ghi thêm sau khi chốt (chưa cần quyết ngay)**
+- Với mẻ chuẩn "1 video dài + 5–8 video ngắn từ cùng kho", cặp dài-ngắn sẽ trùng cao (~90%) theo cách đo; cần tách riêng cặp dài-ngắn khỏi cặp ngắn-ngắn khi hiển thị và khi chốt ngưỡng (mục 4.5).
