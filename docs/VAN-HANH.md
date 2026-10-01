@@ -136,6 +136,21 @@ Lúc đo, máy chỉ còn trống khoảng 0,6 GB RAM mà bản cuối 3 phút v
 nhưng rất sát: **đóng bớt trình duyệt và ứng dụng khác** trước khi dựng bản cuối. Thanh tiến độ
 và ETA tự tính theo độ dài video.
 
+## 6a. Bộ lọc hoàn thiện (khử ồn, tông màu): đang TẮT
+
+Hai bộ lọc tùy chọn nằm trong `config/rules.json` → `render`. **Mặc định tắt**; chỉ bật sau khi chủ
+đã nghe/xem thử và đồng ý. Đổi `"enabled": false` thành `true` rồi dựng lại, không cần sửa mã.
+
+| Bộ lọc | Khóa | Làm gì | Chi phí dựng (đo 37 s, 1080p) |
+|---|---|---|---|
+| Khử ồn | `denoise` (`nr` 12, `nf` -40) | `afftdn` chỉ trên tiếng camera/tiếng nói, trước khi trộn nhạc | +0 s (84 → 84) |
+| Tông màu thực phẩm | `grade` (`strength` 0,4) | tươi + ấm nhẹ (`eq` + `lutyuv`), không đụng chữ và khung kết | +0 s (84–89 → 87) |
+
+`strength` từ 0 đến 1 nhân mọi mức chỉnh (0 = không đổi). Giữ nhẹ để giò chả không ngả hồng/đỏ hơn
+thực tế. **Lưu ý khử ồn ở chế độ lời:** bước T8 nghe lại video đã dựng, nên nếu bật khử ồn thì T8
+nghe âm thanh đã khử ồn. Phép thử A/B trên 8 clip xưởng chưa cho thấy khử ồn giúp Whisper nghe đúng
+hơn, nên đừng bật khử ồn cho chế độ lời trước khi người nghe thử xác nhận.
+
 ## 7. Nhãn QC T8 (chế độ lời)
 
 T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch lời và độ lệch phụ đề; chỉ chạy cho

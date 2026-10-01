@@ -154,6 +154,17 @@ def test_ambient_sound_level_follows_the_style() -> None:
     assert (e.lufs, e.true_peak_db) == (-14.0, RULES["render"]["true_peak_db"])
 
 
+def test_finishing_filters_are_off_by_default_and_follow_the_rules_when_on() -> None:
+    off = build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=False)
+    assert off.denoise is None and off.grade is None
+    on = {**RULES, "render": {**RULES["render"],
+                              "denoise": {"enabled": True, "nr": 12, "nf": -40},
+                              "grade": {**RULES["render"]["grade"], "enabled": True}}}  # fmt: skip
+    e = build_edl(draft(SEGS), plan(), CLIPS, on, preview=False)
+    assert e.denoise == "afftdn=nr=12:nf=-40"
+    assert e.grade is not None and e.grade.startswith("eq=saturation=")
+
+
 # ─────────────── captions ───────────────
 
 
@@ -223,6 +234,10 @@ def test_speech_edl_keeps_the_voice_ducks_the_music_and_places_broll() -> None:
     # 0.3 s between the phrases < duck_merge_gap_sec 0.4: one span, no pumping in the gap
     assert e.duck_db == -18 and e.duck == [(0.1, 4.8)]
     assert e.content_end == 5.0 and e.duration == 7.0
+    assert e.denoise is None and e.grade is None  # finishing filters are off by default
+    on = {**RULES, "render": {**RULES["render"], "denoise": {"enabled": True, "nr": 12, "nf": -40}}}
+    spoken = build_speech_edl(speech_cuts(), [ov], speech_plan(m), CLIPS, on, preview=True)
+    assert spoken.denoise == "afftdn=nr=12:nf=-40"  # the voice is the layer that gets cleaned
     assert [(c.text, c.kind) for c in e.captions] == [("Nhắn tin nhận báo giá sỉ", "cta")]
     assert [[w.text for w in g] for g in e.karaoke] == [["Giò", "lụa", "ngon."],
                                                         ["Nhắn", "tin", "ngay"]]  # fmt: skip
