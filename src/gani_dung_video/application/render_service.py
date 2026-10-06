@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from gani_dung_video.application.delivery_service import DeliveryTarget, apply_e1, deliver
 from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.qc_service import (
     QcReport,
@@ -213,6 +215,7 @@ def _render_one(
     metrics: FontMetrics,
     plan: Plan,
     t8: T8Hook | None = None,
+    target: DeliveryTarget | None = None,
 ) -> RenderResult:
     e = _claims_gate(e)  # before any file is written or ffmpeg started
     out = edit / RENDER_DIR / letter
@@ -232,12 +235,17 @@ def _render_one(
     def pass1(e: Edl = e, out: Path = out) -> Mapping[str, float]:
         return measure_loudnorm(e, folder, music, out, rules)
 
+    started = time.monotonic()
     rep = render_checked(e, video, rules, do_render, pass1, metrics.width)
     if t8 is not None and rep.rounds:  # the file exists: Whisper listens to it (5c-3)
         heard, measured = t8(e, video, out)
         blocked = any(f.level in ("error", "fix") for f in heard)
         rep = rep.model_copy(update={"findings": [*rep.findings, *heard], "t8": measured,
                                      "passed": rep.passed and not blocked})  # fmt: skip
+    render_sec = time.monotonic() - started
+    glossary = load_glossary()
+    if rep.rounds:  # E1 (T-E): numbers on the finished file; a failed check blocks delivery
+        rep, e1 = apply_e1(rep, e, plan, video, rules, metrics, glossary)
     (out / "qc_report.json").write_text(rep.model_dump_json(indent=1), encoding="utf-8")
     if rep.rounds:
         cover_at = e.captions[0].start + 0.3 if e.captions else 0.5
@@ -247,6 +255,23 @@ def _render_one(
                      "findings": [f.model_dump() for f in rep.findings]}  # fmt: skip
         (out / "render_log.json").write_text(json.dumps(log, ensure_ascii=False, indent=1),
                                              encoding="utf-8")  # fmt: skip
+        deliver(
+            e=e,
+            plan=plan,
+            report=e1,
+            passed=rep.passed,
+            folder=folder,
+            out=out,
+            rules=rules,
+            glossary=glossary,
+            letter=letter,
+            label=label,
+            model=model,
+            preview=preview,
+            video=video,
+            render_sec=render_sec,
+            target=target or DeliveryTarget(),
+        )
     return RenderResult(draft=letter, video=video, duration_sec=e.duration, qc_passed=rep.passed,
                         qc_notes=[*rep.fixes, *(f"{f.code}: {f.msg}"
                                                 for f in rep.findings)])  # fmt: skip
@@ -254,7 +279,8 @@ def _render_one(
 
 def build_render(
     folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None,
-    asr: bool = True, transcribe: Transcriber | None = None,
+    asr: bool = True, transcribe: Transcriber | None = None, product: str | None = None,
+    campaign: str | None = None,
 ) -> list[RenderResult]:  # fmt: skip
     """Render every draft (or only `draft`) of the style's drafts file.
 
@@ -262,6 +288,10 @@ def build_render(
     follows the voice, B-roll overlays and ducking come from build_speech_edl; everything
     else reads edit/drafts.json (beat-driven, build_edl). A final (not preview) speech-mode
     video is also listened to by Whisper (T8, phase 5c-3) unless `asr` is False.
+
+    Every video gets E1 checks and a manifest.json; one that passes is also copied to
+    edit/delivery/<campaign>/drafts under its E3 name (T-E). `product` and `campaign` only
+    feed that name and folder (defaults: rules' default product, the footage folder's name).
 
     Raises:
         ConfigError: drafts/plan/inventory missing or corrupt, unknown draft, music gone.
@@ -274,6 +304,7 @@ def build_render(
     music = _music_file(plan)
     clips = {c.file: c for c in inv.clips}
     metrics = FontMetrics()
+    target = DeliveryTarget(product=product, campaign=campaign)
     if plan.driver == "speech":
         t8 = _t8_hook(folder, rules, transcribe) if asr and not preview else None
         sd: SpeechDraftsFile = _read(edit / "speech_drafts.json", SpeechDraftsFile,
@@ -285,7 +316,7 @@ def build_render(
         return [
             _render_one(build_speech_edl(x.cuts, x.broll, plan, clips, rules, preview=preview),
                        x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
-                       preview, metrics, plan, t8)
+                       preview, metrics, plan, t8, target)
             for x in speech_chosen
         ]  # fmt: skip
     no_drafts = "Chưa có edit/drafts.json — chạy lệnh `draft` trước."
@@ -297,6 +328,6 @@ def build_render(
     return [
         _render_one(build_edl(x, plan, clips, rules, preview=preview), x.draft, x.label,
                    drafts.model, drafts.cost_vnd, folder, edit, music, rules, preview, metrics,
-                   plan)
+                   plan, None, target)
         for x in chosen
     ]  # fmt: skip

@@ -490,8 +490,8 @@ def test_a_real_child_process_renders_a_job_end_to_end(tmp_path: Path) -> None:
     d = tmp_path / "footage"
     d.mkdir()
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
-                    "testsrc2=s=360x640:r=30:d=4", "-f", "lavfi", "-i",
-                    "sine=frequency=330:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "testsrc2=s=360x640:r=30:d=9", "-f", "lavfi", "-i",
+                    "sine=frequency=330:duration=9", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                     "-c:a", "aac", "-shortest", str(d / "a.mp4")],
                    check=True, timeout=120)  # fmt: skip
     build_inventory(d, load_rules())
@@ -500,8 +500,9 @@ def test_a_real_child_process_renders_a_job_end_to_end(tmp_path: Path) -> None:
     plan = compile_plan(opts, load_rules(), music=None, available_tags=set())
     (d / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
     word = SpokenWord(text="Giò", start=0.1, end=0.5, prob=0.9)
-    cut = SpeechCut(phrase_id="a_p0", clip="a.mp4", src_in=0.0, src_out=3.0, t_start=0.0,
-                    t_end=3.0, words=[word])  # fmt: skip
+    # 9 s of speech for a "15 s" option: inside the voice limit (E1-DUR allows ±7 s)
+    cut = SpeechCut(phrase_id="a_p0", clip="a.mp4", src_in=0.0, src_out=9.0, t_start=0.0,
+                    t_end=9.0, words=[word])  # fmt: skip
     sd = SpeechDraftsFile(model="THU-TAY", drafts=[SpeechDraft(draft="A", label="x", cuts=[cut])])
     (d / "edit" / "speech_drafts.json").write_text(sd.model_dump_json(), encoding="utf-8")
 

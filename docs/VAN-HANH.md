@@ -193,8 +193,61 @@ cho tới khi hàng đợi kia hết job cho dự án đó.
 | `ai_log.jsonl` | mỗi vòng gọi Claude: token vào/ra, chi phí (không ghi nội dung gửi đi, không ghi khóa) |
 | `render/<A>/nhap_A_540p.mp4`, `video_A_1080x1920.mp4` | video nháp / cuối |
 | `render/<A>/cover.jpg`, `phude.srt`, `qc_report.json`, `render_log.json` | ảnh bìa, phụ đề, kết quả QC, nhật ký dựng để dựng lại đúng bản này |
+| `render/<A>/manifest.json` | hồ sơ truy vết của video: tùy chọn, mã băm `plan.json`/`rules.json`/`glossary.json`, model, file nguồn, kết quả E1, chi phí thật (mục 9a) |
+| `delivery/<chiến-dịch>/{raw,drafts,final,metadata}` | bản đã đạt kiểm tra, đặt tên theo quy ước (mục 9a) |
 
 Nhật ký từng job (khi cần gỡ lỗi): `<GANI_DV_QUEUE_DIR>/logs/<số job>.log`.
+
+## 9a. Kiểm tra E1, manifest và giao hàng (Dev Package 03, T-E)
+
+Sau mỗi lần dựng, ngoài T1–T8 còn có **E1**: tám mục pass/fail kèm số đo, ghi trong
+`manifest.json` (mỗi mục có `value`, `limit`, `detail`). Mục nào trượt (mức chặn) thì video **không
+được giao** và `qc_passed` là sai, giống một lỗi QC.
+
+| Mục | Đo gì | Ngưỡng (`rules.json` → `qc`) |
+|---|---|---|
+| `E1-DUR` | độ dài nội dung (file trừ khung kết) | sai số `duration_tolerance_sec`: ≤ 60 giây ±0,5; 180 giây ±1; đem so với `duration_reference` (`plan` hoặc `chosen`, xem dưới) |
+| `E1-DUR-GAP` | độ dài kế hoạch so với độ dài đã chọn (lỗ chặn của chế độ `plan`) | `duration_plan_gap_pct` = ±10% (15 giây ±1,5s; 180 giây ±18s) |
+| `E1-FORMAT` | độ phân giải, tỷ lệ 9:16, codec, số khung hình (T1, T2) | đúng cấu hình |
+| `E1-LOUD` | âm lượng, đỉnh thật, không clip (T3) | −14 ±1 LUFS, đỉnh ≤ trần |
+| `E1-PICTURE` | khung đen (chặn), hình đứng (chỉ cảnh báo) (T4, T5) | `black_min_sec`, `freeze_min_sec` |
+| `E1-SAFE` | chữ nằm trong vùng an toàn 1080×1920 | `safe_zone`: trên 250, dưới 400, trái 60, phải 60 (px) |
+| `E1-GLYPH` | mọi ký tự có glyph trong font (dấu tiếng Việt không thành ô trống) | 0 ký tự thiếu |
+| `C1` | không cụm cấm trên màn hình (cổng C1 trước ffmpeg vẫn chặn trước khi dựng) | `glossary.json` → `banned_claims` |
+
+**Độ dài:** cảnh cắt bám nhịp nên độ dài kế hoạch có thể khác độ dài đã chọn (video 15 giây ra
+15,0s Kể chuyện nghề, 15,6s TVC cắt nhanh, 16,0s Review và Sang trọng).
+
+- Video dựng theo nhịp: `E1-DUR` đo **so với độ dài kế hoạch** (`duration_reference` = `"plan"`),
+  sai số ±0,5s (≤ 60 giây) hoặc ±1s (180 giây). Kèm lỗ chặn `E1-DUR-GAP`: kế hoạch không được lệch
+  độ dài đã chọn quá ±10%, nên kế hoạch trôi xa ý định khách vẫn bị chặn.
+- Chế độ lời: độ dài chạy theo lời nói nên dung sai rộng hơn nhưng có biên cứng, đo so với độ dài
+  đã chọn (`duration_tolerance_voice_sec`, lấy giá trị lớn hơn): ≤ 60 giây ±25% hoặc ±7s
+  (30 giây: ±7,5s); 180 giây ±20% hoặc ±20s (±36s). Trong biên: cảnh báo, ghi manifest, cho qua.
+  Ngoài biên: chặn (video chọn 30 giây ra 17,3s lệch −12,7s bị chặn).
+- Manifest luôn ghi cả hai độ lệch (giây, âm = ngắn hơn), ở `deviation_vs_chosen` và
+  `deviation_vs_plan`, bất kể `duration_reference`.
+
+**Giao hàng:** video đạt cả bộ kiểm tra được chép sang `edit/delivery/<chiến-dịch>/drafts/` với tên
+`GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_v{n}_{YYYYMMDD}.mp4` (chữ thường, gạch
+ngang, không dấu; `v{n}` tăng theo số bản cùng ngày), manifest sang `metadata/`. `final/` chỉ nhận
+video đã được người duyệt (bước T-F, chưa làm) và `raw/` dành cho footage gốc (không chép vào đây).
+Đặt sản phẩm và chiến dịch bằng cờ của lệnh dựng: `render <thư mục> --san-pham "Giò lụa"
+--chien-dich "Ra mắt tháng 10"`; không đặt thì sản phẩm là `chung` và chiến dịch là tên thư mục
+footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn được nhưng manifest có cảnh báo.
+
+**Chi phí mỗi video** (manifest → `cost`): token và đồng thật đọc từ `ai_log.jsonl` của lượt viết
+kịch bản gần nhất (phần của bản nháp này = chi phí mỗi vòng chia đều cho các bản nó viết), cộng thời
+gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do thay vì số 0.
+
+## 9b. Hạn chế đã biết
+
+- `duration_reference = "plan"` là **tạm**. Nguyên nhân là thuật toán cắt nhịp không hít đúng độ
+  dài đã chọn (ra 15,6s hoặc 16,0s thay vì 15s). Hạn sửa thuật toán: **20/10/2026**; khi sửa xong
+  chuyển mặc định về `"chosen"`.
+- Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
+  sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
+  trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).
 
 ## 10. Xử lý sự cố nhanh
 

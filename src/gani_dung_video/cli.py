@@ -153,6 +153,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rd.add_argument(
         "--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8) ở bản cuối chế độ lời"
     )
+    rd.add_argument("--san-pham", help="Sản phẩm trong tên file giao (mặc định: chung)")
+    rd.add_argument("--chien-dich", help="Tên chiến dịch = thư mục giao (mặc định: tên thư mục)")
     qc = sub.add_parser("qc", help="Soát kỹ thuật lại một video đã dựng (không dựng lại)")
     qc.add_argument("folder", type=Path, help="Thư mục footage đã chạy render")
     qc.add_argument("--ban", required=True, help="Bản nháp cần soát (A, B hoặc C)")
@@ -412,8 +414,17 @@ def _vnd(x: float) -> str:
     return _num(x) + "đ"
 
 
-def _run_render(folder: Path, preview: bool, draft: str | None, asr: bool = True) -> int:
-    results = build_render(folder, draft=draft, preview=preview, asr=asr)
+def _run_render(
+    folder: Path,
+    preview: bool,
+    draft: str | None,
+    asr: bool = True,
+    product: str | None = None,
+    campaign: str | None = None,
+) -> int:
+    results = build_render(
+        folder, draft=draft, preview=preview, asr=asr, product=product, campaign=campaign
+    )
     lines: list[str] = []
     for r in results:
         verdict = "QC: ĐẠT" if r.qc_passed else "QC: KHÔNG ĐẠT — không giao bản này"
@@ -642,7 +653,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "qc":
             return _run_qc(args.folder, args.ban, args.final, not args.no_asr)
         if args.cmd == "render":
-            return _run_render(args.folder, args.preview, args.ban, not args.no_asr)
+            return _run_render(
+                args.folder, args.preview, args.ban, not args.no_asr, args.san_pham, args.chien_dich
+            )
         if args.cmd == "draft":
             return _run_draft(args.file, args.folder, args.dry_run, args.json, args.max_vnd)
         if args.cmd == "pick":
