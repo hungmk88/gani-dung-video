@@ -90,6 +90,9 @@ def parse_measures(log: str, duration: float) -> Measures:
 def check_media(f: MediaFacts, e: Edl, cfg: Mapping[str, Any]) -> list[Finding]:
     """T1 container matches the EDL; T2 no dropped or duplicated frames."""
     slack = int(cfg["frame_slack"])
+    # H.264 B-frame reordering can drop 2–3 trailing frames when -shortest cuts mid-GOP, so T2
+    # allows max(floor, fps × seconds) frames. Rounded half up: round() would give 4 at 30 fps.
+    frame_slack = max(slack, math.floor(f.fps * float(cfg["frame_slack_sec"]) + 0.5))
     problems = []
     if (f.width, f.height) != (e.width, e.height):
         problems.append(f"khung {f.width}×{f.height}, cần {e.width}×{e.height}")
@@ -105,7 +108,7 @@ def check_media(f: MediaFacts, e: Edl, cfg: Mapping[str, Any]) -> list[Finding]:
     out = [Finding(code="T1", level="error", msg="File xuất sai chuẩn: " + "; ".join(problems))
            ] if problems else []  # fmt: skip
     want = round(e.duration * e.fps)
-    if not problems and abs(f.frames - want) > slack:
+    if not problems and abs(f.frames - want) > frame_slack:
         out.append(Finding(code="T2", level="error", msg=f"{f.frames} khung hình, cần {want} "
                                                          "(mất hoặc lặp khung)."))  # fmt: skip
     return out
