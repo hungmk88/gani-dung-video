@@ -170,6 +170,17 @@ T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch l�
 `skipped_no_asr`, `unavailable`) và cách giao diện hiển thị nằm trong `api-jobs.md`, mục
 "T8 (Whisper nghe lại thành phẩm)". Video chế độ nhạc (kể cả 3 phút) không có T8.
 
+## 7a. Dung sai số khung hình của T2 (`frame_slack_sec`)
+
+T2 đếm từng khung hình của file xuất và so với độ dài × fps. Bộ mã H.264 sắp lại B-frame, nên khi
+`-shortest` cắt giữa một nhóm khung, 2–3 khung cuối rơi khi giải mã: đó là hành vi bình thường của
+bộ mã, không phải lỗi (phong cách `theo_mo_ta` từng ra 507 khung thay vì 510 và bị chặn nhầm).
+
+Dung sai là `max(frame_slack, làm tròn lên nửa(fps × frame_slack_sec))` khung, trong khối `qc` của
+`config/rules.json`: `frame_slack = 1` (sàn, cho fps rất thấp hoặc metadata lỗi) và
+`frame_slack_sec = 0,15` (giây). Ví dụ: 24 fps → 4 khung, 30 fps → 5, 60 fps → 9. Lệch hơn dung sai
+(ví dụ mất 10 khung ở 30 fps) vẫn bị chặn. Dung sai độ dài T1 vẫn dùng `frame_slack` cũ.
+
 ## 8. Khóa thư mục `.project.lock`
 
 Hai hàng đợi khác nhau (hai `queue.db`) không được cùng làm một dự án: chúng sẽ ghi đè

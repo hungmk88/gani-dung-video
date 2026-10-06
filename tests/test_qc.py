@@ -104,7 +104,7 @@ def test_a_file_matching_the_edl_passes() -> None:
     ("kw", "code"),
     [({"duration": 8.2}, "T1"), ({"width": 1080}, "T1"), ({"fps": 29.97}, "T1"),
      ({"pix_fmt": "yuv444p"}, "T1"), ({"sample_rate": 44100}, "T1"), ({"channels": 1}, "T1"),
-     ({"audio_codec": None}, "T1"), ({"frames": 236}, "T2")],
+     ({"audio_codec": None}, "T1"), ({"frames": 232}, "T2")],
 )  # fmt: skip
 def test_container_mismatches_are_errors(kw: dict[str, object], code: str) -> None:
     found = check_media(facts(**kw), edl(), QC)
@@ -113,6 +113,59 @@ def test_container_mismatches_are_errors(kw: dict[str, object], code: str) -> No
 
 def test_one_frame_of_slack_is_allowed() -> None:
     assert check_media(facts(frames=239, duration=8.0 + 1 / 30), edl(), QC) == []
+
+
+# T2 slack is max(frame_slack, round-half-up(fps × frame_slack_sec)): B-frame reordering can drop
+# 2–3 trailing frames when -shortest cuts mid-GOP (theo_mo_ta: 507 of 510, 07/10/2026).
+
+
+def edl_at(fps: int) -> Edl:
+    return edl().model_copy(update={"fps": fps})
+
+
+def test_a_three_frame_b_frame_drop_at_30fps_passes_t2() -> None:
+    assert check_media(facts(frames=237), edl(), QC) == []
+
+
+def test_the_real_theo_mo_ta_case_507_of_510_passes_t2() -> None:
+    e = edl().model_copy(update={"duration": 17.0})
+    assert check_media(facts(frames=507, duration=17.0), e, QC) == []
+
+
+def test_slack_at_30fps_is_five_frames_not_four() -> None:
+    assert check_media(facts(frames=235), edl(), QC) == []
+    assert codes(check_media(facts(frames=234), edl(), QC)) == ["T2"]
+
+
+def test_a_five_frame_drop_at_60fps_passes_t2() -> None:
+    assert check_media(facts(fps=60.0, frames=475), edl_at(60), QC) == []
+
+
+def test_slack_at_60fps_is_nine_frames() -> None:
+    assert check_media(facts(fps=60.0, frames=471), edl_at(60), QC) == []
+    assert codes(check_media(facts(fps=60.0, frames=470), edl_at(60), QC)) == ["T2"]
+
+
+def test_a_ten_frame_loss_at_30fps_still_fails_t2() -> None:
+    found = check_media(facts(frames=230), edl(), QC)
+    assert codes(found) == ["T2"] and found[0].level == "error"
+    assert "230 khung hình, cần 240" in found[0].msg
+
+
+def test_frame_slack_is_the_floor_at_very_low_fps() -> None:
+    # 5 fps × 0.15 s = 0.75 → 1 frame: the floor and the seconds rule agree on 1.
+    assert check_media(facts(fps=5.0, frames=39), edl_at(5), QC) == []
+    assert codes(check_media(facts(fps=5.0, frames=38), edl_at(5), QC)) == ["T2"]
+
+
+def test_frame_slack_floor_wins_when_the_seconds_rule_rounds_to_zero() -> None:
+    cfg = {**QC, "frame_slack": 2, "frame_slack_sec": 0.01}
+    assert check_media(facts(frames=238), edl(), cfg) == []
+    assert codes(check_media(facts(frames=237), edl(), cfg)) == ["T2"]
+
+
+def test_the_seconds_rule_is_configured_in_rules_json() -> None:
+    assert QC["frame_slack"] == 1 and QC["frame_slack_sec"] == 0.15
 
 
 # ─────────────── T3, T4, T5: loudness, black, freeze ───────────────

@@ -315,3 +315,14 @@ def test_ten_sample_videos_each_have_a_full_manifest_and_a_conforming_name(
     assert f"_{product}_{style.replace('_', '-')}_" in m.delivered_as
     assert m.cost.render_sec > 0 and m.models["ai"] == "fake" and m.source_files
     assert (delivery(folder, "mau") / "drafts" / m.delivered_as).is_file()
+
+
+@pytest.mark.parametrize("purpose", ["ban_hang", "gioi_thieu_xuong"])
+def test_theo_mo_ta_passes_t2_when_the_encoder_drops_trailing_b_frames(
+    purpose: str, tmp_path: Path, clips: Path
+) -> None:
+    """Real ffmpeg render of the style that used to stop at T2 with 507 of 510 frames."""
+    folder = make_project(tmp_path, clips, "mau", opts("theo_mo_ta", purpose))
+    [res] = build_render(folder, preview=True, rules=RULES, product="bo-vien", campaign="mau")
+    assert res.qc_passed, res.qc_notes
+    assert not [n for n in res.qc_notes if n.startswith("T2")]
