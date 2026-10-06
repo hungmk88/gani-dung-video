@@ -311,6 +311,30 @@
    "max_wer": 0.15,
    "max_median_drift_sec": 0.15,
    "span_margin_sec": 0.3
+  },
+  "_ghi_chu_e1": "E1 (Dev Package 03, T-E, chốt 06/10/2026): kiểm tra khách quan trên video đầu ra, mỗi mục pass/fail kèm số đo. duration_tolerance_sec: sai số cho phép (giây) giữa độ dài nội dung của file (độ dài file trừ khung kết end_card_sec) và độ dài đã chọn, khóa theo độ dài đã chọn: ≤ 60 giây ±0,5; 180 giây ±1. duration_reference: độ dài đem ra so với sai số. \"plan\" = độ dài kế hoạch (số nhịp × nhịp, đã làm tròn theo cỡ cảnh của phong cách, Đặc tả §7.2): kế hoạch video 15 giây ra 15,0s (Kể chuyện nghề), 15,6s (TVC cắt nhanh, nhịp 1,3s), 16,0s (Review, Sang trọng), nên đo thẳng với 15 giây sẽ chặn nhầm cả một phong cách; sai số ±0,5/±1 khi đó là độ trung thực của bản dựng. \"plan\" chỉ là TẠM, đến khi thuật toán cắt nhịp hít đúng độ dài đã chọn (hạn sửa 20/10/2026) thì chuyển mặc định về \"chosen\" (đo đúng nghĩa đen). duration_plan_gap_pct: lỗ chặn của chế độ \"plan\": độ dài kế hoạch không được lệch độ dài đã chọn quá tỉ lệ này (0,1 = ±10%: 15 giây ±1,5s; 180 giây ±18s); vượt thì E1-DUR-GAP chặn giao. duration_tolerance_voice_sec: chế độ lời, độ dài chạy theo lời nói nên dung sai rộng hơn nhưng có biên cứng, khóa theo độ dài đã chọn: lấy giá trị LỚN HƠN của pct × độ dài đã chọn và sec (≤ 60 giây: ±25% hoặc ±7s; 180 giây: ±20% hoặc ±20s). Trong biên: chỉ cảnh báo, ghi manifest, cho qua; ngoài biên: chặn giao (video chọn 30 giây ra 17,3s lệch −42% là lỗi). Cả hai độ lệch (deviation_vs_chosen, deviation_vs_plan) luôn được ghi vào manifest. safe_zone: vùng an toàn của nền tảng ở khung 1080×1920 (px chừa lại mỗi cạnh): trên 250, dưới 400, trái 60, phải 60 (lấy lớn nhất của TikTok và Reels, cộng biên); thêm nền tảng khác thì thêm hồ sơ riêng, không sửa số này. Chỉ chữ đo được (chữ, tiêu đề chương, CTA, lời chạy chữ) tính vào vùng an toàn; logo và khung kết là bộ nhận diện cố định.",
+  "duration_tolerance_sec": {"15": 0.5, "30": 0.5, "45": 0.5, "60": 0.5, "180": 1.0},
+  "duration_reference": "plan",
+  "duration_plan_gap_pct": 0.1,
+  "duration_tolerance_voice_sec": {
+   "15": {"pct": 0.25, "sec": 7},
+   "30": {"pct": 0.25, "sec": 7},
+   "45": {"pct": 0.25, "sec": 7},
+   "60": {"pct": 0.25, "sec": 7},
+   "180": {"pct": 0.2, "sec": 20}
+  },
+  "safe_zone": {"top": 250, "bottom": 400, "left": 60, "right": 60}
+ },
+ "_ghi_chu_delivery": "Giao hàng (Dev Package 03, T-E, chốt 06/10/2026). Mỗi video dựng xong có manifest.json cạnh file (edit/render/<bản>/). Video đạt E1 còn được chép sang cây thư mục chiến dịch edit/delivery/<chiến-dịch>/{raw,drafts,final,metadata}: bản dựng vào drafts, manifest vào metadata, final chỉ nhận video đã được người duyệt (T-F, chưa làm). raw chỉ là chỗ để footage gốc, không chép footage vào. Tên file theo naming.template, mọi trường: chữ thường, gạch ngang, không dấu (đ → d). phong-cách và mục-đích lấy từ mã trong rules (tvc_cat_nhanh → tvc-cat-nhanh), độ dài ghi số giây, tỷ-lệ là 9x16 (khung dọc 1080×1920 là khung duy nhất), v{n} tăng theo số bản đã có cùng ngày, YYYYMMDD là ngày dựng. sản-phẩm và chiến-dịch chưa có trong bộ tùy chọn (yeu-cau.md): nếu người dùng không chỉ định thì dùng default_product và tên thư mục dự án làm chiến dịch. products là danh mục sản phẩm đã chốt; sản phẩm ngoài danh mục vẫn được nhưng báo cảnh báo trong manifest.",
+ "delivery": {
+  "dirs": ["raw", "drafts", "final", "metadata"],
+  "root_dir": "delivery",
+  "naming": {
+   "template": "GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_v{n}_{ngay}.mp4",
+   "ratio": "9x16",
+   "date_format": "%Y%m%d",
+   "default_product": "chung",
+   "products": ["gio-lua", "cha-lua", "cha-bo", "nem-chua", "bo-vien", "chung"]
   }
  },
   "_ghi_chu_render_180": "Đo ngày 01/10/2026 trên Dell i5-8265U, 12 GB, video giả lập 180 giây (47 cảnh, đồ thị ffmpeg một lần, có tiêu đề chương): nháp 540p 147 giây mỗi vòng dựng (304 giây khi QC bắt dựng lại vòng 2), ffmpeg đỉnh ≈ 1,36 GB RAM; bản cuối 1080×1920 999 giây cho hai vòng (≈ 7–8 phút mỗi vòng), ffmpeg đỉnh ≈ 2,42 GB, file 209 MB. render_sec_per_video_sec = giây dựng mỗi giây video gồm cả vòng dựng lại (nháp 1,7; cuối 5,5): expected_sec của hàng đợi = max(expected_sec, hệ số × độ dài video) cho thanh tiến độ/ETA; cửa sổ treo stall_sec không thấp hơn expected (ffmpeg im lặng hàng phút trong một vòng); timeout không thấp hơn 2 × expected. Video 15–30 giây giữ nguyên giới hạn cũ.",

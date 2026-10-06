@@ -63,6 +63,20 @@ def probe_media(path: Path, timeout: float) -> MediaFacts:
     )  # fmt: skip
 
 
+def probe_duration(path: Path, timeout: float) -> float:
+    """Container duration in seconds (fast: no frame decoding, unlike probe_media).
+
+    Raises:
+        ProbeFailed: ffprobe missing, timed out, or the file has no readable duration.
+    """
+    r = _run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+              str(path)], timeout)  # fmt: skip
+    try:
+        return float(r.stdout.decode("utf-8", "replace").strip())
+    except ValueError as e:
+        raise ProbeFailed(f"ffprobe không đọc được độ dài của {path.name}.") from e
+
+
 def measure(path: Path, cfg: Mapping[str, Any], duration: float, timeout: float) -> Measures:
     """One decode: loudness, true peak, black gaps, freezes.
 
@@ -120,3 +134,7 @@ class FontMetrics:
             hmtx[cmap.get(ord(ch), ".notdef")][0] for ch in unicodedata.normalize("NFC", text)
         )
         return float(units) * px / height
+
+    def has_glyph(self, char: str, family: str) -> bool:
+        """True when the bundled font draws `char` itself (not its .notdef box)."""
+        return ord(char) in self._load(family)[0]

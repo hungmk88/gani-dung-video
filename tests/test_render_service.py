@@ -28,8 +28,17 @@ from gani_dung_video.infrastructure.ffmpeg_render import render_voice_only
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
 RULES = load_rules()
+# The synthetic speech clips are 8 s long for a "30 s" option. These tests are about rendering,
+# so the voice length limit (E1-DUR, covered in tests/test_delivery_*.py) is widened here.
+RULES["qc"]["duration_tolerance_voice_sec"]["30"] = {"pct": 1.0, "sec": 30}
 OPTS: dict[str, Any] = {"phong_cach": "tvc_cat_nhanh", "muc_dich": "ban_hang", "do_dai_giay": 15,
                         "so_ban_nhap": 1, "nhac": "khong_nhac"}  # fmt: skip
+
+
+@pytest.fixture(autouse=True)
+def _wide_voice_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Commands that load the rules themselves (the CLI) get the same widened copy."""
+    monkeypatch.setattr(render_service, "load_rules", lambda path=None: RULES)
 
 
 def ff(out: Path, src: str, dur: float) -> None:

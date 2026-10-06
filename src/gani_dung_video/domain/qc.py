@@ -32,7 +32,7 @@ _PEAK = re.compile(r"True peak:\s*\n\s*Peak:\s*(-?[\d.]+|-inf)\s*dBFS")
 class Finding(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    code: str  # T1..T7
+    code: str  # T1..T8 (file checks), C1 (claims), E1-* (delivery checks, domain/delivery_checks)
     level: str  # error | warn | fix
     msg: str  # Vietnamese, shown to the editor
     at_sec: float | None = None
@@ -172,7 +172,8 @@ def wrap_lines(text: str, max_width: float, width: Callable[[str], float]) -> li
     return lines
 
 
-def _usable_width(rules: Rules) -> float:
+def usable_width(rules: Rules) -> float:
+    """Pixels a caption line may use: the frame minus the left and right layout margins."""
     safe = rules["render"]["safe"]
     return float(PLAY_W - int(safe["left"]) - int(safe["right"]))
 
@@ -192,7 +193,7 @@ def size_key(kind: str) -> str:
 
 
 def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
-    max_lines, usable = int(rules["qc"]["max_lines"]), _usable_width(rules)
+    max_lines, usable = int(rules["qc"]["max_lines"]), usable_width(rules)
     out = []
     for c in e.captions:
         size = int(px[size_key(c.kind)])
