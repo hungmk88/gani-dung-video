@@ -49,6 +49,37 @@ def edl_texts(e: Edl) -> dict[str, str]:
     return out
 
 
+def check_edl_claims(e: Edl, banned: Sequence[str]) -> list[ClaimHit]:
+    """C1 over everything a viewer reads or hears: every text of `edl_texts`, plus phrases that
+    the karaoke grouping splits (spoken as one sentence, drawn as two or more groups).
+
+    A phrase wholly inside one group is reported once, under that group's own name; one that
+    crosses groups is named "lời 1–2" and carries the text of the groups it covers.
+    """
+    hits = check_claims(edl_texts(e), banned)
+    groups = [" ".join(w.text for w in g) for g in e.karaoke]
+    for phrase in banned:
+        if any(find_banned_claims(g, [phrase]) for g in groups):
+            continue  # already reported (or about to be) as a single group's text
+        span = _crossing_span(groups, phrase)
+        if span is not None:
+            first, last = span
+            hits.append(ClaimHit(f"lời {first + 1}–{last + 1}",
+                                 " ".join(groups[first : last + 1]), phrase))  # fmt: skip
+    return hits
+
+
+def _crossing_span(groups: Sequence[str], phrase: str) -> tuple[int, int] | None:
+    """The smallest run of consecutive groups whose joined text holds `phrase`, if any."""
+    for first in range(len(groups)):
+        text = ""
+        for last in range(first, len(groups)):
+            text = f"{text} {groups[last]}".strip()
+            if find_banned_claims(text, [phrase]):
+                return (first, last) if last > first else None
+    return None
+
+
 def check_claims(fields: Mapping[str, str], banned: Sequence[str]) -> list[ClaimHit]:
     """List every banned phrase in every text, in the order the texts were given.
 
