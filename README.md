@@ -11,14 +11,24 @@ phí đều do người dùng duyệt trên giao diện.
 ## Chạy nhanh
 
 ```bash
-pip install -e .
-copy .env.example .env          # Windows; điền ANTHROPIC_API_KEY, GANI_DV_ALLOWED_ROOTS, ...
+set PYTHONPATH=src                 # cmd; PowerShell: $env:PYTHONPATH = "src"; Git Bash: export PYTHONPATH=src
+copy .env.example .env             # Windows; điền ANTHROPIC_API_KEY, GANI_DV_ALLOWED_ROOTS, ...
 cd frontend && npm ci && npm run build:real && cd ..
 python -m gani_dung_video serve    # cửa sổ 1: giao diện + API
 python -m gani_dung_video daemon   # cửa sổ 2: người làm việc
 ```
 
-Trên Windows có thể nhấp đúp `scripts\chay-gani.bat` (hoặc lối tắt "GANI Video" trên Desktop) thay cho hai lệnh trên.
+Chạy từ thư mục gốc dự án (`PYTHONPATH=src` là đường dẫn tương đối, chỉ có hiệu lực trong cửa sổ lệnh
+đã đặt). Chưa đặt thì lệnh báo `No module named gani_dung_video`.
+
+- **Cách A, khuyến nghị: `PYTHONPATH=src`** như trên. Luôn đúng với thư mục đang đứng, an toàn khi
+  có nhiều bản làm việc (worktree) song song.
+- **Cách B: `pip install -e .`**, chỉ khi máy chỉ có **một** bản mã duy nhất. Gói cài kiểu editable
+  ghi cứng đường dẫn của một thư mục, nên các worktree khác sẽ chạy **nhầm mã** của thư mục đó mà
+  không báo lỗi. Lỡ cài thì gỡ bằng `pip uninstall gani-dung-video`.
+
+Trên Windows có thể nhấp đúp `scripts\chay-gani.bat` (hoặc lối tắt "GANI Video" trên Desktop) thay cho hai lệnh trên;
+tệp này tự đặt `PYTHONPATH=src`.
 
 Mở `http://127.0.0.1:8765/`. Từng bước, chi phí, xử lý sự cố: [`docs/VAN-HANH.md`](docs/VAN-HANH.md).
 
@@ -34,7 +44,7 @@ Mở `http://127.0.0.1:8765/`. Từng bước, chi phí, xử lý sự cố: [`d
 ## Phát triển
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"   # lấy công cụ kiểm (ruff, mypy, pytest); máy nhiều worktree: xem cảnh báo cách B ở trên
 ruff check . && ruff format --check . && mypy --strict src tests && pytest
 cd frontend && npm test && npx tsc -b
 ```
