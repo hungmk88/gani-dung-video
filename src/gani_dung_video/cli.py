@@ -29,6 +29,9 @@ python -m gani_dung_video queue add <yeu-cau.md|options.json> <thu_muc_footage> 
 python -m gani_dung_video queue list | show ID | cancel ID | retry ID | stop [--now]
     hàng đợi dựng (GĐ6a); exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
     sách cho phép, hoặc không có job đó
+python -m gani_dung_video music-check [<thu_muc_nhac>] [--chi-tiet] [--ca-180]
+    kiểm thư mục nhạc, CHỈ ĐỌC: BPM từng bài và bài nào dựng được phong cách × độ dài nào;
+    mặc định lấy GANI_DV_MUSIC_DIR; exit 0 = xong, 2 = thư mục không có / library.json hỏng
 python -m gani_dung_video serve [--port 8765]
     API web cục bộ cho giao diện (chỉ 127.0.0.1); chạy độc lập với daemon; Ctrl+C để dừng;
     exit 2 = cổng đang bị chiếm
@@ -62,6 +65,11 @@ from gani_dung_video.application.draft_service import (
     build_drafts,
 )
 from gani_dung_video.application.inventory_service import build_inventory
+from gani_dung_video.application.music_check import (
+    DEFAULT_DURATIONS,
+    check_music_folder,
+    format_report,
+)
 from gani_dung_video.application.pick_service import build_pick
 from gani_dung_video.application.plan_service import BpmBlockedError, PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
@@ -213,6 +221,14 @@ def _build_parser() -> argparse.ArgumentParser:
     qst = qsub.add_parser("stop", help="Yêu cầu daemon dừng")
     qst.add_argument("--now", action="store_true", help="Dừng ngay, trả job đang chạy về hàng đợi")
     sub.add_parser("daemon", help="Chạy nền: lấy job từ hàng đợi và dựng lần lượt")
+    mc = sub.add_parser("music-check", help="Kiểm thư mục nhạc: BPM và bài nào dựng được (chỉ đọc)")
+    mc.add_argument(
+        "folder", nargs="?", type=Path, help="Thư mục nhạc (mặc định: GANI_DV_MUSIC_DIR của máy)"
+    )
+    mc.add_argument(
+        "--chi-tiet", action="store_true", help="Thêm bảng từng bài × phong cách × độ dài"
+    )
+    mc.add_argument("--ca-180", action="store_true", help="Tính cả video 3 phút (chậm hơn)")
     sv = sub.add_parser("serve", help="API web cục bộ 127.0.0.1 cho giao diện (độc lập với daemon)")
     sv.add_argument("--port", type=int, help="Cổng (mặc định theo rules.json api.port: 8765)")
     return ap
@@ -367,6 +383,25 @@ def _run_daemon() -> int:
     sys.stdout.write("Daemon hàng đợi đang chạy. Ctrl+C: dừng sau khi job đang dựng xong.\n")
     daemon.run()
     sys.stdout.write("Daemon đã dừng.\n")
+    return 0
+
+
+def _run_music_check(folder: Path | None, detail: bool, with_180: bool) -> int:
+    """Read-only report of a music folder; nothing is written anywhere."""
+    rules = load_rules()
+    if folder is None:
+        raw = music_dir(load_settings())
+        if raw is None:
+            logger.error("LỖI: chưa chỉ thư mục nhạc: truyền đường dẫn hoặc đặt GANI_DV_MUSIC_DIR.")
+            return 2
+        folder = Path(raw).expanduser()
+    durations = (*DEFAULT_DURATIONS, 180) if with_180 else DEFAULT_DURATIONS
+
+    def progress(line: str) -> None:
+        sys.stderr.write(f"Đang kiểm {line}\n")
+
+    chk = check_music_folder(folder, rules, durations=durations, progress=progress)
+    sys.stdout.write(format_report(chk, detail) + "\n")
     return 0
 
 
@@ -654,6 +689,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_daemon()
         if args.cmd == "serve":
             return _run_serve(args.port)
+        if args.cmd == "music-check":
+            return _run_music_check(args.folder, args.chi_tiet, args.ca_180)
         if args.cmd == "inventory":
             return _run_inventory(args.folder)
         if args.cmd == "transcribe":

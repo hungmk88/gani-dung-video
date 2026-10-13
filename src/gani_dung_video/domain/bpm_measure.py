@@ -45,7 +45,7 @@ def blocked_text(rules: Rules, plan: Plan, bpm: float) -> str:
     )
 
 
-def levels_at(rules: Rules, style: str, duration: int, bpms: Sequence[int]) -> list[Level]:
+def levels_at(rules: Rules, style: str, duration: int, bpms: Sequence[float]) -> list[Level]:
     """The exact level the planner gives at each of `bpms` (3-minute videos are gated in the
     shipped rules, so the check opens them for the measurement only).
 
