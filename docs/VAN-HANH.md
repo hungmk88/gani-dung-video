@@ -274,9 +274,12 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   trong ±10%, 21 ca (3,4%) vượt ±10% và bị `E1-DUR-GAP` chặn khi giao. 21 ca đó gần hết là Sang
   trọng ở video 15 và 30 giây (mỗi khối đã ở mức tối thiểu một cảnh nên không giảm được phách).
   Ca tệ nhất: Sang trọng 100 BPM, 15 giây, kế hoạch 21,6s (+44%).
-- Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
-  sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
-  trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).
+- Giao diện (web) chưa truyền `--san-pham` và `--chien-dich`: job tạo từ giao diện mang tên
+  sản phẩm `chung` và chiến dịch là tên thư mục footage.
+- Hàng đợi đã truyền `--san-pham` và `--chien-dich` (từ 06/10/2026): job đọc hai trường từ
+  `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
+  như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
+  báo vào manifest. Cờ CLI `--san-pham` / `--chien-dich` vẫn ghi đè được khi gõ `render` tay.
 
 ## 10. Xử lý sự cố nhanh
 

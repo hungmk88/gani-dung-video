@@ -43,6 +43,8 @@ class VideoOptions(BaseModel):
     nhac_quyen_su_dung: StrictBool | None = None
     khuyen_mai: KhuyenMai | None = None
     ghi_chu: StrictStr | None = None
+    san_pham: StrictStr | None = None
+    chien_dich: StrictStr | None = None
     # Appendix D writes `rules_version: 2.0` unquoted, so accept the number form too.
     rules_version: StrictStr | float | None = None
     so_canh_dung_duoc: Count | None = None
