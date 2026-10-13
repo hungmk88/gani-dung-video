@@ -89,12 +89,13 @@ class Api:
         raise AssertionError("the background measurement did not finish")
 
 
-def serve(tmp_path: Path, music: Path | None, **extra: str) -> Iterator[Api]:
+def serve(tmp_path: Path, music: Path | None) -> Iterator[Api]:
     rules = {**RULES, "api": {**RULES["api"], "frontend_dist": None}}
     queue = tmp_path / "q"
-    settings = Settings(gani_dv_queue_dir=str(queue),
-                        gani_dv_music_dir=str(music) if music is not None else None,
-                        **extra)  # fmt: skip
+    settings = Settings(
+        gani_dv_queue_dir=str(queue),
+        gani_dv_music_dir=str(music) if music is not None else None,
+    )
     ctx = ApiContext(QueueDb(queue / "queue.db"), rules, settings)
     server = make_server(ctx, port=0)
     t = threading.Thread(target=server.serve_forever, daemon=True)
