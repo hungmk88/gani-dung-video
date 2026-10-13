@@ -102,3 +102,14 @@ jobs:
 
       - name: build (real mode)
         run: npm run build:real
+
+      # Warning only (decision 14/10/2026): a High/Critical advisory is shown in the log and in
+      # the run summary, but never fails the build.
+      - name: npm audit (warning only)
+        continue-on-error: true
+        run: |
+          if npm audit --audit-level=high; then
+            echo "npm audit: no High/Critical advisories."
+          else
+            echo "::warning title=npm audit::High or Critical advisories found; see this step's log (npm audit fix may resolve them)."
+          fi
