@@ -1,0 +1,104 @@
+# CI: the same checks the project's "Done" asks for (README → Phát triển), on every PR and on main.
+#
+# Notes for whoever maintains this file:
+# - ffmpeg: the render graph needs ffmpeg >= 7.0 (`-/filter_complex`, see ffmpeg_render.py), but
+#   ubuntu-latest ships 6.1, so the real-render tests would stop at the version check. The job
+#   installs a static BtbN build instead and verifies it against the checksums published in the
+#   same release (integrity against a corrupt download, not authenticity of the publisher).
+#   The tested version is the one the app was developed on (9.0); bump FFMPEG_ASSET deliberately.
+# - No secrets are used and none are needed: the tests run without ANTHROPIC_API_KEY.
+# - Runs on Linux, so it also covers the POSIX branch of process_runner that the Windows dev
+#   machine cannot exercise.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FFMPEG_BASE: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
+  FFMPEG_ASSET: ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz
+
+jobs:
+  python:
+    name: Python (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install ffmpeg (static build, >= 7)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$FFMPEG_ASSET" "$FFMPEG_BASE/$FFMPEG_ASSET"
+          curl -fsSL --retry 3 -o checksums.sha256 "$FFMPEG_BASE/checksums.sha256"
+          grep " $FFMPEG_ASSET\$" checksums.sha256 | sha256sum -c -
+          mkdir -p "$HOME/ffmpeg"
+          tar -xJf "$FFMPEG_ASSET" -C "$HOME/ffmpeg" --strip-components=1
+          echo "$HOME/ffmpeg/bin" >> "$GITHUB_PATH"
+
+      - name: Tool versions
+        run: |
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+          python --version
+
+      - name: Install the package with the dev tools
+        run: pip install -e ".[dev]"
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: ruff format
+        run: ruff format --check .
+
+      - name: mypy --strict
+        run: mypy --strict src tests
+
+      - name: pytest
+        run: pytest
+
+  frontend:
+    name: Frontend (test, tsc, lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: node --test (pure .ts tests)
+        run: npm test
+
+      - name: tsc
+        run: npx tsc -b
+
+      - name: oxlint
+        run: npm run lint
+
+      - name: build (real mode)
+        run: npm run build:real
