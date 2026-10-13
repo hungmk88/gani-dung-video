@@ -25,6 +25,8 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from gani_dung_video.application.analyze_job import JobEnv, run_analyze
 from gani_dung_video.application.draft_job import run_draft
 from gani_dung_video.application.render_limits import limits_of
@@ -38,8 +40,14 @@ from gani_dung_video.domain.jobs import (
     may_retry,
     stage_of,
 )
+from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.preflight import Rules
-from gani_dung_video.infrastructure.config_files import CONFIG_DIR
+from gani_dung_video.domain.yeu_cau import YeuCauFormatError
+from gani_dung_video.infrastructure.config_files import (
+    CONFIG_DIR,
+    ConfigError,
+    read_options_file,
+)
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.process_runner import RunResult, kill_tree, pid_alive, run_child
 from gani_dung_video.infrastructure.queue_db import QueueDb
@@ -57,14 +65,28 @@ class DaemonError(RuntimeError):
     """The daemon cannot start (message in Vietnamese)."""
 
 
-def render_argv(job: Job, base: Sequence[str] | None = None) -> list[str]:
-    """The CLI command that renders one job's draft."""
+def render_argv(
+    job: Job,
+    base: Sequence[str] | None = None,
+    options: VideoOptions | None = None,
+) -> list[str]:
+    """The CLI command that renders one job's draft.
+
+    `options` carries san_pham / chien_dich from the job's yeu-cau.md.
+    None means the option file could not be read: the child then falls back
+    to the delivery defaults (product=chung, campaign=folder name).
+    """
     head = list(base) if base is not None else [sys.executable, "-m", "gani_dung_video"]
     argv = [*head, "render", job.project_dir, "--ban", job.draft]
     if not job.final:
         argv.append("--preview")
     if job.no_asr:
         argv.append("--no-asr")
+    if options is not None:
+        if options.san_pham:
+            argv += ["--san-pham", options.san_pham]
+        if options.chien_dich:
+            argv += ["--chien-dich", options.chien_dich]
     return argv
 
 
@@ -250,7 +272,8 @@ class Daemon:
         first = f"Bắt đầu dựng bản {job.draft} (lần {job.attempts}/{job.max_attempts})."
         self.db.add_event(job.id, self._clock(), "info", first)
         res = self._runner(
-            render_argv(job, self._argv_base), REPO_ROOT, on_line, should_stop, [out],
+            render_argv(job, self._argv_base, self._job_options(job)), REPO_ROOT,
+            on_line, should_stop, [out],
             stall_sec, timeout_sec,
             on_start=lambda pid: self.db.set_child(job.id, pid),
             poll_sec=min(float(self._cfg["poll_sec"]), 0.5),
@@ -261,6 +284,19 @@ class Daemon:
         limit = stall_sec if res.reason == "stalled" else timeout_sec
         verdict = judge_run(res.reason, res.exit_code, fresh, passed, detail=f"{limit}s")
         self._settle(job, verdict, res, video, wall_start, " | ".join(tail))
+
+    def _job_options(self, job: Job) -> VideoOptions | None:
+        """Read the job's option file for san_pham / chien_dich.
+
+        Returns None when the file is missing, wrong format, or invalid: the queue
+        keeps running with the old behaviour instead of failing on an option typo.
+        """
+        try:
+            raw = read_options_file(Path(job.options_file))
+            return VideoOptions.model_validate(raw)
+        except (ConfigError, YeuCauFormatError, ValidationError) as e:
+            logger.warning("Khong doc duoc options_file %s: %s", job.options_file, e)
+            return None
 
     @staticmethod
     def _report(out: Path, video: Path, started: float) -> tuple[bool, bool | None]:

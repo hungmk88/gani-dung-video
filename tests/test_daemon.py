@@ -548,3 +548,100 @@ def test_a_missing_or_broken_plan_falls_back_to_the_fixed_limits(db: QueueDb, fo
     runner = FakeRunner(passes)
     make(db, runner, clock).process_next()
     assert runner.limits == [(Q["stall_sec"], Q["timeout_sec"]["render_preview"])]
+
+
+# ----------------- san_pham / chien_dich through render_argv -----------------
+
+
+def _options(san_pham: str | None = None, chien_dich: str | None = None) -> VideoOptions:
+    return VideoOptions(
+        phong_cach="ke_chuyen_nghe",
+        muc_dich="gioi_thieu_xuong",
+        do_dai_giay=30,
+        so_ban_nhap=1,
+        nhac="khong_nhac",
+        san_pham=san_pham,
+        chien_dich=chien_dich,
+    )
+
+
+def test_render_argv_adds_san_pham_and_chien_dich(folder: Path) -> None:
+    job = job_stub(folder, final=False, no_asr=False)
+    argv = render_argv(job, ["py"], _options(san_pham="bo-vien", chien_dich="tet-2027"))
+    assert argv == [
+        "py",
+        "render",
+        str(folder),
+        "--ban",
+        "A",
+        "--preview",
+        "--san-pham",
+        "bo-vien",
+        "--chien-dich",
+        "tet-2027",
+    ]
+
+
+def test_render_argv_with_options_without_product_keeps_argv_clean(folder: Path) -> None:
+    job = job_stub(folder, final=False, no_asr=False)
+    argv = render_argv(job, ["py"], _options())
+    assert argv == ["py", "render", str(folder), "--ban", "A", "--preview"]
+
+
+def test_render_argv_without_options_is_unchanged(folder: Path) -> None:
+    job = job_stub(folder, final=False, no_asr=False)
+    argv = render_argv(job, ["py"])
+    assert argv == ["py", "render", str(folder), "--ban", "A", "--preview"]
+
+
+def test_render_argv_with_none_options_does_not_add_flags(folder: Path) -> None:
+    job = job_stub(folder, final=False, no_asr=False)
+    argv = render_argv(job, ["py"], None)
+    assert argv == ["py", "render", str(folder), "--ban", "A", "--preview"]
+
+
+# ----------------- Daemon._job_options -----------------
+
+
+def _empty_daemon(tmp_path: Path) -> Daemon:
+    db = QueueDb(tmp_path / "q.db")
+    return Daemon(db, RULES, ai_key_present=lambda: False)
+
+
+def test_job_options_reads_yeu_cau_md(tmp_path: Path) -> None:
+    opts_file = tmp_path / "yeu-cau.md"
+    opts_file.write_text(
+        "---\n"
+        "phong_cach: ke_chuyen_nghe\n"
+        "muc_dich: gioi_thieu_xuong\n"
+        "do_dai_giay: 30\n"
+        "so_ban_nhap: 1\n"
+        "nhac: khong_nhac\n"
+        "san_pham: gio-lua\n"
+        "chien_dich: tet-2027\n"
+        "---\n",
+        encoding="utf-8",
+    )
+    job = job_stub(tmp_path, final=False, no_asr=False)
+    job = job.model_copy(update={"options_file": str(opts_file)})
+    daemon = _empty_daemon(tmp_path)
+    opts = daemon._job_options(job)
+    assert opts is not None
+    assert opts.san_pham == "gio-lua"
+    assert opts.chien_dich == "tet-2027"
+
+
+def test_job_options_missing_file_returns_none(tmp_path: Path) -> None:
+    job = job_stub(tmp_path, final=False, no_asr=False)
+    job = job.model_copy(update={"options_file": str(tmp_path / "nope.md")})
+    daemon = _empty_daemon(tmp_path)
+    assert daemon._job_options(job) is None
+
+
+def test_job_options_malformed_md_returns_none(tmp_path: Path) -> None:
+    opts_file = tmp_path / "yeu-cau.md"
+    opts_file.write_text("khong bat dau bang ---\n", encoding="utf-8")
+    job = job_stub(tmp_path, final=False, no_asr=False)
+    job = job.model_copy(update={"options_file": str(opts_file)})
+    daemon = _empty_daemon(tmp_path)
+    assert daemon._job_options(job) is None
