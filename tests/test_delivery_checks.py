@@ -51,11 +51,16 @@ def with_qc(**over: Any) -> dict[str, Any]:
 # ─────────────── E1-DUR ───────────────
 
 
-def test_a_render_that_matches_its_plan_passes_even_when_the_plan_is_off_the_chosen_length() -> (
-    None
-):
-    # TVC 15 s on a 1.3 s grid is planned at 12 beats = 15.6 s: the design, not an error.
-    item, stop = check_duration(17.6, edl(), 15, 15.6, RULES)
+def test_the_shipped_rules_measure_against_the_chosen_length() -> None:
+    assert RULES["qc"]["duration_reference"] == "chosen"  # since 13/10/2026 (hướng B)
+    item, stop = check_duration(15.0 + 2.0, edl(), 15, 15.0, RULES)
+    assert item.passed and stop == [] and item.value == pytest.approx(0.0)
+
+
+def test_in_plan_mode_a_render_on_its_plan_passes_even_off_the_chosen_length() -> None:
+    # What the old TVC plan did (12 beats × 1.3 s = 15.6 s); "plan" stays for whoever wants it.
+    by_plan = with_qc(duration_reference="plan")
+    item, stop = check_duration(17.6, edl(), 15, 15.6, by_plan)
     assert item.passed and stop == [] and item.value == pytest.approx(0.0)
     assert "kế hoạch 15.60s" in item.detail and "đã chọn 15s" in item.detail
     assert "so với đã chọn +0.60s, so với kế hoạch +0.00s" in item.detail  # both gaps shown
@@ -69,7 +74,7 @@ def test_measured_against_the_chosen_length_the_same_video_is_rejected() -> None
 
 
 def test_a_render_far_from_its_plan_is_blocked_and_the_message_has_the_numbers() -> None:
-    item, stop = check_duration(23.0, edl(), 15, 15.6, RULES)
+    item, stop = check_duration(23.0, edl(), 15, 15.6, with_qc(duration_reference="plan"))
     assert not item.passed and item.value == pytest.approx(5.4)
     assert "21.00s" in stop[0].msg and "kế hoạch 15.60s" in stop[0].msg and stop[0].level == "error"
 

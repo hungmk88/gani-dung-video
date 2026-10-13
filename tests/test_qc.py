@@ -223,6 +223,15 @@ def test_black_end_card_and_short_blips_are_ignored() -> None:
     assert check_measures(m(blacks=[(6.0, 8.0), (1.0, 1.1)]), edl(), QC) == []
 
 
+def test_the_planned_fade_out_before_the_end_card_is_not_a_black_frame_bug() -> None:
+    # Content ends at 6.0 s; the cut-to-length fade (0.5 s) makes dark footage go black early.
+    faded = edl().model_copy(update={"trim_fade_sec": 0.5})
+    assert check_measures(m(blacks=[(5.5, 8.0)]), faded, QC) == []
+    # …but black before the fade starts is still a defect, and without the fade 5.5 is one too.
+    assert codes(check_measures(m(blacks=[(5.0, 8.0)]), faded, QC)) == ["T4"]
+    assert codes(check_measures(m(blacks=[(5.5, 8.0)]), edl(), QC)) == ["T4"]
+
+
 def test_freeze_is_only_a_warning_and_planned_pads_are_ignored() -> None:
     e = edl(shots=[shot(0, 3), shot(3, 6, pad=1.2)])
     found = check_measures(m(freezes=[(0.5, 2.0), (4.7, 6.0), (6.0, 8.0)]), e, QC)

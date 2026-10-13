@@ -114,7 +114,10 @@ def _audio(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
                   f"d={_n(m.fade_out_sec)}"]  # fmt: skip
         out.append(",".join(chain) + "[amusic]")
         labels.append("[amusic]")
-    out.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=first,"
+    # Music mode cut at the chosen length: picture and sound fade out together, before loudnorm.
+    cut = (f"afade=t=out:st={_n(max(0.0, e.content_end - e.trim_fade_sec))}:"
+           f"d={_n(e.trim_fade_sec)}," if e.trim_fade_sec > 0 else "")  # fmt: skip
+    out.append(f"{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=first,{cut}"
                f"{_loudnorm(e, measured, measure_only)},{fmt}[aout]")  # fmt: skip
     return out
 
@@ -163,6 +166,10 @@ def build_graph(
     if e.grade:  # T-D: tone the picture before the end card and captions are added
         lines.append(f"[vjoin]{e.grade}[vgrade]")
         pic = "vgrade"
+    if e.trim_fade_sec > 0:  # cut at the chosen length: the last seconds fade to black
+        start = max(0.0, e.content_end - e.trim_fade_sec)
+        lines.append(f"[{pic}]fade=t=out:st={_n(start)}:d={_n(e.trim_fade_sec)}[vfade]")
+        pic = "vfade"
     lines.append(f"[{pic}][vend]concat=n=2:v=1:a=0{subs}[vout]")
     lines += _audio(e, has_audio, music_idx, measured=loudnorm)
     return ";\n".join(lines)
