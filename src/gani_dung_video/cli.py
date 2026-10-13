@@ -63,7 +63,7 @@ from gani_dung_video.application.draft_service import (
 )
 from gani_dung_video.application.inventory_service import build_inventory
 from gani_dung_video.application.pick_service import build_pick
-from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
+from gani_dung_video.application.plan_service import BpmBlockedError, PreflightBlocked, build_plan
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.application.queue_service import (
     ai_key_configured,
@@ -86,6 +86,7 @@ from gani_dung_video.application.speech_draft_service import (
 )
 from gani_dung_video.application.speech_service import build_phrases
 from gani_dung_video.application.transcribe_service import transcribe_folder
+from gani_dung_video.domain.bpm_safety import BPM_BLOCKED_EXIT_CODE, BPM_BLOCKED_MARKER
 from gani_dung_video.domain.feasibility import INFEASIBLE_EXIT_CODE
 from gani_dung_video.domain.jobs import Job, format_vnd
 from gani_dung_video.domain.plan import Plan, PlanError
@@ -132,6 +133,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pl.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
     pl.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes và semantics")
     pl.add_argument("--nhac-thu-muc", type=Path, help="Thư mục chứa nhạc (nếu ngoài 2 nơi trên)")
+    pl.add_argument(
+        "--bpm-override",
+        action="store_true",
+        help="Vẫn dùng bài nhạc có BPM không dựng được độ dài đã chọn (bỏ cảnh báo)",
+    )
     pk = sub.add_parser("pick", help="Ứng viên cảnh cho từng khối → edit/candidates.json")
     pk.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json (đã chạy plan)")
     pk.add_argument("folder", type=Path, help="Thư mục footage đã chạy plan")
@@ -540,9 +546,12 @@ def _run_phrases(file: Path, folder: Path) -> int:
     return 0
 
 
-def _run_plan(file: Path, folder: Path, music_dir: Path | None) -> int:
+def _run_plan(file: Path, folder: Path, music_dir: Path | None, bpm_override: bool = False) -> int:
     try:
-        plan, out = build_plan(file, folder, music_dir)
+        plan, out = build_plan(file, folder, music_dir, bpm_override=bpm_override)
+    except BpmBlockedError as e:
+        sys.stderr.write(f"{BPM_BLOCKED_MARKER}{e}\n")
+        return BPM_BLOCKED_EXIT_CODE
     except PreflightBlocked as e:
         lines = [f"BỊ CHẶN [{i['code']}]: {i['msg']}" for i in e.result["errors"]]
         sys.stdout.write("\n".join(lines) + "\n")
@@ -561,10 +570,13 @@ def _run_plan(file: Path, folder: Path, music_dir: Path | None) -> int:
         f"Tổng: {plan.planned_beats} phách (mục tiêu {plan.target_beats}), "
         f"mỗi cảnh {plan.beats_per_scene_allowed} phách",
         "Khối — " + ", ".join(f"{b.role}: {b.beats}" for b in plan.blocks),
-        *[f"  Cảnh báo {w}" for w in plan.warnings],
+        *[f"  Cảnh báo {w}" for w in plan.warnings if not w.startswith("W_BPM")],
         *[f"  Tự điều chỉnh {a}" for a in plan.adjustments],
         f"Kết quả: {out}",
     ]
+    for w in plan.warnings:  # BPM warnings go to stderr: the first thing a person reads
+        if w.startswith("W_BPM"):
+            sys.stderr.write(f"CẢNH BÁO: {w.split(': ', 1)[-1]}\n")
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
@@ -663,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "phrases":
             return _run_phrases(args.file, args.folder)
         if args.cmd == "plan":
-            return _run_plan(args.file, args.folder, args.nhac_thu_muc)
+            return _run_plan(args.file, args.folder, args.nhac_thu_muc, args.bpm_override)
         return _run_preflight(args.file)
     except (
         ConfigError,

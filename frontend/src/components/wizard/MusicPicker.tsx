@@ -1,7 +1,9 @@
 import { Pause, Play, ShieldCheck, UploadCloud } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { BPM_SAFE } from '../../data/bpmSafe';
 import { RULES } from '../../data/rules';
 import { MUSIC_LIBRARY } from '../../data/mockMusic';
+import { checkBpmSafe } from '../../lib/bpmSafety';
 import { formatDuration } from '../../lib/format';
 import { MUSIC_MODE_IDS, type VideoOptions } from '../../types/rules';
 
@@ -76,6 +78,10 @@ export function MusicPicker({
               RULES.styles[options.phong_cach].bpm_range &&
               track.bpm >= RULES.styles[options.phong_cach].bpm_range![0] &&
               track.bpm <= RULES.styles[options.phong_cach].bpm_range![1];
+            const level =
+              options.phong_cach && options.do_dai_giay
+                ? checkBpmSafe(BPM_SAFE, options.phong_cach, options.do_dai_giay, track.bpm).level
+                : 'OK';
             return (
               <li
                 key={track.id}
@@ -93,12 +99,28 @@ export function MusicPicker({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onChange({ nhac_file: track.file })}
+                  onClick={() => onChange({ nhac_file: track.file, bpm_override: null })}
                   className="flex-1 text-left"
                 >
                   <div className="text-sm text-slate-200">{track.title}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
-                    <span className={inStyleRange ? 'text-emerald-400' : ''}>{track.bpm} BPM</span>
+                    <span className={inStyleRange && level !== 'BLOCKING' ? 'text-emerald-400' : ''}>{track.bpm} BPM</span>
+                    {level === 'BLOCKING' && (
+                      <span
+                        className="rounded bg-rose-500/15 px-1.5 text-rose-300"
+                        title="Kế hoạch lệch quá ±10%, video bị chặn khi giao"
+                      >
+                        không dựng được
+                      </span>
+                    )}
+                    {level === 'WARNING' && (
+                      <span
+                        className="rounded bg-amber-500/15 px-1.5 text-amber-300"
+                        title="Phần cuối video bị cắt bớt cho đúng độ dài"
+                      >
+                        cắt đuôi
+                      </span>
+                    )}
                     <span>·</span>
                     <span>{formatDuration(track.duration_sec)}</span>
                     <span>·</span>

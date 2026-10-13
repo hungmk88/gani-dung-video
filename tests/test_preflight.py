@@ -284,3 +284,37 @@ def test_all_1440_combos_return_a_known_verdict() -> None:
     # With complete inputs only length rules block: TVC×180 (4 purposes × 3 × 4) +
     # Khuyến mãi×180 for the other 5 styles (5 × 3 × 4).
     assert (n, blocked) == (1440, 48 + 60)
+
+
+# ─────────────── ticket 13/10/2026: BPM safety warnings ───────────────
+
+
+def luxe(**kw: Any) -> Result:
+    return run(phong_cach="sang_trong", muc_dich="gioi_thieu_xuong", do_dai_giay=15,
+               nhac="thu_vien", nhac_file="t.mp3", **kw)  # fmt: skip
+
+
+def test_a_track_the_table_blocks_is_a_warning_not_an_error() -> None:
+    r = luxe(nhac_bpm=100)
+    assert r["valid"] and "W_BPM_BLOCK" in codes(r)
+    text = next(w["msg"] for w in r["warnings"] if w["code"] == "W_BPM_BLOCK")
+    assert "BPM 100" in text and "Sang trọng" in text and "66–82" in text
+
+
+def test_a_track_that_only_needs_a_cut_gets_the_lighter_warning() -> None:
+    r = luxe(nhac_bpm=88)
+    assert r["valid"] and "W_BPM_CUT" in codes(r) and "W_BPM_BLOCK" not in codes(r)
+
+
+def test_a_track_that_fits_and_an_unknown_bpm_say_nothing() -> None:
+    assert not {c for c in codes(luxe(nhac_bpm=72)) if c.startswith("W_BPM")}
+    assert not {c for c in codes(luxe()) if c.startswith("W_BPM")}  # the web sends no BPM yet
+
+
+def test_bpm_override_silences_the_warning_and_must_be_a_boolean() -> None:
+    assert not {c for c in codes(luxe(nhac_bpm=100, bpm_override=True)) if c.startswith("W_BPM")}
+    assert not luxe(nhac_bpm=100, bpm_override="yes")["valid"]
+
+
+def test_no_music_means_no_bpm_warning() -> None:
+    assert not {c for c in codes(run(nhac="khong_nhac", nhac_bpm=100)) if c.startswith("W_BPM")}

@@ -544,3 +544,23 @@ def test_a_plan_that_became_impossible_before_the_paid_call_stops_without_spendi
     j = job(db, jid)
     assert j.status == "failed" and j.error_msg == WHY and j.spent_vnd is None
     assert "paid" not in runner.ran
+
+
+# ─────────────── ticket 13/10/2026: a track whose BPM cannot build the video ───────────────
+
+BPM_WHY = "Video không dựng được với cặp nhạc + phong cách + độ dài này. Lý do: bài ở BPM 100."
+
+
+def test_a_track_the_plan_step_refuses_fails_the_job_with_the_reason_before_any_pick(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    jid = add(db, folder)
+    runner = FakeRunner(plan=fails(4, "BPM BỊ CHẶN: " + BPM_WHY))
+    d = make(db, runner, clock)
+    d.process_next()
+    j = job(db, jid)
+    assert (j.status, j.exit_code, j.spent_vnd) == ("failed", 4, None)
+    assert j.error_msg == BPM_WHY  # the person reads the reason, not "mã thoát 4"
+    assert runner.ran == ["plan"]  # nothing after it ran, nothing was spent
+    clock.offset += 3600
+    assert d.process_next() is False  # never tried again on its own

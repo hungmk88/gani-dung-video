@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from gani_dung_video.application.plan_service import PreflightBlocked, build_plan
+from gani_dung_video.application.plan_service import BpmBlockedError, PreflightBlocked, build_plan
 from gani_dung_video.cli import main
 from gani_dung_video.domain.plan import PlanError
 from gani_dung_video.domain.scenes import Scene, ScenesFile, Segment, usable_by_style
@@ -186,3 +186,82 @@ def test_cli_plan_blocked_exit_1_and_bad_music_exit_2(
     assert "X14" in capsys.readouterr().out
     bad = write_options(tmp_path / "c.json", nhac_file="../nope.wav")
     assert main(["plan", str(bad), str(folder)]) == 2
+
+
+# ─────────────── ticket 13/10/2026: a track whose BPM cannot build the video ───────────────
+
+
+def with_bpm(folder: Path, bpm: float) -> None:
+    (folder / "library.json").write_text(
+        json.dumps({"tracks": {"t.wav": {"bpm": bpm, "first_beat_sec": 0.4}}}), encoding="utf-8"
+    )
+
+
+def luxe_15(tmp_path: Path, **kw: Any) -> Path:
+    return write_options(tmp_path / "o.json", phong_cach="sang_trong", muc_dich="gioi_thieu_xuong",
+                         do_dai_giay=15, so_ban_nhap=1, **kw)  # fmt: skip
+
+
+def test_a_track_that_cannot_build_the_video_stops_the_plan_and_writes_nothing(
+    folder: Path, tmp_path: Path
+) -> None:
+    with_bpm(folder, 100)  # Sang trọng 15 s: 21.6 s planned, +44%
+    with pytest.raises(BpmBlockedError, match="BPM 100") as err:
+        build_plan(luxe_15(tmp_path), folder, rules=RULES)
+    assert "+44%" in str(err.value) and "--bpm-override" in str(err.value)
+    assert not (folder / "edit" / "plan.json").exists()
+
+
+def test_bpm_override_goes_on_records_the_choice_and_drops_the_warning(
+    folder: Path, tmp_path: Path
+) -> None:
+    with_bpm(folder, 100)
+    plan, _ = build_plan(luxe_15(tmp_path), folder, rules=RULES, bpm_override=True)
+    assert plan.options["bpm_override"] is True
+    assert not any(w.startswith(("W_DUR_GAP", "W_BPM")) for w in plan.warnings)
+    assert any("bpm_override" in a for a in plan.adjustments)
+    assert plan_json(folder)["options"]["bpm_override"] is True
+
+
+def test_the_options_file_can_carry_the_override_too(folder: Path, tmp_path: Path) -> None:
+    with_bpm(folder, 100)
+    plan, _ = build_plan(luxe_15(tmp_path, bpm_override=True), folder, rules=RULES)
+    assert plan.options["bpm_override"] is True
+
+
+def test_a_track_that_only_needs_a_cut_warns_and_goes_on(folder: Path, tmp_path: Path) -> None:
+    with_bpm(folder, 88)  # +1.36 s, within 10%
+    plan, _ = build_plan(luxe_15(tmp_path), folder, rules=RULES)
+    assert plan.trim_to_sec == 15.0
+    assert any(w.startswith("W_BPM_CUT") and "BPM 88" in w for w in plan.warnings)
+
+
+def test_a_track_that_fits_has_no_bpm_warning(folder: Path, tmp_path: Path) -> None:
+    with_bpm(folder, 80)  # Kể chuyện nghề 15 s: exactly 15.0 s
+    opt = write_options(tmp_path / "o.json", muc_dich="gioi_thieu_xuong", do_dai_giay=15,
+                        so_ban_nhap=1)  # fmt: skip
+    plan, _ = build_plan(opt, folder, rules=RULES)
+    assert plan.trim_to_sec is None and not any("BPM" in w for w in plan.warnings)
+
+
+def test_cli_plan_exits_4_with_the_reason_on_stderr_unless_overridden(
+    folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with_bpm(folder, 100)
+    opt = luxe_15(tmp_path)
+    assert main(["plan", str(opt), str(folder)]) == 4
+    err = capsys.readouterr().err
+    assert err.startswith("BPM BỊ CHẶN: ") and "BPM 100" in err and "Chọn bài khác" in err
+    assert main(["plan", str(opt), str(folder), "--bpm-override"]) == 0
+    out = capsys.readouterr()
+    assert "BPM" not in out.err and "W_DUR_GAP" not in out.out  # the warning is switched off
+
+
+def test_cli_plan_prints_the_bpm_cut_warning_on_stderr(
+    folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with_bpm(folder, 88)
+    assert main(["plan", str(luxe_15(tmp_path)), str(folder)]) == 0
+    cap = capsys.readouterr()
+    assert cap.err.startswith("CẢNH BÁO: Bài này ở BPM 88") and "cắt bớt" in cap.err
+    assert "W_BPM" not in cap.out  # not repeated in the summary

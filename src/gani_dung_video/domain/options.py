@@ -41,6 +41,7 @@ class VideoOptions(BaseModel):
     nhac: StrictStr
     nhac_file: StrictStr | None = None
     nhac_quyen_su_dung: StrictBool | None = None
+    bpm_override: StrictBool | None = None  # the person chose a track the BPM table warns about
     khuyen_mai: KhuyenMai | None = None
     ghi_chu: StrictStr | None = None
     # Appendix D writes `rules_version: 2.0` unquoted, so accept the number form too.

@@ -89,6 +89,21 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
   được đo nhịp tự động; nếu đo không chắc thì dựng bằng lưới nhịp ảo và có cảnh báo.
 - Bài ngắn hơn video được lặp theo ô nhịp (X13). Bài nhạc **tải lên phải tick "tôi có quyền sử
   dụng"** (X14), nếu không bị chặn.
+- **Cảnh báo BPM:** mỗi bài nhạc làm kế hoạch dài ra vì khối nào cũng cần ít nhất một cảnh. Bài
+  chậm có thể khiến video 15 giây lập kế hoạch dài 21,6s và bị `E1-DUR-GAP` chặn khi giao. Nên
+  khi chọn bài, hệ thống cảnh báo trước theo bảng `music.bpm_safe_by_style_duration` trong
+  `rules.json` (đo thật bằng bộ lập kế hoạch, không phải một khoảng min–max):
+  - `W_BPM_CUT`: phần cuối bị cắt bớt, trong ±10%, video vẫn dựng được;
+  - `W_BPM_BLOCK`: kế hoạch lệch quá ±10%, video bị chặn khi giao; thông báo kèm các đoạn BPM
+    dựng được.
+  Giao diện hiện hộp vàng dưới danh sách bài với hai nút **Chọn bài khác** và **Vẫn dùng bài
+  này** (ghi `bpm_override: true`). Lệnh `plan` (và hàng đợi) **dừng ngay ở bước plan** với mã
+  thoát 4 nếu kế hoạch lệch quá ±10% mà chưa chọn dùng tiếp: chưa gọi Claude, 0đ. Muốn dùng tiếp:
+  thêm `--bpm-override` vào lệnh `plan`, hoặc `bpm_override: true` trong `yeu-cau.md`. Bật cờ chỉ
+  tắt cảnh báo; `E1-DUR-GAP` vẫn chặn khi giao nếu kế hoạch vẫn lệch quá ±10%.
+- Đổi phong cách, độ dài, quy tắc nhịp thì tạo lại bảng: `sweep_table` trong
+  `domain/bpm_measure.py`; `tests/test_bpm_safety.py` quét lại bằng bộ lập kế hoạch và so với bảng.
+  Bản sao cho giao diện nằm ở `frontend/src/data/bpmSafe.ts` (test của giao diện so với `rules.json`).
 
 ## 5. Làm một video trên giao diện
 
@@ -274,6 +289,12 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   trong ±10%, 21 ca (3,4%) vượt ±10% và bị `E1-DUR-GAP` chặn khi giao. 21 ca đó gần hết là Sang
   trọng ở video 15 và 30 giây (mỗi khối đã ở mức tối thiểu một cảnh nên không giảm được phách).
   Ca tệ nhất: Sang trọng 100 BPM, 15 giây, kế hoạch 21,6s (+44%).
+- **Cảnh báo BPM trên giao diện dùng danh sách bài có sẵn của giao diện** (4 bài thử nghiệm).
+  Chưa có API liệt kê nhạc thật và BPM của thư viện máy dựng, nên hộp cảnh báo chưa chạy với
+  nhạc thật trên giao diện; phía máy chủ (`preflight`, `plan`) đã dùng BPM thật. Component cảnh
+  báo chưa có test tự động (giao diện chỉ có test cho hàm thuần): cần thử tay trước T-F.
+- Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
+  bằng bảng, bước `plan` vẫn đo chính xác.
 - Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
   sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
   trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).

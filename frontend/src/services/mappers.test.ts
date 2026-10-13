@@ -7,6 +7,7 @@ import {
   basename,
   groupLatest,
   optionsFromApi,
+  pipelineBody,
   preflightBody,
   toPreflightResult,
   toQaReport,
@@ -186,4 +187,24 @@ test('toPreflightResult renames msg→message and keeps auto adjustments apart',
 test('basename handles both separators', () => {
   assert.equal(basename('C:\\a\\b.m4a'), 'b.m4a');
   assert.equal(basename('/audio/b.m4a'), 'b.m4a');
+});
+
+test('preflightBody sends the library track BPM and the override only when they are known', () => {
+  const known = preflightBody({ ...OPTS, nhac_file: '/audio/72bpm-sang-trong.m4a', bpm_override: true });
+  assert.equal(known.options.nhac_bpm, 72);
+  assert.equal(known.options.bpm_override, true);
+  const plain = preflightBody({ ...OPTS, nhac_file: '/audio/unknown.m4a' });
+  assert.equal('nhac_bpm' in plain.options, false);
+  assert.equal('bpm_override' in plain.options, false);
+  assert.equal('nhac_bpm' in preflightBody({ ...OPTS, nhac_file: null }).options, false);
+});
+
+test('the pipeline options keep the override but not the UI-known track BPM', () => {
+  const body = pipelineBody(
+    { ...OPTS, nhac_file: '/audio/72bpm-sang-trong.m4a', bpm_override: true },
+    { projectId: 'p1', draft: 'all', final: false, noAsr: false, forceAnalyze: false },
+  );
+  const options = body.options as Record<string, unknown>;
+  assert.equal(options.bpm_override, true);
+  assert.equal('nhac_bpm' in options, false); // the plan step measures the real BPM itself
 });

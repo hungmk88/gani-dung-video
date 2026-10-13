@@ -168,6 +168,10 @@ def test_line_levels() -> None:
     assert line_level("LỖI: không thấy ffmpeg") == "error"
     assert line_level("Bản A: x.mp4 (30s) — QC: KHÔNG ĐẠT — không giao bản này") == "warn"
     assert line_level("Đang dựng bản A") == "info"
+    # the plan step prints "CẢNH BÁO: …" and "  Cảnh báo W_…": both are warnings, any case
+    assert line_level("CẢNH BÁO: Bài này ở BPM 88") == "warn"
+    assert line_level("  Cảnh báo X8: thiếu cảnh bắt buộc") == "warn"
+    assert line_level("Cảnh báo") == "warn" and line_level("không có cảnh báo gì") == "info"
 
 
 # ─────────────── 6c-1: dependencies between jobs ───────────────
