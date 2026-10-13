@@ -71,7 +71,6 @@ BANNED = G.banned_claims
         ("Giúp điều trị tiểu đường", ["điều trị"]),
         ("Ăn để phòng bệnh", ["phòng bệnh"]),
         ("Thịt tươi 100%", ["100%"]),
-        ("Không hàn the", ["hàn the"]),
         ("Ngon nhất Sài Gòn", ["ngon nhất"]),
         ("Giò bò uy tín nhất", ["uy tín nhất"]),
         # Decision 28/09/2026 (applied 29/09): bare "nhất" wrongly flagged these.
@@ -88,11 +87,11 @@ def test_banned_claims_are_phrases(text: str, found: list[str]) -> None:
 
 def test_banned_list_is_the_agreed_phrase_list() -> None:
     assert set(BANNED) == {
-        "100%", "duy nhất", "số 1", "hàn the", "điều trị", "đặc trị", "chữa trị",
+        "100%", "duy nhất", "số 1", "điều trị", "đặc trị", "chữa trị",
         "chữa bệnh", "trị bệnh", "phòng bệnh", "ngon nhất", "tốt nhất", "rẻ nhất",
         "chất lượng nhất", "sạch nhất", "uy tín nhất",
-        # Dev Package 03, T0 (decision 01/10/2026): flat list, five more phrases.
-        "thần dược", "không chất bảo quản", "minh long", "atala", "foco",
+        # Dev Package 03, T0 (decision 01/10/2026): flat list; 13/10/2026 NVH verify: removed "hàn the" and "không chất bảo quản".
+        "thần dược", "minh long", "atala", "foco",
     }  # fmt: skip
     assert "trị" not in BANNED and "chữa" not in BANNED and "nhất" not in BANNED
 
