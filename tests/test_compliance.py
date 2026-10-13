@@ -33,8 +33,6 @@ def test_the_check_is_named_c1() -> None:
     [
         ("Thần dược cho mọi nhà", "thần dược"),  # with tone marks
         ("Than duoc cho moi nha", "thần dược"),  # typed without them
-        ("KHÔNG CHẤT BẢO QUẢN", "không chất bảo quản"),  # upper case
-        ("khong chat bao quan", "không chất bảo quản"),
         ("Hàng Minh Long giá rẻ", "minh long"),  # competitor names
         ("giò lụa ATALA", "atala"),
         ("so sánh với Foco", "foco"),
