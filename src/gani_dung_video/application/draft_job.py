@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from gani_dung_video.application.analyze_job import JobEnv, run_stage, settle_stop
+from gani_dung_video.domain.bpm_safety import BPM_BLOCKED_EXIT_CODE, BPM_BLOCKED_MARKER
 from gani_dung_video.domain.feasibility import INFEASIBLE_EXIT_CODE
 from gani_dung_video.domain.jobs import (
     Estimate,
@@ -92,6 +93,16 @@ def _infeasible(exit_code: int | None, tail: Sequence[str]) -> str | None:
     for line in reversed(tail):
         if marker in line:
             return line.split(marker, 1)[1].strip()
+    return None
+
+
+def _bpm_blocked(exit_code: int | None, tail: Sequence[str]) -> str | None:
+    """The reason `plan` gave when the track's BPM cannot build the video (exit code 4)."""
+    if exit_code != BPM_BLOCKED_EXIT_CODE:
+        return None
+    for line in reversed(tail):
+        if BPM_BLOCKED_MARKER in line:
+            return line.split(BPM_BLOCKED_MARKER, 1)[1].strip()
     return None
 
 
@@ -173,6 +184,9 @@ def _run_estimate(env: JobEnv, job: Job) -> None:
         if verdict.status != "completed":
             if stage == "estimate" and (why := _infeasible(res.exit_code, tail)) is not None:
                 _fail(env, job, why, None, res.exit_code)  # nothing here fixes itself: 0đ
+                return
+            if stage == "plan" and (why := _bpm_blocked(res.exit_code, tail)) is not None:
+                _fail(env, job, why, None, res.exit_code)  # the track must change: 0đ
                 return
             settle_stop(env, job, verdict, res, " | ".join(tail))
             return

@@ -19,6 +19,7 @@ import type {
   ApiVerify,
   ApiVerifyCheck,
 } from '../types/api.ts';
+import { MUSIC_LIBRARY } from '../data/mockMusic.ts';
 import {
   DURATION_IDS,
   MUSIC_MODE_IDS,
@@ -524,7 +525,7 @@ export function pipelineBody(
 ): Record<string, unknown> {
   return {
     project_id: run.projectId,
-    options: preflightBody(o).options,
+    options: withoutFacts(preflightBody(o).options),
     draft: run.draft,
     final: run.final,
     no_asr: run.noAsr,
@@ -533,6 +534,19 @@ export function pipelineBody(
 }
 
 /* ───────────────────────── preflight ───────────────────────── */
+
+/** BPM of the chosen library track, when the UI knows it (the plan step measures it for real). */
+function trackBpm(o: VideoOptions): number | null {
+  if (!o.nhac_file) return null;
+  const name = basename(o.nhac_file);
+  return MUSIC_LIBRARY.find((t) => basename(t.file) === name)?.bpm ?? null;
+}
+
+/** Facts the UI only knows to ask the preflight; the plan step measures them itself. */
+function withoutFacts(options: Record<string, unknown>): Record<string, unknown> {
+  const { nhac_bpm: _bpm, ...rest } = options;
+  return rest;
+}
 
 /** Body of POST /api/preflight (Appendix D keys; the server rejects unknown keys, so the
  *  UI-only `pacing` is left out and blanks become null). */
@@ -548,6 +562,9 @@ export function preflightBody(o: VideoOptions): { options: Record<string, unknow
       nhac_quyen_su_dung: o.nhac === 'tai_len' ? Boolean(o.nhac_quyen_su_dung) : null,
       khuyen_mai: o.muc_dich === 'khuyen_mai' ? (o.khuyen_mai ?? null) : null,
       ghi_chu: o.ghi_chu.trim() === '' ? null : o.ghi_chu,
+      // Only sent when known / chosen: the server warns about a track its BPM cannot build with.
+      ...(trackBpm(o) !== null ? { nhac_bpm: trackBpm(o) } : {}),
+      ...(o.bpm_override === true ? { bpm_override: true } : {}),
     },
   };
 }

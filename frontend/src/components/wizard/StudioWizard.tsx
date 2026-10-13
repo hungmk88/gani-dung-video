@@ -3,6 +3,7 @@ import { isOptionsComplete } from '../../lib/preflight';
 import { api } from '../../services/api';
 import type { FootageFile, PreflightResult, VideoOptions } from '../../types/rules';
 import { FootageDropzone } from './FootageDropzone';
+import { BpmWarning } from './BpmWarning';
 import { MusicPicker } from './MusicPicker';
 import { PreflightValidator } from './PreflightValidator';
 import { ProjectPicker, type RealJobChoice } from './ProjectPicker';
@@ -19,6 +20,7 @@ const DEFAULT_OPTIONS: VideoOptions = {
   khuyen_mai: null,
   ghi_chu: '',
   pacing: 'nhac',
+  bpm_override: null,
 };
 
 const DEFAULT_CHOICE: RealJobChoice = {
@@ -31,6 +33,7 @@ const DEFAULT_CHOICE: RealJobChoice = {
 };
 const DRAFT_LETTERS = ['A', 'B', 'C'] as const;
 const PREFLIGHT_DEBOUNCE_MS = 250;
+const CHOICE_KEYS = ['phong_cach', 'do_dai_giay', 'nhac', 'nhac_file'] as const;
 
 function messageOf(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -48,8 +51,13 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [longVideo, setLongVideo] = useState<boolean | null>(null);
 
+  // An earlier "Vẫn dùng bài này" belongs to one style + length + track: any change drops it.
   function patch(p: Partial<VideoOptions>) {
-    setOptions((prev) => ({ ...prev, ...p }));
+    setOptions((prev) => {
+      const next = { ...prev, ...p };
+      if (!('bpm_override' in p) && CHOICE_KEYS.some((k) => k in p)) next.bpm_override = null;
+      return next;
+    });
   }
 
   const incomplete = !isOptionsComplete(options);
@@ -149,7 +157,10 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
             </Panel>
 
             <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">
-              <MusicPicker options={options} onChange={patch} />
+              <div className="space-y-3">
+                <MusicPicker options={options} onChange={patch} />
+                <BpmWarning options={options} onChange={patch} />
+              </div>
             </Panel>
           </>
         )}
@@ -157,7 +168,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
 
       <div className="lg:sticky lg:top-24 lg:self-start">
         <PreflightValidator
-          result={incomplete ? null : preflight}
+          result={incomplete ? null : withoutBpmWarnings(preflight)}
           incomplete={incomplete}
           renderOnly={renderOnly}
           checking={checking}
@@ -169,6 +180,12 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
       </div>
     </div>
   );
+}
+
+/** The BPM warnings have their own box (with buttons) under the track list. */
+function withoutBpmWarnings(r: PreflightResult | null): PreflightResult | null {
+  if (r === null) return null;
+  return { ...r, warnings: r.warnings.filter((w) => !w.code.startsWith('W_BPM')) };
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {

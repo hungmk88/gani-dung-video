@@ -125,6 +125,8 @@ export interface VideoOptions {
   khuyen_mai: KhuyenMaiFields | null;
   ghi_chu: string;
   pacing: PacingMode;
+  /** The person chose a track the BPM table warns about (ticket 13/10/2026); null = not asked. */
+  bpm_override?: boolean | null;
 }
 
 export interface FootageFile {

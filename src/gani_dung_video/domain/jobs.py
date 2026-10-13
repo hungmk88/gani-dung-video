@@ -183,7 +183,7 @@ def line_level(line: str) -> str:
     head = line.lstrip()
     if head.startswith(("LỖI", "ERROR", "Traceback")):
         return "error"
-    if "KHÔNG ĐẠT" in line or head.startswith(("WARN", "CẢNH BÁO")):
+    if "KHÔNG ĐẠT" in line or head.upper().startswith(("WARN", "CẢNH BÁO")):
         return "warn"
     return "info"
 

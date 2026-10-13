@@ -16,6 +16,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from gani_dung_video.application.transcribe_service import SPEECH_FILE, SpeechSummary
+from gani_dung_video.domain.bpm_measure import blocked_text, level_of_plan
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import MusicInfo, Plan, PlanError, compile_plan
 from gani_dung_video.domain.preflight import Issue, Result, Rules, preflight_check
@@ -94,20 +95,32 @@ def _music(
     return info.model_copy(update={"path": str(path)}) if info else None
 
 
+class BpmBlockedError(RuntimeError):
+    """The track's tempo cannot build this video and the person did not choose to go on."""
+
+
 def build_plan(
-    options_file: Path, folder: Path, music_dir: Path | None = None, rules: Rules | None = None
+    options_file: Path,
+    folder: Path,
+    music_dir: Path | None = None,
+    rules: Rules | None = None,
+    bpm_override: bool = False,
 ) -> tuple[Plan, Path]:
     """Compile <options_file> into <folder>/edit/plan.json.
 
     Args:
         music_dir: extra folder the track may live in (besides the options file's folder and
             the footage folder).
+        bpm_override: go on although the track's BPM cannot build the video (the options file
+            can say the same with `bpm_override: true`). E1-DUR-GAP still judges the render.
 
     Raises:
         PreflightBlocked: a BLOCK rule fired (nothing is written).
         PlanError: the combo is not supported yet, or no track was named.
         ConfigError: options/scenes.json unreadable or missing.
         MusicError: the track is outside the allowed folders or not decodable audio.
+        BpmBlockedError: the plan is more than ±duration_plan_gap_pct off the chosen length
+            and nobody chose to go on (nothing is written; the message says what to do).
     """
     rules = rules if rules is not None else load_rules()
     folder = folder.expanduser().resolve()
@@ -119,6 +132,8 @@ def build_plan(
     if style in scenes.usable_by_style:
         facts["so_canh_dung_duoc"] = scenes.usable_by_style[style]
     facts["co_loi_noi"] = _speech_fact(folder)
+    if bpm_override:
+        facts["bpm_override"] = True
     first = preflight_check(facts if facts else raw, rules)
     if not first["valid"]:
         raise PreflightBlocked(first)
@@ -132,10 +147,16 @@ def build_plan(
     plan = compile_plan(o, rules, music=music, available_tags=_available_tags(scenes, o.phong_cach))
     if plan.music is not None and music is not None and music.path:
         plan = plan.model_copy(update={"music": plan.music.model_copy(update={"path": music.path})})
-    plan = plan.model_copy(update={
-        "warnings": _text(final["warnings"]) + plan.warnings,
-        "adjustments": _text(final["adjustments"]),
-    })  # fmt: skip
+    warnings, adjustments = _text(final["warnings"]) + plan.warnings, _text(final["adjustments"])
+    if music is not None and level_of_plan(plan, rules) == "BLOCKING":
+        if not o.bpm_override:
+            raise BpmBlockedError(blocked_text(rules, plan, music.bpm))
+        warnings = [w for w in warnings if not w.startswith("W_DUR_GAP")]  # already acknowledged
+        adjustments.append("Dùng bài lệch BPM theo bpm_override: E1-DUR-GAP vẫn chặn khi giao "
+                           "nếu kế hoạch lệch quá giới hạn.")  # fmt: skip
+    if o.bpm_override:
+        plan = plan.model_copy(update={"options": {**plan.options, "bpm_override": True}})
+    plan = plan.model_copy(update={"warnings": warnings, "adjustments": adjustments})
     path = folder / EDIT_DIR / PLAN_FILE
     _write(path, plan.model_dump_json(indent=1))
     return plan, path

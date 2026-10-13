@@ -16,6 +16,8 @@ from typing import Any, TypedDict
 
 from pydantic import ValidationError
 
+from gani_dung_video.domain.bpm_safety import check_bpm_safe
+from gani_dung_video.domain.bpm_safety import message as bpm_message
 from gani_dung_video.domain.options import VideoOptions
 
 # Any: parsed rules.json; its shape is pinned by tests/test_rules.py, not by the type system.
@@ -233,7 +235,21 @@ def _check_music(rules: Rules, o: VideoOptions) -> list[Issue]:
             out.append(x12)
     if o.nhac_giay is not None and o.nhac_giay < o.do_dai_giay:
         out.append(_issue(rules, "X13", music=f"{o.nhac_giay:g}", video=o.do_dai_giay))
+    out += _check_bpm_safety(rules, o)
     return out
+
+
+def _check_bpm_safety(rules: Rules, o: VideoOptions) -> list[Issue]:
+    """W_BPM_BLOCK / W_BPM_CUT: the track's BPM, looked up in the measured table (a warning
+    only; `bpm_override` means the person already chose to go on)."""
+    if o.nhac_bpm is None or o.bpm_override:
+        return []
+    chk = check_bpm_safe(rules, o.phong_cach, o.do_dai_giay, o.nhac_bpm)
+    code = {"BLOCKING": "W_BPM_BLOCK", "WARNING": "W_BPM_CUT"}.get(chk.level)
+    if code is None:
+        return []
+    text = bpm_message(rules, code, o.phong_cach, o.do_dai_giay, o.nhac_bpm, chk.buildable)
+    return [{"code": code, "level": "warn", "msg": text}]
 
 
 def _check_version(rules: Rules, o: VideoOptions) -> list[Issue]:
