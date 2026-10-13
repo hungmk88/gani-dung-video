@@ -123,6 +123,9 @@ def check_duration_gap(
     limit, gap = pct * chosen_sec, planned_sec - chosen_sec
     detail = (f"Độ dài kế hoạch {planned_sec:.2f}s, đã chọn {chosen_sec}s: lệch {gap:+.2f}s, cho "
               f"phép ±{pct * 100:g}% = ±{limit:g}s.")  # fmt: skip
+    if gap > 0 and abs(gap) > limit + _EPS:
+        detail += (" Nhịp bài nhạc làm mỗi khối dài hơn: chọn bài có BPM hợp phong cách hoặc độ "
+                   "dài video dài hơn.")  # fmt: skip
     item = E1Item(code="E1-DUR-GAP", name="Kế hoạch không lệch xa độ dài đã chọn",
                   passed=abs(gap) <= limit + _EPS, value=round(gap, 3), limit=round(limit, 3),
                   unit="s", detail=detail)  # fmt: skip

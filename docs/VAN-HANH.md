@@ -233,14 +233,18 @@ chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi đ�
   15 giây: Kể chuyện nghề 0,75s (giữ), TVC 1,3 → 1,25s, Review 1,0 → 0,9375s, Sang trọng
   0,667 → 0,625s. Độ lệch tối đa 6,7% ở 15 giây, từ 30 giây trở lên không quá 2,2%.
   Kế hoạch ghi dòng "Tự điều chỉnh Co giãn lưới ảo…".
-- **Có nhạc:** nhịp bài cố định nên không co giãn được. `qc.duration_trim_threshold_sec` (0,5s) là
-  ngưỡng:
-  - kế hoạch **dài hơn** độ dài chọn quá ngưỡng: cắt ở đúng độ dài chọn, hình và tiếng mờ dần
-    theo `qc.duration_trim_policy` (`fade_0.5s` = 0,5 giây cuối) rồi tới khung kết. Cảnh cuối bị
-    cắt ngắn; đoạn còn lại ngắn hơn thời gian mờ dần thì nhập vào cảnh trước;
-  - kế hoạch **ngắn hơn** quá ngưỡng: lập lại với nhiều phách hơn, rồi áp dụng quy tắc trên;
-  - trong ngưỡng: giữ nguyên.
+- **Có nhạc:** nhịp bài cố định nên không co giãn được. Bộ lập kế hoạch thử các tổng phách quanh
+  mục tiêu và chọn bản cần cắt ít nhất. `qc.duration_trim_threshold_sec` (0,5s) là ngưỡng:
+  - bản trong ngưỡng (±0,5s): giữ nguyên, bản gần độ dài chọn nhất thắng;
+  - không có bản trong ngưỡng: lấy bản dài hơn ngắn nhất, **cắt** ở đúng độ dài chọn, hình và
+    tiếng mờ dần theo `qc.duration_trim_policy` (`fade_0.5s` = 0,5 giây cuối) rồi tới khung kết.
+    Đoạn cắt còn lại ngắn hơn thời gian mờ dần thì nhập vào cảnh trước;
+  - chỉ còn bản ngắn hơn: dùng bản dài nhất (E1-DUR sẽ báo).
   Tắt cắt bằng `duration_trim_policy = "none"` (lưới ảo vẫn co giãn).
+- **Kế hoạch lệch quá ±10%:** mỗi khối cần ít nhất một cảnh (4–8 phách), nên bài nhạc chậm làm
+  khối dài ra và kế hoạch vượt xa độ dài chọn dù đã cắt đuôi. Khi đó lúc lập kế hoạch có cảnh báo
+  `W_DUR_GAP`, và lúc giao `E1-DUR-GAP` chặn (đo theo độ dài tự nhiên của các phách, trước khi
+  cắt, để cắt đuôi không che được). Cách xử lý: chọn bài có BPM hợp phong cách hoặc độ dài dài hơn.
 - Kiểm tra: `E1-DUR` đo **so với độ dài đã chọn** (`duration_reference` = `"chosen"`), sai số
   ±0,5s (≤ 60 giây) hoặc ±1s (180 giây). `E1-DUR-GAP` vẫn giữ: kế hoạch không được lệch độ dài
   đã chọn quá ±10%. Khoảng mờ dần trước khung kết không bị tính là khung đen (T4).
@@ -265,11 +269,11 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 
 ## 9b. Hạn chế đã biết
 
-- **Có nhạc, cắt đuôi:** khi kế hoạch dài hơn độ dài chọn quá 0,5s, phần cuối bị cắt thuộc khối
-  cuối của video (thường là cảnh kêu gọi). Đo trên 620 tổ hợp phong cách × độ dài × BPM 55–145:
-  36% bị cắt, trung vị 0,85s, tối đa 6,6s (Sang trọng ở 100 BPM, bài 15 giây); 15 trường hợp mất
-  hơn nửa cảnh kêu gọi, không trường hợp nào mất hết. Muốn tránh thì chọn bài có BPM hợp
-  phong cách (`bpm_range`) hoặc để người xem lại dòng "Tự điều chỉnh" trong kế hoạch.
+- **Có nhạc, cắt đuôi:** phần cuối bị cắt thuộc khối cuối của video (thường là cảnh kêu gọi).
+  Đo trên 620 tổ hợp phong cách × độ dài × BPM 55–145: 27% bị cắt (169), trung vị 0,82s; 148 ca
+  trong ±10%, 21 ca (3,4%) vượt ±10% và bị `E1-DUR-GAP` chặn khi giao. 21 ca đó gần hết là Sang
+  trọng ở video 15 và 30 giây (mỗi khối đã ở mức tối thiểu một cảnh nên không giảm được phách).
+  Ca tệ nhất: Sang trọng 100 BPM, 15 giây, kế hoạch 21,6s (+44%).
 - Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
   sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
   trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).

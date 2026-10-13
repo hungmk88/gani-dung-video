@@ -104,11 +104,16 @@ def beats_of(plan: Plan) -> list[float]:
     return beat_grid(plan.beat_sec, plan.planned_beats)
 
 
+def natural_sec(plan: Plan) -> float:
+    """What the planned beats add up to, before any cut at the chosen length."""
+    return plan.planned_beats * plan.beat_sec
+
+
 def planned_sec(plan: Plan) -> float:
     """Length of the video content (without the end card) that the plan promises."""
     if plan.trim_to_sec is not None:
         return plan.trim_to_sec
-    return plan.planned_beats * plan.beat_sec
+    return natural_sec(plan)
 
 
 _TRIM_POLICY = re.compile(r"fade_(\d+(?:\.\d+)?)s")
@@ -349,10 +354,11 @@ def _fit_to_chosen(
     Grid (no music): the beat is a virtual number, so it is stretched until the planned beats
     add up to exactly the chosen seconds; the beat count (the rhythm) is untouched.
 
-    Music: the track's tempo is fixed. A plan more than `threshold` shorter than the chosen
-    length is rebuilt with more beats; one more than `threshold` longer is cut at the chosen
-    length (the render fades picture and sound over `fade` seconds). Within the threshold
-    both are left alone. Speech videos follow the voice and are not touched here.
+    Music: the track's tempo is fixed, so the planner picks, among the beat totals it can
+    build, the one that needs the least cutting. A plan within `threshold` of the chosen length
+    is left alone; one more than `threshold` longer is cut at the chosen length (the render
+    fades picture and sound over `fade` seconds). Speech videos follow the voice and are not
+    touched here.
     """
     blocks, chapters = first
     fade, thr = policy
@@ -368,16 +374,14 @@ def _fit_to_chosen(
         return _Fit(blocks, chapters, stretched, notes, None, 0.0)
     if driver != "music" or fade <= 0:
         return _Fit(blocks, chapters, beat_sec, notes, None, 0.0)
-    for extra in range(1, 2 * max(allowed) + 3):
-        if total * beat_sec >= chosen - thr - _EPS:
-            break
-        blocks, chapters = build(target + extra)
-        total = sum(b.beats for b in blocks)
-        if total * beat_sec >= chosen - thr - _EPS:
-            notes.append(
-                f"Nhạc: kế hoạch ngắn hơn {chosen:g}s quá {thr:g}s, tăng lên "
-                f"{total} phách ({total * beat_sec:.2f}s)."
-            )
+    total_first = total
+    blocks, chapters = _pick_music_plan(chosen, beat_sec, allowed, target, build, first, thr)
+    total = sum(b.beats for b in blocks)
+    if total != total_first:
+        notes.append(
+            f"Nhạc: lập lại kế hoạch {total} phách ({total * beat_sec:.2f}s) thay cho "
+            f"{total_first} phách ({total_first * beat_sec:.2f}s) để ít phải cắt nhất."
+        )
     if total * beat_sec > chosen + thr + _EPS:
         notes.append(
             f"Nhạc: kế hoạch {total * beat_sec:.2f}s dài hơn {chosen:g}s quá {thr:g}s, "
@@ -385,6 +389,30 @@ def _fit_to_chosen(
         )
         return _Fit(blocks, chapters, beat_sec, notes, chosen, fade)
     return _Fit(blocks, chapters, beat_sec, notes, None, 0.0)
+
+
+def _pick_music_plan(
+    chosen: float, beat_sec: float, allowed: Sequence[int], target: int,
+    build: Callable[[int], tuple[list[PlanBlock], list[PlanChapter]]],
+    first: tuple[list[PlanBlock], list[PlanChapter]], thr: float,
+) -> tuple[list[PlanBlock], list[PlanChapter]]:  # fmt: skip
+    """Among the plans the tempo allows (different beat totals), the one that needs the least
+    cutting: first one within `thr` of the chosen length (closest wins), else the shortest one
+    that is longer (it gets cut), else the longest one that is shorter."""
+    width = 2 * max(allowed) + 2
+    found = {sum(b.beats for b in first[0]): first}
+    for t in range(max(1, target - width), target + width + 1):
+        if t != target:
+            blocks, chapters = build(t)
+            found.setdefault(sum(b.beats for b in blocks), (blocks, chapters))
+
+    def rank(n: int) -> tuple[int, float, float]:
+        dev = n * beat_sec - chosen
+        if abs(dev) <= thr + _EPS:
+            return (0, abs(dev), -float(n))
+        return (1, dev, 0.0) if dev > 0 else (2, -dev, 0.0)
+
+    return found[min(found, key=rank)]
 
 
 def _check_chapters_open(o: VideoOptions, rules: Rules, style: Mapping[str, Any],
@@ -445,6 +473,11 @@ def compile_plan(
                                  if t not in available_tags))  # fmt: skip
     if missing:
         warnings.append("X8: " + rules["conflicts"]["X8"]["msg"].format(tags=", ".join(missing)))
+    natural = sum(b.beats for b in blocks) * beat_sec
+    pct = float(rules["qc"]["duration_plan_gap_pct"])
+    if driver == "music" and natural > o.do_dai_giay * (1 + pct) + _EPS:
+        warnings.append("W_DUR_GAP: " + rules["compat_msgs"]["W_DUR_GAP"].format(
+            plan=f"{natural:.1f}", chosen=o.do_dai_giay, pct=f"{pct * 100:g}"))  # fmt: skip
     return Plan(
         rules_version=str(rules["rules_version"]),
         options={"style": o.phong_cach, "purpose": o.muc_dich, "duration": o.do_dai_giay,

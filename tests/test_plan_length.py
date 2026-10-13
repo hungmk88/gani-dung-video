@@ -12,7 +12,15 @@ from typing import Any
 import pytest
 
 from gani_dung_video.domain.options import VideoOptions
-from gani_dung_video.domain.plan import MusicInfo, PlanError, compile_plan, planned_sec
+from gani_dung_video.domain.plan import (
+    MusicInfo,
+    PlanBlock,
+    PlanError,
+    _pick_music_plan,
+    compile_plan,
+    natural_sec,
+    planned_sec,
+)
 from gani_dung_video.infrastructure.config_files import load_rules
 
 BASE = load_rules()
@@ -123,7 +131,7 @@ def test_music_plan_shorter_than_the_threshold_is_rebuilt_with_more_beats() -> N
                      available_tags=TAGS)  # fmt: skip
     assert p.planned_beats > 20
     assert planned_sec(p) >= 15 - THRESHOLD - 1e-9
-    assert any("tăng lên" in a for a in p.adjustments)
+    assert any("lập lại kế hoạch" in a for a in p.adjustments)
 
 
 # ─────────────── policy in rules.json ───────────────
@@ -188,3 +196,37 @@ def test_frame_rounding_cannot_push_a_kept_plan_past_the_tolerance(
                          available_tags=TAGS)  # fmt: skip
         end = round(planned_sec(p) * fps) / fps
         assert abs(end - duration) <= tol + 1e-9, (style, duration, bpm, end)
+
+
+# ─────────────── picking the plan that needs the least cutting ───────────────
+
+
+def pick(beat: float, first_total: int, chosen: float = 15.0, thr: float = 0.5) -> int:
+    """Total beats picked when every total around the target can be built."""
+
+    def build(total: int) -> tuple[list[PlanBlock], list[Any]]:
+        return [PlanBlock(role="main", beats=total)], []
+
+    picked, _ = _pick_music_plan(chosen, beat, [4, 6], first_total, build, build(first_total), thr)
+    return int(picked[0].beats)
+
+
+def test_a_total_within_the_threshold_beats_one_that_has_to_be_cut() -> None:
+    assert pick(0.6, 26) == 25  # 26 beats = 15.6 s must be cut; 25 beats = 15.0 s do not
+
+
+def test_the_closest_total_within_the_threshold_wins() -> None:
+    assert pick(0.7, 22) == 21  # 15.4 s (+0.4) or 14.7 s (-0.3): the shorter miss is closer
+
+
+def test_when_nothing_is_within_the_threshold_the_smallest_cut_wins_over_a_short_plan() -> None:
+    assert pick(1.2, 12) == 13  # 14.4 s is 0.6 short and cannot be fixed; 15.6 s is cut to 15
+
+
+def test_a_plan_beyond_the_gap_limit_is_warned_about_at_plan_time() -> None:
+    bad = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(100.0),
+                       available_tags=TAGS)  # fmt: skip
+    assert natural_sec(bad) > 15 * 1.1 and any(w.startswith("W_DUR_GAP") for w in bad.warnings)
+    fine = compile_plan(opts("ke_chuyen_nghe", 15, music=True), RULES, music=track(100.0),
+                        available_tags=TAGS)  # fmt: skip
+    assert not any(w.startswith("W_DUR_GAP") for w in fine.warnings)  # 15.6 s: cut, but ≤ 10%

@@ -369,21 +369,24 @@ def _luma(video: Path, at: float) -> float:
     return float(m.group(1))
 
 
-def test_with_music_a_long_plan_is_cut_at_the_chosen_length_and_fades_out(
-    tmp_path: Path, clips: Path
-) -> None:
-    song = tmp_path / "song.wav"
+def _music_project(tmp_path: Path, clips: Path, name: str, style: str, bpm: float) -> Path:
+    song = tmp_path / f"{name}.wav"
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
                     "sine=frequency=220:duration=40", str(song)],
                    check=True, timeout=120)  # fmt: skip
-    info = MusicInfo(track="song.wav", bpm=100.0, first_beat_sec=0.0, duration_sec=40.0,
+    info = MusicInfo(track=song.name, bpm=bpm, first_beat_sec=0.0, duration_sec=40.0,
                      source="library", path=str(song))  # fmt: skip
-    # Sang trọng at 100 BPM plans 36 beats × 0.6 s = 21.6 s for a "15 s" video.
-    with_music = {**opts("sang_trong", "gioi_thieu_xuong"), "nhac": "thu_vien",
-                  "nhac_file": "song.wav"}  # fmt: skip
-    folder = make_project(tmp_path, clips, "nhac", with_music, music=info)
+    with_music = {**opts(style, "gioi_thieu_xuong"), "nhac": "thu_vien", "nhac_file": song.name}
+    return make_project(tmp_path, clips, name, with_music, music=info)
+
+
+def test_with_music_a_plan_over_the_chosen_length_is_cut_there_and_fades_out(
+    tmp_path: Path, clips: Path
+) -> None:
+    # Kể chuyện nghề at 100 BPM plans 26 beats × 0.6 s = 15.6 s for a "15 s" video.
+    folder = _music_project(tmp_path, clips, "cat_nhe", "ke_chuyen_nghe", 100.0)
     plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
-    assert plan.planned_beats * plan.beat_sec > 21 and plan.trim_to_sec == 15.0
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.6) and plan.trim_to_sec == 15.0
     [res] = build_render(folder, preview=True, rules=RULES)
     m = manifest_of(folder)
     assert res.qc_passed, res.qc_notes
@@ -391,3 +394,29 @@ def test_with_music_a_long_plan_is_cut_at_the_chosen_length_and_fades_out(
     video = folder / "edit" / "render" / "A" / "nhap_A_540p.mp4"
     assert _mean_volume_db(video, 14.8, 0.2) < _mean_volume_db(video, 10.0, 0.2) - 10  # the tail
     assert _luma(video, 14.95) < 0.5 * _luma(video, 10.0)  # fading to black
+
+
+def test_with_music_a_plan_that_fits_is_left_alone(tmp_path: Path, clips: Path) -> None:
+    folder = _music_project(tmp_path, clips, "vua_khit", "ke_chuyen_nghe", 80.0)
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.0) and plan.trim_to_sec is None
+    [res] = build_render(folder, preview=True, rules=RULES)
+    assert res.qc_passed, res.qc_notes
+    video = folder / "edit" / "render" / "A" / "nhap_A_540p.mp4"
+    assert abs(_mean_volume_db(video, 14.7, 0.2) - _mean_volume_db(video, 10.0, 0.2)) < 3  # no fade
+
+
+def test_a_cut_beyond_ten_percent_is_stopped_by_the_gap_guard_not_hidden_by_the_cut(
+    tmp_path: Path, clips: Path
+) -> None:
+    """Sang trọng at 100 BPM: every block needs one 7.2 s scene, so the plan is 21.6 s (+44%)."""
+    folder = _music_project(tmp_path, clips, "troi_xa", "sang_trong", 100.0)
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.trim_to_sec == 15.0 and any(w.startswith("W_DUR_GAP") for w in plan.warnings)
+    [res] = build_render(folder, preview=True, rules=RULES)
+    assert not res.qc_passed
+    _assert_blocked(folder, "E1-DUR-GAP", res.qc_notes)
+    items = {i.code: i for i in manifest_of(folder).e1.items}
+    assert items["E1-DUR"].passed  # the video itself is exactly 15 s long …
+    assert items["E1-DUR-GAP"].value == pytest.approx(6.6, abs=0.05)  # … the plan was not
+    assert "chọn bài có BPM hợp phong cách" in items["E1-DUR-GAP"].detail

@@ -317,7 +317,7 @@
   "duration_tolerance_sec": {"15": 0.5, "30": 0.5, "45": 0.5, "60": 0.5, "180": 1.0},
   "duration_reference": "chosen",
   "duration_plan_gap_pct": 0.1,
-  "_ghi_chu_duration_trim": "Độ dài ra đúng độ dài đã chọn (hướng B, chốt 13/10/2026). Không nhạc: lưới ảo được co giãn sau khi lập kế hoạch (1 phách = độ dài chọn ÷ số phách đã lập), số phách và nhịp giữ nguyên, nên video ra đúng 15/30/45/60/180 giây. Có nhạc: nhịp bài cố định nên không co giãn được. Kế hoạch dài hơn độ dài chọn quá duration_trim_threshold_sec: cắt ở đúng độ dài chọn, hình và tiếng mờ dần theo duration_trim_policy ('fade_0.5s' = mờ 0,5 giây cuối; 'none' = tắt cắt). Kế hoạch NGẮN hơn quá ngưỡng: lập lại với nhiều phách hơn rồi áp dụng quy tắc trên. Trong ngưỡng: giữ nguyên. Chế độ lời không bị đụng (độ dài chạy theo lời nói).",
+  "_ghi_chu_duration_trim": "Độ dài ra đúng độ dài đã chọn (hướng B, chốt 13/10/2026). Không nhạc: lưới ảo được co giãn sau khi lập kế hoạch (1 phách = độ dài chọn ÷ số phách đã lập), số phách và nhịp giữ nguyên, nên video ra đúng 15/30/45/60/180 giây. Có nhạc: nhịp bài cố định nên không co giãn được. Kế hoạch dài hơn độ dài chọn quá duration_trim_threshold_sec: cắt ở đúng độ dài chọn, hình và tiếng mờ dần theo duration_trim_policy ('fade_0.5s' = mờ 0,5 giây cuối; 'none' = tắt cắt). Bộ lập kế hoạch thử các tổng phách quanh mục tiêu và chọn bản cần cắt ít nhất (bản trong ngưỡng, rồi bản dài hơn, cuối cùng bản ngắn hơn). Trong ngưỡng: giữ nguyên. Kế hoạch tự nhiên (trước khi cắt) lệch quá duration_plan_gap_pct thì có cảnh báo W_DUR_GAP lúc lập kế hoạch và E1-DUR-GAP chặn khi giao. Chế độ lời không bị đụng (độ dài chạy theo lời nói).",
   "duration_trim_policy": "fade_0.5s",
   "duration_trim_threshold_sec": 0.5,
   "duration_tolerance_voice_sec": {
@@ -477,6 +477,7 @@
  "compat_msgs": {
   "W_STYLE_PURPOSE": "'{style}' dùng được cho '{purpose}' nhưng không phải lựa chọn tối ưu.",
   "W_STYLE_DURATION": "'{style}' ở {duration}s dùng được nhưng không phải độ dài tối ưu.",
+  "W_DUR_GAP": "Bài nhạc này làm kế hoạch dài {plan}s so với {chosen}s đã chọn (quá ±{pct}%): mỗi khối cần ít nhất một cảnh mà nhịp bài làm cảnh dài. Video sẽ bị cắt đuôi nhiều và có thể bị chặn khi giao. Hãy chọn bài có BPM hợp phong cách hoặc độ dài video dài hơn.",
   "W_NO_BEAT": "Không xác định được nhịp bài nhạc nên dùng lưới nhịp ảo, mỗi phách {grid}s.",
   "W_GRID_NO_MUSIC": "Không có nhạc nên dùng lưới nhịp ảo, mỗi phách {grid}s."
  },
