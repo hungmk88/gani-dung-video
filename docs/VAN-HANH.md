@@ -333,3 +333,4 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 | 409 `project_locked` | xem mục 8 |
 | Cổng 8765 bận | tìm và tắt tiến trình `serve` cũ (đổi cổng cần build lại giao diện, xem mục 2) |
 | Video 3 phút không chọn được | máy chủ chưa mở (`durations.180.enabled = false` trong `config/rules.json`, bật sau nghiệm thu thật) |
+| "ffmpeg … quá cũ" hoặc `Unrecognized option '/filter_complex'` | ffmpeg dưới 7.0 (Ubuntu 24.04 mặc định chỉ có 6.1) → cập nhật ffmpeg lên 7.0 trở lên, kiểm bằng `ffmpeg -version`; job kịch bản dừng ở 0đ nên không mất tiền |

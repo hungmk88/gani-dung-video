@@ -394,6 +394,22 @@ def test_a_missing_api_key_fails_at_zero_cost_before_any_call(db: QueueDb, folde
     assert "paid" not in runner.ran and j.spent_vnd in (None, 0.0)
 
 
+def test_an_old_ffmpeg_fails_at_zero_cost_before_any_call(
+    db: QueueDb, folder: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # ffmpeg < 7 cannot load the render graph: better to say so before Claude is paid.
+    monkeypatch.setattr("gani_dung_video.application.draft_job.ffmpeg_problem",
+                        lambda: "ffmpeg 6.1 quá cũ: app cần ffmpeg 7.0 trở lên.")  # fmt: skip
+    runner = FakeRunner()
+    _d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock)
+    make(db, runner, clock).process_next()
+    j = job(db, jid)
+    assert j.status == "failed" and "ffmpeg 6.1" in (j.error_msg or "")
+    assert "0đ" in (j.error_msg or "")
+    assert "paid" not in runner.ran and j.spent_vnd in (None, 0.0)
+
+
 def test_the_daemon_itself_refuses_a_paid_job_without_an_approval(
     db: QueueDb, folder: Path, clock: Clock
 ) -> None:

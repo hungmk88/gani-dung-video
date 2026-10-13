@@ -10,6 +10,7 @@ limits and quoting; fonts are copied next to the .ass so libass finds them by a 
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import re
@@ -32,6 +33,47 @@ _HDR_TO_SDR = ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
 
 class RenderError(RuntimeError):
     """ffmpeg could not produce the video (message in Vietnamese, last ffmpeg line)."""
+
+
+MIN_FFMPEG_MAJOR = 7  # `-/filter_complex <file>` (below) does not exist before ffmpeg 7.0
+_VERSION = re.compile(r"ffmpeg version n?(\d+)\.(\d+)")
+
+
+def parse_ffmpeg_version(banner: str) -> tuple[int, int] | None:
+    """(major, minor) from `ffmpeg -version`; None for git/dated builds that carry no number."""
+    m = _VERSION.search(banner)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+@functools.cache
+def _ffmpeg_banner() -> str:
+    try:
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""  # missing ffmpeg is reported (with its own message) when it is first needed
+    return r.stdout.decode("utf-8", "replace")
+
+
+def ffmpeg_problem() -> str | None:
+    """Why the installed ffmpeg cannot render (Vietnamese, actionable), or None when it can.
+
+    An unknown version (not installed, git build) is not a problem here: only a number below
+    MIN_FFMPEG_MAJOR is, so a custom build is never blocked on a guess.
+    """
+    version = parse_ffmpeg_version(_ffmpeg_banner())
+    if version is None or version[0] >= MIN_FFMPEG_MAJOR:
+        return None
+    return (
+        f"ffmpeg {version[0]}.{version[1]} quá cũ: app cần ffmpeg {MIN_FFMPEG_MAJOR}.0 trở "
+        "lên (Mac: `brew upgrade ffmpeg`; Windows: bản mới của gyan.dev; Ubuntu 24.04 chỉ có "
+        "6.1, dùng bản static của johnvansickle.com hoặc BtbN)."
+    )
+
+
+def ensure_ffmpeg_version() -> None:
+    """Raise RenderError before any work when ffmpeg is too old for the render graph."""
+    if (problem := ffmpeg_problem()) is not None:
+        raise RenderError(problem)
 
 
 def _n(x: float) -> str:
@@ -241,6 +283,7 @@ def render(
     Raises:
         RenderError: a source is missing/unreadable, ffmpeg is missing, fails or times out.
     """
+    ensure_ffmpeg_version()
     work = ass.parent
     inputs, has_audio, music_idx = _inputs(e, footage_dir, music)
     _copy_fonts(work / "fonts")
@@ -275,6 +318,7 @@ def parse_loudnorm(log: str) -> dict[str, float]:
 def measure_loudnorm(e: Edl, footage_dir: Path, music: Path | None, work: Path,
                      rules: Rules) -> dict[str, float]:  # fmt: skip
     """Loudness pass 1: run the audio mix alone and read what loudnorm measured."""
+    ensure_ffmpeg_version()
     inputs, has_audio, music_idx = _inputs(e, footage_dir, music)
     graph = work / "graph_audio.txt"
     graph.write_text(audio_graph(e, has_audio, music_idx, measure_only=True), encoding="utf-8")
@@ -285,6 +329,7 @@ def measure_loudnorm(e: Edl, footage_dir: Path, music: Path | None, work: Path,
 
 def render_voice_only(e: Edl, footage_dir: Path, work: Path, rules: Rules) -> Path:
     """The audio mix without the music, on the video's own timeline (T8 masking check, 5c-3)."""
+    ensure_ffmpeg_version()
     quiet = e.model_copy(update={"music": None})
     inputs, has_audio, _ = _inputs(quiet, footage_dir, None)
     graph = work / "graph_voice.txt"
