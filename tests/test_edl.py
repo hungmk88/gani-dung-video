@@ -251,3 +251,47 @@ def test_speech_edl_refuses_broll_from_an_unknown_clip() -> None:
                         clip="zz.mp4", start=0, end=5, peak=1)  # fmt: skip
     with pytest.raises(EdlError, match="zz"):
         build_speech_edl(speech_cuts(), [ov], speech_plan(), CLIPS, RULES, preview=True)
+
+
+# ─────────────── music mode: cut at the chosen length (plan.trim_to_sec) ───────────────
+
+
+def trimmed(to: float, fade: float = 0.5) -> Plan:
+    return plan().model_copy(update={"trim_to_sec": to, "trim_fade_sec": fade})
+
+
+def test_a_draft_longer_than_the_chosen_length_is_cut_there_with_a_fade() -> None:
+    e = build_edl(draft(SEGS), trimmed(13.5), CLIPS, RULES, preview=False)
+    assert [(s.t_start, s.t_end) for s in e.shots] == [(0.0, 3.0), (3.0, 6.0), (6.0, 9.0),
+                                                       (9.0, 12.0), (12.0, 13.5)]  # fmt: skip
+    last = e.shots[-1]
+    assert (last.src_in, last.src_out) == (40.0, 41.5) and last.dissolve_out_sec == 0.0
+    assert e.content_end == 13.5 and e.duration == 15.5 and e.trim_fade_sec == 0.5
+    cta = [c for c in e.captions if c.kind == "cta"]
+    assert [(c.start, c.end) for c in cta] == [(12.0, 13.5)]  # the line ends with the picture
+
+
+def test_a_closing_fragment_shorter_than_the_fade_is_absorbed_by_the_shot_before() -> None:
+    e = build_edl(draft(SEGS), trimmed(12.2), CLIPS, RULES, preview=False)
+    assert [(s.source, s.t_start, s.t_end) for s in e.shots][-1] == ("c.mp4", 9.0, 12.2)
+    assert e.content_end == 12.2 and e.trim_fade_sec == 0.5
+    assert [c for c in e.captions if c.kind == "cta"] == []  # the CTA scene was cut away
+
+
+def test_a_draft_that_already_ends_at_the_chosen_length_is_untouched() -> None:
+    e = build_edl(draft(SEGS), trimmed(15.0), CLIPS, RULES, preview=False)
+    assert e.content_end == 15.0 and e.trim_fade_sec == 0.0 and len(e.shots) == 5
+
+
+def test_the_cut_never_leaves_the_last_shot_with_a_dissolve() -> None:
+    e = build_edl(draft(SEGS), trimmed(10.0).model_copy(update={}), CLIPS, RULES, preview=False)
+    assert e.shots[-1].dissolve_out_sec == 0.0 and e.shots[-1].t_end == 10.0
+
+
+def test_a_shot_cut_short_keeps_its_in_point_and_loses_its_pad() -> None:
+    # c.mp4 is 10 s long: uncut, 6.8 + 3 s + the dissolve runs 0.2 s past it and is padded.
+    whole = build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=False).shots[3]
+    assert whole.pad_sec > 0
+    e = build_edl(draft(SEGS), trimmed(11.0), CLIPS, RULES, preview=False)
+    c = e.shots[-1]
+    assert c.source == "c.mp4" and (c.src_in, c.src_out) == (6.8, 8.8) and c.pad_sec == 0.0

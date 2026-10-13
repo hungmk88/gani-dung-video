@@ -122,8 +122,9 @@ def test_track_outside_style_range_is_folded_and_beats_follow_the_folded_tempo()
 def test_no_music_uses_the_virtual_grid_of_the_style() -> None:
     o = opts(phong_cach="tvc_cat_nhanh", muc_dich="ban_hang", nhac="khong_nhac", nhac_file=None)
     p = compile_plan(o, RULES, music=None, available_tags=ALL_TAGS)
-    assert p.driver == "grid" and p.beat_sec == pytest.approx(1.3) and p.music is None
-    assert p.target_beats == 23
+    # The grid beat (1.3 s) is stretched so the 23 planned beats add up to exactly 30 s.
+    assert p.driver == "grid" and p.beat_sec == pytest.approx(30 / 23) and p.music is None
+    assert p.target_beats == 23 and p.planned_beats * p.beat_sec == pytest.approx(30.0)
     assert [(b.role, b.beats) for b in p.blocks] == [("hook", 2), ("nhu_cau", 3), ("san_pham", 12),
                                                      ("bang_chung", 3), ("cta", 3)]  # fmt: skip
     assert p.warnings == []  # X11 is already reported by preflight for TVC

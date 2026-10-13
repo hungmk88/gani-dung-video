@@ -131,8 +131,8 @@ def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> No
     [res] = build_render(folder, preview=True, rules=RULES)
     out = folder / "edit" / "render" / "A"
     assert res.video == out / "nhap_A_540p.mp4" and res.video.is_file()
-    # TVC without music: 12 beats on the 1.3 s grid = 15.6 s, plus the 2 s end card
-    assert res.duration_sec == pytest.approx(17.6)
+    # TVC without music: 12 beats, the 1.3 s grid stretched to 1.25 s = 15.0 s, plus the end card
+    assert res.duration_sec == pytest.approx(17.0)
     assert duration(res.video) == pytest.approx(res.duration_sec, abs=0.1)
     srt = (out / "phude.srt").read_text(encoding="utf-8")
     assert "Giòn ngon" in srt and "Nhắn tin đặt hàng" in srt
@@ -230,7 +230,7 @@ def test_cli_render_preview(folder: Path, capsys: pytest.CaptureFixture[str]) ->
     assert main(["render", str(folder), "--preview", "--ban", "A"]) == 0
     out = capsys.readouterr().out
     assert "QC: ĐẠT" in out
-    assert "nhap_A_540p.mp4" in out and "17.6s" in out
+    assert "nhap_A_540p.mp4" in out and "(17s)" in out
 
 
 def test_cli_qc_rechecks_an_existing_video(

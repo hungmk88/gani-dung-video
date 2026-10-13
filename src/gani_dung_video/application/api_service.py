@@ -73,7 +73,7 @@ from gani_dung_video.domain.api_models import (
 from gani_dung_video.domain.feasibility import footage_fit
 from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.pick import PickFile
-from gani_dung_video.domain.plan import Plan
+from gani_dung_video.domain.plan import Plan, planned_sec
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
 from gani_dung_video.infrastructure.config_files import ConfigError
@@ -340,7 +340,7 @@ def _read_structure(folder: Path, job: Job) -> StructureView | None:
         drafts = DraftsFile.model_validate_json((edit / "drafts.json").read_text("utf-8"))
         mine = next((d for d in drafts.drafts if d.draft == job.draft), None)
         titles = {t.chapter: t.title for t in mine.chapter_titles} if mine else {}
-    beat, total = plan.beat_sec, plan.planned_beats * plan.beat_sec
+    beat, total = plan.beat_sec, planned_sec(plan)
     first, last = plan.chapters[0], plan.chapters[-1]
     end_of_chapters = (last.start_beat + last.beats) * beat
     items = [StructureItemView(kind="opening", id=plan.blocks[0].role, start_sec=0.0,

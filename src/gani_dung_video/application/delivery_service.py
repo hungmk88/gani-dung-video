@@ -32,7 +32,7 @@ from gani_dung_video.domain.delivery_checks import (
 from gani_dung_video.domain.delivery_naming import NameParts, next_version_name, product_of, slug
 from gani_dung_video.domain.edl import Edl
 from gani_dung_video.domain.manifest import CostFacts, Manifest, ai_cost, sha256_of
-from gani_dung_video.domain.plan import Plan
+from gani_dung_video.domain.plan import Plan, natural_sec, planned_sec
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import Finding
 from gani_dung_video.infrastructure.config_files import GlossaryFile
@@ -70,10 +70,12 @@ def apply_e1(
     """Run E1 on the rendered `video` and fold its blocking findings into the QC report
     (`passed` turns False when any check failed)."""
     file_sec = probe_duration(video, float(rules["qc"]["probe_timeout_sec"]))
-    planned = plan.planned_beats * plan.beat_sec
+    planned = planned_sec(plan)
     chosen = int(plan.options["duration"])
     dur, f_dur = check_duration(file_sec, e, chosen, planned, rules)
-    gap, f_gap = check_duration_gap(chosen, planned, rules)
+    # The gap guard looks at the beats' own length: a cut to the chosen length must not hide a
+    # plan that the tempo stretched far past what the user asked for.
+    gap, f_gap = check_duration_gap(chosen, natural_sec(plan), rules)
     safe, f_safe = check_safe_zone(e, rules, rep.font_px, metrics.width)
     glyph, f_glyph = check_glyphs(e, _brand_texts(e, rules), metrics.has_glyph)
     claims, f_claims = check_onscreen_claims(e, glossary.banned_claims)

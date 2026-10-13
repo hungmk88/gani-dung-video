@@ -22,7 +22,7 @@ from gani_dung_video.domain.drafts import SnappedDraft
 from gani_dung_video.domain.edl import SpeechDraft
 from gani_dung_video.domain.manifest import Manifest, sha256_of
 from gani_dung_video.domain.options import VideoOptions
-from gani_dung_video.domain.plan import Plan, beats_of, compile_plan
+from gani_dung_video.domain.plan import MusicInfo, Plan, beats_of, compile_plan
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.speech_edit import SpeechCut
 from gani_dung_video.infrastructure.config_files import ConfigError, GlossaryFile, load_rules
@@ -63,14 +63,17 @@ def _scenes(allowed: list[int], total: int) -> list[int]:
 
 
 def make_project(root: Path, clips: Path, name: str, opts: dict[str, Any],
-                 texts: dict[str, str] | None = None) -> Path:  # fmt: skip
+                 texts: dict[str, str] | None = None,
+                 music: MusicInfo | None = None) -> Path:  # fmt: skip
     """A footage folder with plan.json and drafts.json for a beat-driven style."""
     d = root / name
     d.mkdir()
     for f in ("a.mp4", "b.mp4"):
         shutil.copy(clips / f, d / f)
     build_inventory(d, RULES)
-    plan: Plan = compile_plan(VideoOptions(**opts), RULES, music=None, available_tags=set())
+    plan: Plan = compile_plan(VideoOptions(**opts), RULES, music=music, available_tags=set())
+    if plan.music is not None and music is not None:  # the plan step resolves the file
+        plan = plan.model_copy(update={"music": plan.music.model_copy(update={"path": music.path})})
     (d / "edit" / "plan.json").write_text(plan.model_dump_json(), encoding="utf-8")
     refs = {"a_s0_0": SceneRef(clip="a.mp4", start=0, end=8, peak=2),
             "b_s0_0": SceneRef(clip="b.mp4", start=0, end=8, peak=4)}  # fmt: skip
@@ -142,9 +145,9 @@ def test_a_passing_render_gets_a_manifest_and_an_e3_copy(tmp_path: Path, clips: 
     assert m.created_at.endswith("+00:00") and m.resolution == "540x960" and m.draft == "A"
     assert [i.code for i in m.e1.items] == CHECKS and m.e1.passed
     assert_numbers(m)
-    # TVC 15 s: planned 12 beats × 1.3 s = 15.6 s, so the render is on the plan and 0.6 s over
+    # TVC 15 s: 12 beats, the 1.3 s grid is stretched to 1.25 s, so plan and render are both 15 s
     assert m.deviation_vs_plan == pytest.approx(0.0, abs=0.1)
-    assert m.deviation_vs_chosen == pytest.approx(0.6, abs=0.1)
+    assert m.deviation_vs_chosen == pytest.approx(0.0, abs=0.1)
     assert (m.e1.deviation_vs_chosen, m.e1.deviation_vs_plan) == (
         m.deviation_vs_chosen,
         m.deviation_vs_plan,
@@ -215,20 +218,21 @@ def _assert_blocked(folder: Path, code: str, res_notes: list[str]) -> None:
 
 def _ask_for_30_seconds(folder: Path) -> None:
     plan = json.loads((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
-    plan["options"]["duration"] = 30  # the user asked for 30 s, the grid made 15.6 s
+    plan["options"]["duration"] = 30  # the user asked for 30 s, the grid made 15.0 s
     (folder / "edit" / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
 
 
 def test_blocked_1a_a_plan_that_drifted_from_the_chosen_length(tmp_path: Path, clips: Path) -> None:
-    """The render matches its plan (E1-DUR passes) but the plan is 48% short of what was chosen."""
+    """The render matches its plan (E1-DUR passes) but the plan is 50% short of what was chosen."""
     folder = make_project(tmp_path, clips, "plan_troi", opts())
     _ask_for_30_seconds(folder)
-    [res] = build_render(folder, preview=True, rules=RULES)
+    by_plan = {**RULES, "qc": {**RULES["qc"], "duration_reference": "plan"}}  # the gap guard
+    [res] = build_render(folder, preview=True, rules=by_plan)
     assert not res.qc_passed
     _assert_blocked(folder, "E1-DUR-GAP", res.qc_notes)
     items = {i.code: i for i in manifest_of(folder).e1.items}
     assert items["E1-DUR"].passed and not items["E1-DUR-GAP"].passed
-    assert items["E1-DUR-GAP"].value == pytest.approx(-14.4, abs=0.1)
+    assert items["E1-DUR-GAP"].value == pytest.approx(-15.0, abs=0.1)
     assert items["E1-DUR-GAP"].limit == pytest.approx(3.0)
 
 
@@ -242,7 +246,7 @@ def test_blocked_1b_a_wrong_length_measured_against_the_chosen_length(
     assert not res.qc_passed
     _assert_blocked(folder, "E1-DUR", res.qc_notes)
     dur = next(i for i in manifest_of(folder).e1.items if i.code == "E1-DUR")
-    assert dur.value == pytest.approx(-14.4, abs=0.1) and dur.limit == 0.5
+    assert dur.value == pytest.approx(-15.0, abs=0.1) and dur.limit == 0.5
 
 
 def test_blocked_1c_a_speech_video_far_outside_the_voice_limit(tmp_path: Path, clips: Path) -> None:
@@ -326,3 +330,93 @@ def test_theo_mo_ta_passes_t2_when_the_encoder_drops_trailing_b_frames(
     [res] = build_render(folder, preview=True, rules=RULES, product="bo-vien", campaign="mau")
     assert res.qc_passed, res.qc_notes
     assert not [n for n in res.qc_notes if n.startswith("T2")]
+
+
+# ─────────────── the length is the chosen length (hướng B, 13/10/2026) ───────────────
+
+
+@pytest.mark.parametrize(
+    "style", ["ke_chuyen_nghe", "tvc_cat_nhanh", "review_mon_an", "sang_trong"]
+)
+def test_without_music_every_style_renders_exactly_the_chosen_length(
+    tmp_path: Path, clips: Path, style: str
+) -> None:
+    folder = make_project(tmp_path, clips, style, opts(style, "gioi_thieu_xuong"))
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.0)
+    [res] = build_render(folder, preview=True, rules=RULES)
+    m = manifest_of(folder)
+    assert m.deviation_vs_chosen == pytest.approx(0.0, abs=0.04)  # at most one frame
+    dur = next(i for i in m.e1.items if i.code == "E1-DUR")
+    assert dur.passed and res.qc_passed, res.qc_notes
+
+
+def _mean_volume_db(video: Path, start: float, length: float) -> float:
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-ss", str(start), "-t", str(length),
+                        "-i", str(video), "-vn", "-af", "volumedetect", "-f", "null", "-"],
+                       capture_output=True, text=True, check=True, timeout=120)  # fmt: skip
+    m = re.search(r"mean_volume: (-?[\d.]+) dB", r.stderr)
+    assert m, r.stderr[-400:]
+    return float(m.group(1))
+
+
+def _luma(video: Path, at: float) -> float:
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-ss", str(at), "-i", str(video),
+                        "-frames:v", "1", "-vf", "signalstats,metadata=print", "-an", "-f", "null",
+                        "-"], capture_output=True, text=True, check=True, timeout=120)  # fmt: skip
+    m = re.search(r"lavfi\.signalstats\.YAVG=([\d.]+)", r.stderr)
+    assert m, r.stderr[-400:]
+    return float(m.group(1))
+
+
+def _music_project(tmp_path: Path, clips: Path, name: str, style: str, bpm: float) -> Path:
+    song = tmp_path / f"{name}.wav"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=220:duration=40", str(song)],
+                   check=True, timeout=120)  # fmt: skip
+    info = MusicInfo(track=song.name, bpm=bpm, first_beat_sec=0.0, duration_sec=40.0,
+                     source="library", path=str(song))  # fmt: skip
+    with_music = {**opts(style, "gioi_thieu_xuong"), "nhac": "thu_vien", "nhac_file": song.name}
+    return make_project(tmp_path, clips, name, with_music, music=info)
+
+
+def test_with_music_a_plan_over_the_chosen_length_is_cut_there_and_fades_out(
+    tmp_path: Path, clips: Path
+) -> None:
+    # Kể chuyện nghề at 100 BPM plans 26 beats × 0.6 s = 15.6 s for a "15 s" video.
+    folder = _music_project(tmp_path, clips, "cat_nhe", "ke_chuyen_nghe", 100.0)
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.6) and plan.trim_to_sec == 15.0
+    [res] = build_render(folder, preview=True, rules=RULES)
+    m = manifest_of(folder)
+    assert res.qc_passed, res.qc_notes
+    assert m.deviation_vs_chosen == pytest.approx(0.0, abs=0.04)
+    video = folder / "edit" / "render" / "A" / "nhap_A_540p.mp4"
+    assert _mean_volume_db(video, 14.8, 0.2) < _mean_volume_db(video, 10.0, 0.2) - 10  # the tail
+    assert _luma(video, 14.95) < 0.5 * _luma(video, 10.0)  # fading to black
+
+
+def test_with_music_a_plan_that_fits_is_left_alone(tmp_path: Path, clips: Path) -> None:
+    folder = _music_project(tmp_path, clips, "vua_khit", "ke_chuyen_nghe", 80.0)
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.0) and plan.trim_to_sec is None
+    [res] = build_render(folder, preview=True, rules=RULES)
+    assert res.qc_passed, res.qc_notes
+    video = folder / "edit" / "render" / "A" / "nhap_A_540p.mp4"
+    assert abs(_mean_volume_db(video, 14.7, 0.2) - _mean_volume_db(video, 10.0, 0.2)) < 3  # no fade
+
+
+def test_a_cut_beyond_ten_percent_is_stopped_by_the_gap_guard_not_hidden_by_the_cut(
+    tmp_path: Path, clips: Path
+) -> None:
+    """Sang trọng at 100 BPM: every block needs one 7.2 s scene, so the plan is 21.6 s (+44%)."""
+    folder = _music_project(tmp_path, clips, "troi_xa", "sang_trong", 100.0)
+    plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
+    assert plan.trim_to_sec == 15.0 and any(w.startswith("W_DUR_GAP") for w in plan.warnings)
+    [res] = build_render(folder, preview=True, rules=RULES)
+    assert not res.qc_passed
+    _assert_blocked(folder, "E1-DUR-GAP", res.qc_notes)
+    items = {i.code: i for i in manifest_of(folder).e1.items}
+    assert items["E1-DUR"].passed  # the video itself is exactly 15 s long …
+    assert items["E1-DUR-GAP"].value == pytest.approx(6.6, abs=0.05)  # … the plan was not
+    assert "chọn bài có BPM hợp phong cách" in items["E1-DUR-GAP"].detail

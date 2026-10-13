@@ -90,7 +90,8 @@ def test_banned_list_is_the_agreed_phrase_list() -> None:
         "100%", "duy nhất", "số 1", "điều trị", "đặc trị", "chữa trị",
         "chữa bệnh", "trị bệnh", "phòng bệnh", "ngon nhất", "tốt nhất", "rẻ nhất",
         "chất lượng nhất", "sạch nhất", "uy tín nhất",
-        # Dev Package 03, T0 (decision 01/10/2026): flat list; 13/10/2026 NVH verify: removed "hàn the" and "không chất bảo quản".
+        # Dev Package 03, T0 (decision 01/10/2026): flat list, four more phrases.
+        # NVH verified the list on 13/10/2026: "hàn the" and "không chất bảo quản" are not on it.
         "thần dược", "minh long", "atala", "foco",
     }  # fmt: skip
     assert "trị" not in BANNED and "chữa" not in BANNED and "nhất" not in BANNED
