@@ -10,10 +10,28 @@ Mọi con số dưới đây lấy từ `config/rules.json` hoặc số đo th�
 
 | Cần có | Ghi chú |
 |---|---|
-| Python ≥ 3.11 | cài gói trong thư mục dự án: `pip install -e .` (thêm `".[ai]"` nếu máy chạy được nhận diện CLIP/torch) |
+| Python ≥ 3.11 | cách chạy mã của dự án: xem "Cách để Python thấy mã dự án" ngay dưới bảng |
 | ffmpeg + ffprobe trên `PATH` | thiếu thì dựng và kiểm kê đều báo lỗi có hướng dẫn |
 | Node.js | chỉ để build giao diện: `cd frontend && npm ci && npm run build:real` |
 | Tệp `.env` | chép `.env.example` thành `.env` rồi điền; **không dán khóa API vào chat hay vào code** |
+
+**Cách để Python thấy mã dự án.** Mọi lệnh `python -m gani_dung_video …` trong sổ tay này cần
+một trong hai cách sau. Chưa làm cách nào thì lệnh báo `No module named gani_dung_video`.
+
+| Cách | Lệnh | Khi nào dùng |
+|---|---|---|
+| **A. `PYTHONPATH=src` (khuyến nghị)** | cửa sổ lệnh (cmd): `set PYTHONPATH=src`<br>PowerShell: `$env:PYTHONPATH = "src"`<br>Git Bash: `export PYTHONPATH=src` | luôn đúng với thư mục đang đứng, an toàn khi có nhiều bản làm việc (worktree) song song |
+| **B. `pip install -e .`** | `pip install -e .` (thêm `".[ai]"` nếu máy chạy được nhận diện CLIP/torch) | chỉ khi máy chỉ có **một** bản mã duy nhất |
+
+- Chạy từ **thư mục gốc của dự án** (nơi có `src\` và `.env`); `PYTHONPATH=src` là đường dẫn
+  tương đối nên đứng sai thư mục sẽ không tìm thấy mã. Biến chỉ có hiệu lực trong cửa sổ lệnh
+  đó, mở cửa sổ mới thì đặt lại.
+- **Cảnh báo với cách B khi có nhiều worktree:** `pip install -e .` ghi cứng đường dẫn của **một**
+  thư mục vào môi trường Python. Các worktree khác chạy `python -m gani_dung_video` sẽ vẫn nạp mã
+  của thư mục đã cài, tức là chạy **nhầm mã** mà không có báo lỗi nào. Máy có nhiều worktree thì
+  dùng cách A, và nếu đã lỡ cài thì gỡ bằng `pip uninstall gani-dung-video`.
+- `scripts\chay-gani.bat` (biểu tượng "GANI Video") tự đặt `PYTHONPATH=src` và tự `cd` về thư mục
+  dự án, nên nhấp đúp biểu tượng không cần làm gì thêm.
 
 Các biến trong `.env` (xem `.env.example`):
 
