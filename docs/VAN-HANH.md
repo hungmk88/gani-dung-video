@@ -256,9 +256,12 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 - `duration_reference = "plan"` là **tạm**. Nguyên nhân là thuật toán cắt nhịp không hít đúng độ
   dài đã chọn (ra 15,6s hoặc 16,0s thay vì 15s). Hạn sửa thuật toán: **20/10/2026**; khi sửa xong
   chuyển mặc định về `"chosen"`.
-- Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
-  sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
-  trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).
+- Giao diện (web) chưa truyền `--san-pham` và `--chien-dich`: job tạo từ giao diện mang tên
+  sản phẩm `chung` và chiến dịch là tên thư mục footage.
+- Hàng đợi đã truyền `--san-pham` và `--chien-dich` (từ 06/10/2026): job đọc hai trường từ
+  `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
+  như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
+  báo vào manifest. Cờ CLI `--san-pham` / `--chien-dich` vẫn ghi đè được khi gõ `render` tay.
 
 ## 10. Xử lý sự cố nhanh
 
