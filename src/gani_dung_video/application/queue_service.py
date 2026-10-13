@@ -470,13 +470,16 @@ def approve_job(db: QueueDb, job_id: int, max_vnd: float, estimate_vnd: float, *
     job = db.get(job_id)
     if job is None:
         raise ConfigError(f"Không có job #{job_id}.")
-    limit = rules["queue"].get("daily_budget_vnd")
-    spent, reserved = db.spend_summary(stamp)
-    budget = BudgetState(limit=float(limit) if limit is not None else None,
-                         spent_24h=spent, reserved=reserved)  # fmt: skip
+    raw_limit = rules["queue"].get("daily_budget_vnd")
+    limit = float(raw_limit) if raw_limit is not None else None
+
+    def check(current: Job, spent: float, reserved: float) -> None:
+        # runs inside the transaction that writes the approval (see QueueDb.approve)
+        budget = BudgetState(limit=limit, spent_24h=spent, reserved=reserved)
+        validate_approval(current, max_vnd, estimate_vnd, stamp, budget)
+
     try:
-        validate_approval(job, max_vnd, estimate_vnd, stamp, budget)
-        db.approve(job_id, stamp, max_vnd)
+        db.approve(job_id, stamp, max_vnd, check=check)
     except (ApprovalError, QueueDbError) as e:
         raise ApprovalRefused(str(e)) from e
     approved = db.get(job_id)
