@@ -107,6 +107,14 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
   `music-cache.json` cạnh `queue.db`; `library.json` và thư mục nhạc không bao giờ bị ghi.
   `library.json` nhận thêm khóa tùy chọn `title` và `rights` (`thu_vien_noi_bo`,
   `mua_ban_quyen`, `royalty_free`); bản chương trình cũ từ chối khóa lạ nên cập nhật cùng lúc.
+- **Kiểm thư mục nhạc trước khi dùng** (chỉ đọc, không ghi gì):
+  `python -m gani_dung_video music-check [thư mục nhạc] [--chi-tiet] [--ca-180]`. Không truyền
+  thư mục thì lấy `GANI_DV_MUSIC_DIR`. In từng bài (BPM, nguồn `library` / `measured` /
+  `unknown`, độ dài) và, cho mỗi phong cách × độ dài, số bài **ok** (khít), **cắt** (cắt đuôi,
+  trong ±10%), **chặn** (bị chặn khi giao) và **lưới** (không đo được nhịp), kèm tên các bài dùng
+  được. Kết luận lấy từ chính bộ lập kế hoạch ở đúng BPM của bài, không tra bảng. Bài chưa có
+  trong `library.json` được đo ngay (vài giây mỗi bài); BPM `measured` có thể ra nửa hoặc gấp
+  đôi, nên nghe lại rồi khai báo vào `library.json`. Cũng báo bài khai báo mà không còn file.
 - Đổi phong cách, độ dài, quy tắc nhịp thì tạo lại bảng: `sweep_table` trong
   `domain/bpm_measure.py`; `tests/test_bpm_safety.py` quét lại bằng bộ lập kế hoạch và so với bảng.
   Bản sao cho giao diện nằm ở `frontend/src/data/bpmSafe.ts` (test của giao diện so với `rules.json`).
