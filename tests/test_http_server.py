@@ -37,8 +37,10 @@ from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
 from gani_dung_video.infrastructure.settings import Settings
 
 RULES = load_rules()
-ALLOWED = RULES["api"]["allowed_origins"]
 VITE = "http://localhost:5173"
+# The pure helpers take the list as an argument; the servers below get the same two origins
+# through GANI_DV_DEV_ORIGINS, the only way to trust the Vite dev server (see test_dev_origins).
+ALLOWED = [VITE, "http://127.0.0.1:5173"]
 VIDEO = b"0123456789" * 100  # 1000 bytes
 
 
@@ -172,7 +174,8 @@ def api(tmp_path: Path) -> Iterator[Api]:
     # Serving the UI has its own tests in test_static_serve.py.
     rules = {**RULES, "api": {**RULES["api"], "frontend_dist": None}}
     ctx = ApiContext(QueueDb(tmp_path / "q" / "queue.db"), rules,
-                     Settings(gani_dv_allowed_roots=str(root)))  # fmt: skip
+                     Settings(gani_dv_allowed_roots=str(root),
+                              gani_dv_dev_origins=",".join(ALLOWED)))  # fmt: skip
     server = make_server(ctx, port=0)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()

@@ -36,6 +36,7 @@ from gani_dung_video.domain.api_models import (
     PreflightRequest,
 )
 from gani_dung_video.domain.static_paths import etag_matches, is_api_path, safe_segments
+from gani_dung_video.infrastructure.settings import dev_origins
 from gani_dung_video.infrastructure.static_files import (
     StaticFile,
     dist_root,
@@ -188,7 +189,7 @@ def make_server(ctx: ApiContext, host: str | None = None, port: int | None = Non
 
 
 def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPRequestHandler]:
-    allowed = list(cfg["allowed_origins"])
+    allowed = [*cfg["allowed_origins"], *dev_origins(ctx.settings)]
     max_body = int(cfg["max_body_bytes"])
     chunk = int(cfg["media_chunk_bytes"])
     timeout_sec = float(cfg["socket_timeout_sec"])
