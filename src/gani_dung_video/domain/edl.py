@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from gani_dung_video.domain.beats import SnappedSegment
 from gani_dung_video.domain.drafts import SnappedDraft
 from gani_dung_video.domain.finish import FinishError, denoise_filter, grade_filter
 from gani_dung_video.domain.footage import Clip
@@ -83,6 +84,7 @@ class Edl(BaseModel):
     denoise: str | None = None  # T-A: afftdn for the camera-sound layer; None = off
     grade: str | None = None  # T-D: eq/colorbalance for the picture; None = off
     emphasis: list[str] = []  # T-C: approved keywords to highlight in captions (set by the gate)
+    trim_fade_sec: float = 0.0  # music mode cut at the chosen length: fade the last seconds
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:
@@ -126,6 +128,30 @@ class SpeechDraft(BaseModel):
 
 def _frame(t: float, fps: int) -> float:
     return round(t * fps) / fps
+
+
+def _trim_draft(draft: SnappedDraft, to_sec: float, fade_sec: float, fps: int) -> SnappedDraft:
+    """Cut a draft that runs past `to_sec` (music mode, plan.trim_to_sec).
+
+    Cuts after `to_sec` are dropped and the cut that crosses it is shortened (the source keeps its
+    in point). A closing fragment shorter than the fade could not be seen, so it is absorbed by
+    the shot before it.
+    """
+    half = 0.5 / fps
+    kept: list[SnappedSegment] = []
+    for seg in draft.segments:
+        if seg.t_start >= to_sec - half:
+            break
+        kept.append(seg)
+    if not kept:
+        return draft
+    if len(kept) > 1 and to_sec - kept[-1].t_start < fade_sec:
+        kept.pop()
+    last = kept[-1]
+    kept[-1] = last.model_copy(
+        update={"t_end": to_sec, "src_out": last.src_in + to_sec - last.t_start}
+    )
+    return draft.model_copy(update={"segments": kept})
 
 
 def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int,
@@ -219,6 +245,11 @@ def build_edl(
     fps = int(r["fps"])
     size = r["preview"] if preview else r["final"]
     group_of = {b.role: b.chapter for b in plan.blocks if b.chapter is not None}
+    to = plan.trim_to_sec
+    if to is not None and draft.segments and draft.segments[-1].t_end > to + 0.5 / fps:
+        draft = _trim_draft(draft, to, plan.trim_fade_sec, fps)
+    else:
+        to = None
     shots = _shots(draft, style, clips, fps, group_of)
     content_end = shots[-1].t_end if shots else 0.0
     end_card = float(r["end_card_sec"])
@@ -235,6 +266,7 @@ def build_edl(
         true_peak_db=float(r["true_peak_db"]),
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
         captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
+        trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
     )  # fmt: skip
 
 

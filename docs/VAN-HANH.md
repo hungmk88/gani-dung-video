@@ -226,12 +226,24 @@ Sau mỗi lần dựng, ngoài T1–T8 còn có **E1**: tám mục pass/fail kè
 | `E1-GLYPH` | mọi ký tự có glyph trong font (dấu tiếng Việt không thành ô trống) | 0 ký tự thiếu |
 | `C1` | không cụm cấm trên màn hình (cổng C1 trước ffmpeg vẫn chặn trước khi dựng) | `glossary.json` → `banned_claims` |
 
-**Độ dài:** cảnh cắt bám nhịp nên độ dài kế hoạch có thể khác độ dài đã chọn (video 15 giây ra
-15,0s Kể chuyện nghề, 15,6s TVC cắt nhanh, 16,0s Review và Sang trọng).
+**Độ dài:** video ra **đúng độ dài đã chọn** (15/30/45/60/180 giây; chưa tính khung kết). Quy tắc
+chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi độ dài phách.
 
-- Video dựng theo nhịp: `E1-DUR` đo **so với độ dài kế hoạch** (`duration_reference` = `"plan"`),
-  sai số ±0,5s (≤ 60 giây) hoặc ±1s (180 giây). Kèm lỗ chặn `E1-DUR-GAP`: kế hoạch không được lệch
-  độ dài đã chọn quá ±10%, nên kế hoạch trôi xa ý định khách vẫn bị chặn.
+- **Không nhạc (lưới ảo):** sau khi lập kế hoạch, 1 phách = độ dài chọn ÷ số phách đã lập. Video
+  15 giây: Kể chuyện nghề 0,75s (giữ), TVC 1,3 → 1,25s, Review 1,0 → 0,9375s, Sang trọng
+  0,667 → 0,625s. Độ lệch tối đa 6,7% ở 15 giây, từ 30 giây trở lên không quá 2,2%.
+  Kế hoạch ghi dòng "Tự điều chỉnh Co giãn lưới ảo…".
+- **Có nhạc:** nhịp bài cố định nên không co giãn được. `qc.duration_trim_threshold_sec` (0,5s) là
+  ngưỡng:
+  - kế hoạch **dài hơn** độ dài chọn quá ngưỡng: cắt ở đúng độ dài chọn, hình và tiếng mờ dần
+    theo `qc.duration_trim_policy` (`fade_0.5s` = 0,5 giây cuối) rồi tới khung kết. Cảnh cuối bị
+    cắt ngắn; đoạn còn lại ngắn hơn thời gian mờ dần thì nhập vào cảnh trước;
+  - kế hoạch **ngắn hơn** quá ngưỡng: lập lại với nhiều phách hơn, rồi áp dụng quy tắc trên;
+  - trong ngưỡng: giữ nguyên.
+  Tắt cắt bằng `duration_trim_policy = "none"` (lưới ảo vẫn co giãn).
+- Kiểm tra: `E1-DUR` đo **so với độ dài đã chọn** (`duration_reference` = `"chosen"`), sai số
+  ±0,5s (≤ 60 giây) hoặc ±1s (180 giây). `E1-DUR-GAP` vẫn giữ: kế hoạch không được lệch độ dài
+  đã chọn quá ±10%. Khoảng mờ dần trước khung kết không bị tính là khung đen (T4).
 - Chế độ lời: độ dài chạy theo lời nói nên dung sai rộng hơn nhưng có biên cứng, đo so với độ dài
   đã chọn (`duration_tolerance_voice_sec`, lấy giá trị lớn hơn): ≤ 60 giây ±25% hoặc ±7s
   (30 giây: ±7,5s); 180 giây ±20% hoặc ±20s (±36s). Trong biên: cảnh báo, ghi manifest, cho qua.
@@ -253,9 +265,11 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 
 ## 9b. Hạn chế đã biết
 
-- `duration_reference = "plan"` là **tạm**. Nguyên nhân là thuật toán cắt nhịp không hít đúng độ
-  dài đã chọn (ra 15,6s hoặc 16,0s thay vì 15s). Hạn sửa thuật toán: **20/10/2026**; khi sửa xong
-  chuyển mặc định về `"chosen"`.
+- **Có nhạc, cắt đuôi:** khi kế hoạch dài hơn độ dài chọn quá 0,5s, phần cuối bị cắt thuộc khối
+  cuối của video (thường là cảnh kêu gọi). Đo trên 620 tổ hợp phong cách × độ dài × BPM 55–145:
+  36% bị cắt, trung vị 0,85s, tối đa 6,6s (Sang trọng ở 100 BPM, bài 15 giây); 15 trường hợp mất
+  hơn nửa cảnh kêu gọi, không trường hợp nào mất hết. Muốn tránh thì chọn bài có BPM hợp
+  phong cách (`bpm_range`) hoặc để người xem lại dòng "Tự điều chỉnh" trong kế hoạch.
 - Hàng đợi và giao diện chưa truyền `--san-pham` và `--chien-dich`: bản giao từ hàng đợi mang tên
   sản phẩm `chung` và chiến dịch là tên thư mục footage. Chỉ lệnh `render` gõ tay đặt được hai
   trường này, đến khi `yeu-cau.md` và hàng đợi truyền chúng (làm trước khi T-F go-live).

@@ -65,6 +65,20 @@ def test_cuts_are_concatenated_and_end_card_appended() -> None:
     assert "fps=30" in g and "scale=540:960:force_original_aspect_ratio=increase" in g
 
 
+def test_a_cut_to_length_fades_picture_and_sound_over_the_last_seconds() -> None:
+    cut = edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 4)]).model_copy(update={"trim_fade_sec": 0.5})
+    g = build_graph(cut, has_audio=[True, True])
+    assert "fade=t=out:st=3.5:d=0.5[vfade]" in g and "[vfade][vend]concat" in g
+    mix = g.split("amix=")[1].split("[aout]")[0]
+    assert "afade=t=out:st=3.5:d=0.5," in mix and mix.index("afade") < mix.index("loudnorm")
+
+
+def test_without_a_cut_there_is_no_fade() -> None:
+    g = build_graph(edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 4)]), has_audio=[True, True])
+    assert "fade=t=out" not in g.replace("afade=t=out", "")
+    assert "[vfade]" not in g and "afade=t=out:st=3.5" not in g
+
+
 def test_dissolve_overlaps_at_the_cut_point() -> None:
     g = build_graph(edl([shot("a.mp4", 0, 1, d=0.4), shot("b.mp4", 1, 2)]), has_audio=[True, True])
     assert "xfade=transition=fade:duration=0.4:offset=1" in g
