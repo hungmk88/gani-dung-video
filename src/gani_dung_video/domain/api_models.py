@@ -309,6 +309,28 @@ class PipelineView(BaseModel):
     jobs: list[JobView]
 
 
+class MusicTrackView(BaseModel):
+    """One track of the machine's music folder. `file` is a name inside that folder, never an
+    absolute path; `path` is the same name relative to it (the folder is not walked)."""
+
+    file: str
+    path: str
+    title: str
+    bpm: float | None
+    # library = declared in library.json (checked by a person); measured = by the machine;
+    # unknown = no clear beat; pending = the background measurement has not reached it yet
+    bpm_source: Literal["library", "measured", "unknown", "pending"]
+    first_beat_sec: float | None
+    duration_sec: float | None
+    rights: Literal["thu_vien_noi_bo", "mua_ban_quyen", "royalty_free"]
+
+
+class MusicListView(BaseModel):
+    configured: bool  # GANI_DV_MUSIC_DIR is set and is a folder
+    pending: int  # tracks the background measurement still has to reach
+    tracks: list[MusicTrackView]
+
+
 class BudgetView(BaseModel):
     limit_vnd: float | None  # None: no daily limit configured
     spent_24h_vnd: float

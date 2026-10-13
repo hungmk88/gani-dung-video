@@ -93,6 +93,42 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | `POST /api/jobs/{id}/cancel` | Chờ thì hủy ngay; đang chạy thì gửi cờ dừng | `JobView` |
 | `POST /api/jobs/{id}/retry` | Xếp lại job lỗi / đã hủy / QC không đạt | `JobView` |
 | `GET\|HEAD /media/{id}/{video\|cover\|srt}` | Thành phẩm của job đã xong, hỗ trợ HTTP **Range** | tệp |
+| `GET /api/music` | Nhạc trong `GANI_DV_MUSIC_DIR` kèm BPM, độ dài, nguồn BPM (mục 3b) | `MusicListView` |
+| `GET\|HEAD /media/music/{tên file}` | Nghe thử một bài nhạc, hỗ trợ HTTP **Range** | tệp âm thanh |
+
+### 3b. Nhạc của máy dựng (`GET /api/music`)
+
+```json
+{
+  "configured": true,
+  "pending": 1,
+  "tracks": [
+    {"file": "am_ap_92.mp3", "path": "am_ap_92.mp3", "title": "Ấm áp", "bpm": 92.0,
+     "bpm_source": "library", "first_beat_sec": 0.35, "duration_sec": 187.4,
+     "rights": "thu_vien_noi_bo"},
+    {"file": "moi.wav", "path": "moi.wav", "title": "moi", "bpm": null,
+     "bpm_source": "pending", "first_beat_sec": null, "duration_sec": null,
+     "rights": "thu_vien_noi_bo"}
+  ]
+}
+```
+
+- `file` là **tên file** (không đường dẫn tuyệt đối); `path` là tên đó so với thư mục nhạc, vì
+  thư mục **không** được duyệt đệ quy. Tối đa 500 bài; bỏ file ẩn và file sai đuôi
+  (`rules.music_analysis.extensions`).
+- `bpm_source`: `library` (khai báo trong `library.json`, người đã duyệt), `measured` (máy đo),
+  `unknown` (không có nhịp rõ: vẫn chọn được, dựng bằng lưới ảo), `pending` (nền chưa đo tới).
+- Danh sách trả về **ngay**. Bài chưa có trong `library.json` được đo bởi **một luồng nền, lần lượt
+  từng bài**; kết quả lưu ở `music-cache.json` cạnh `queue.db`, khóa theo (kích thước, mtime), nên
+  file đổi nội dung thì đo lại. Giao diện hỏi lại vài giây một lần khi `pending > 0`.
+- `title` và `rights` lấy từ `library.json` (khóa tùy chọn; mặc định tên file không đuôi và
+  `thu_vien_noi_bo`). `library.json` cũ không có hai khóa này vẫn đọc được, nhưng bản chương
+  trình cũ **từ chối** file có khóa mới: cập nhật máy dựng cùng lúc.
+- Chưa đặt `GANI_DV_MUSIC_DIR` hoặc thư mục không có: `{"configured": false, "pending": 0,
+  "tracks": []}` (không phải lỗi). `library.json` hỏng: `422` `music_library_invalid`, tiếng Việt.
+- `GET /media/music/{tên file}`: chỉ file âm thanh nằm **trực tiếp** trong thư mục nhạc. Tên có
+  dấu phân cách, bắt đầu bằng `.`, sai đuôi, không có, hoặc là liên kết ra ngoài thư mục đều là
+  `404` như nhau. Cùng quy tắc Host / Origin với các route khác.
 
 `POST /api/jobs` nhận:
 

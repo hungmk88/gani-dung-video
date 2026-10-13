@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -43,13 +43,23 @@ class TempoResult(BaseModel):
     confidence: float
 
 
+Rights = Literal["thu_vien_noi_bo", "mua_ban_quyen", "royalty_free"]
+
+
 class LibraryTrack(BaseModel):
-    """A checked track: BPM and first-beat offset were verified by a person."""
+    """A checked track: BPM and first-beat offset were verified by a person.
+
+    `title` and `rights` are optional (13/10/2026 ticket): an older library.json without them
+    still loads, but an older program refuses a file that has them (extra="forbid"), so a
+    machine that gets the new keys needs the new program too.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     bpm: _PositiveNumber
     first_beat_sec: _NonNegativeNumber
+    title: Annotated[str, Field(min_length=1, max_length=120, strict=True)] | None = None
+    rights: Rights | None = None
 
 
 # ─────────────── tempo estimation ───────────────
@@ -207,6 +217,15 @@ def _duration(path: Path, timeout_sec: float) -> float:
         return float(probe(path, timeout_sec)["format"]["duration"])
     except (ProbeError, FfprobeMissingError, KeyError, ValueError) as e:
         raise MusicError(f"Không đọc được độ dài của {path.name}: {e}") from e
+
+
+def track_duration(path: Path, timeout_sec: float) -> float:
+    """Length of the audio file in seconds (ffprobe).
+
+    Raises:
+        MusicError: not readable audio.
+    """
+    return _duration(path, timeout_sec)
 
 
 def track_info(

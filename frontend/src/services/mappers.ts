@@ -10,6 +10,7 @@ import type {
   ApiHealth,
   ApiJob,
   ApiJobDetail,
+  ApiMusicList,
   ApiPipeline,
   ApiPreflightIssue,
   ApiPreflightResult,
@@ -19,7 +20,6 @@ import type {
   ApiVerify,
   ApiVerifyCheck,
 } from '../types/api.ts';
-import { MUSIC_LIBRARY } from '../data/mockMusic.ts';
 import {
   DURATION_IDS,
   MUSIC_MODE_IDS,
@@ -34,6 +34,7 @@ import type {
   FootageInfo,
   HealthInfo,
   JobStatus,
+  MusicListInfo,
   PipelineJobInfo,
   PipelineStep,
   PipelineStepId,
@@ -535,11 +536,23 @@ export function pipelineBody(
 
 /* ───────────────────────── preflight ───────────────────────── */
 
-/** BPM of the chosen library track, when the UI knows it (the plan step measures it for real). */
-function trackBpm(o: VideoOptions): number | null {
-  if (!o.nhac_file) return null;
-  const name = basename(o.nhac_file);
-  return MUSIC_LIBRARY.find((t) => basename(t.file) === name)?.bpm ?? null;
+/** The machine's music folder as the picker shows it (GET /api/music). */
+export function toMusicList(r: ApiMusicList): MusicListInfo {
+  return {
+    configured: r.configured,
+    pending: r.pending,
+    tracks: r.tracks.map((t) => ({
+      id: t.file,
+      title: t.title,
+      bpm: t.bpm,
+      duration_sec: t.duration_sec,
+      genre: '',
+      rights: t.rights,
+      file: t.file,
+      audio_url: `/media/music/${encodeURIComponent(t.file)}`,
+      bpm_source: t.bpm_source,
+    })),
+  };
 }
 
 /** Facts the UI only knows to ask the preflight; the plan step measures them itself. */
@@ -563,7 +576,7 @@ export function preflightBody(o: VideoOptions): { options: Record<string, unknow
       khuyen_mai: o.muc_dich === 'khuyen_mai' ? (o.khuyen_mai ?? null) : null,
       ghi_chu: o.ghi_chu.trim() === '' ? null : o.ghi_chu,
       // Only sent when known / chosen: the server warns about a track its BPM cannot build with.
-      ...(trackBpm(o) !== null ? { nhac_bpm: trackBpm(o) } : {}),
+      ...(typeof o.nhac_bpm === 'number' ? { nhac_bpm: o.nhac_bpm } : {}),
       ...(o.bpm_override === true ? { bpm_override: true } : {}),
     },
   };

@@ -6,6 +6,7 @@
 
 import type {
   HealthInfo,
+  MusicListInfo,
   PreflightResult,
   ProjectInfo,
   RenderJob,
@@ -23,6 +24,8 @@ export interface StudioApi {
   health(): Promise<HealthInfo>;
   /** Projects the server can render; the mock has none (it has a footage dropzone). */
   listProjects(): Promise<ProjectInfo[]>;
+  /** Real: GET /api/music (the machine's music folder). Mock: the 4 built-in test tracks. */
+  listMusic(): Promise<MusicListInfo>;
   /** Real: POST /api/preflight (Python is the single source of truth). Mock: local copy. */
   preflight(options: VideoOptions, footage: FootageFile[]): Promise<PreflightResult>;
   submitJob(req: SubmitRequest): Promise<RenderJob>;

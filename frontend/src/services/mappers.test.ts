@@ -9,6 +9,7 @@ import {
   optionsFromApi,
   pipelineBody,
   preflightBody,
+  toMusicList,
   toPreflightResult,
   toQaReport,
   toRenderJob,
@@ -190,21 +191,44 @@ test('basename handles both separators', () => {
 });
 
 test('preflightBody sends the library track BPM and the override only when they are known', () => {
-  const known = preflightBody({ ...OPTS, nhac_file: '/audio/72bpm-sang-trong.m4a', bpm_override: true });
+  const known = preflightBody({ ...OPTS, nhac_bpm: 72, bpm_override: true });
   assert.equal(known.options.nhac_bpm, 72);
   assert.equal(known.options.bpm_override, true);
-  const plain = preflightBody({ ...OPTS, nhac_file: '/audio/unknown.m4a' });
+  const plain = preflightBody({ ...OPTS });
   assert.equal('nhac_bpm' in plain.options, false);
   assert.equal('bpm_override' in plain.options, false);
-  assert.equal('nhac_bpm' in preflightBody({ ...OPTS, nhac_file: null }).options, false);
+  assert.equal('nhac_bpm' in preflightBody({ ...OPTS, nhac_bpm: null }).options, false);
 });
 
 test('the pipeline options keep the override but not the UI-known track BPM', () => {
   const body = pipelineBody(
-    { ...OPTS, nhac_file: '/audio/72bpm-sang-trong.m4a', bpm_override: true },
+    { ...OPTS, nhac_bpm: 72, bpm_override: true },
     { projectId: 'p1', draft: 'all', final: false, noAsr: false, forceAnalyze: false },
   );
   const options = body.options as Record<string, unknown>;
   assert.equal(options.bpm_override, true);
   assert.equal('nhac_bpm' in options, false); // the plan step measures the real BPM itself
+});
+
+test('toMusicList keeps the file name as identity and builds the preview URL from it', () => {
+  const list = toMusicList({
+    configured: true,
+    pending: 1,
+    tracks: [
+      {
+        file: 'Nhạc nền 01.mp3', path: 'Nhạc nền 01.mp3', title: 'Nhạc nền', bpm: 92,
+        bpm_source: 'library', first_beat_sec: 0.4, duration_sec: 187.4, rights: 'royalty_free',
+      },
+      {
+        file: 'moi.wav', path: 'moi.wav', title: 'moi', bpm: null, bpm_source: 'pending',
+        first_beat_sec: null, duration_sec: null, rights: 'thu_vien_noi_bo',
+      },
+    ],
+  });
+  assert.equal(list.configured, true);
+  assert.equal(list.pending, 1);
+  assert.equal(list.tracks[0].id, 'Nhạc nền 01.mp3');
+  assert.equal(list.tracks[0].audio_url, '/media/music/Nh%E1%BA%A1c%20n%E1%BB%81n%2001.mp3');
+  assert.equal(list.tracks[1].bpm, null);
+  assert.equal(list.tracks[1].bpm_source, 'pending');
 });

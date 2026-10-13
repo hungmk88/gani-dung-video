@@ -1,25 +1,27 @@
 import { TriangleAlert } from 'lucide-react';
 import { BPM_SAFE } from '../../data/bpmSafe';
-import { MUSIC_LIBRARY } from '../../data/mockMusic';
 import { RULES } from '../../data/rules';
 import { bpmNotice } from '../../lib/bpmSafety';
-import type { VideoOptions } from '../../types/rules';
+import type { MusicTrack, VideoOptions } from '../../types/rules';
 
 /**
  * Yellow box under the track list when the chosen track's BPM cannot build the chosen style and
  * length (ticket 13/10/2026). Never blocks: "Vẫn dùng bài này" goes on and records
  * `bpm_override`, and the render still stops at E1-DUR-GAP if the plan is more than ±10% off.
- * The track BPM comes from the track list the picker shows; the server measures the real one.
+ * The track BPM comes from the track list the picker shows (the machine's own list in real
+ * mode); a track whose BPM is not known yet says nothing. The server judges the real plan.
  */
 export function BpmWarning({
   options,
   onChange,
+  tracks,
 }: {
   options: VideoOptions;
   onChange: (patch: Partial<VideoOptions>) => void;
+  tracks: MusicTrack[];
 }) {
-  const track = MUSIC_LIBRARY.find((t) => t.file === options.nhac_file);
-  if (!track || !options.phong_cach || !options.do_dai_giay) return null;
+  const track = tracks.find((t) => t.file === options.nhac_file);
+  if (!track || track.bpm === null || !options.phong_cach || !options.do_dai_giay) return null;
   if (options.nhac !== 'thu_vien' && options.nhac !== 'ai_tu_chon') return null;
   const notice = bpmNotice(
     BPM_SAFE,

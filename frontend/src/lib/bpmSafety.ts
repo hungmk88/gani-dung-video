@@ -67,6 +67,11 @@ export function checkBpmSafe(t: BpmSafeTable, style: string, duration: number, b
   return { level: 'OK', buildable };
 }
 
+/** A BPM as a person reads it: at most one decimal ('88.01' → '88', '92.35' → '92.4'). */
+export function formatBpm(bpm: number): string {
+  return String(Math.round(bpm * 10) / 10);
+}
+
 export interface BpmNotice {
   level: 'WARNING' | 'BLOCKING';
   headline: string;
@@ -87,7 +92,7 @@ export function bpmNotice(
   if (chk.level === 'BLOCKING') {
     return {
       level: 'BLOCKING',
-      headline: `Bài này ở BPM ${bpm}`,
+      headline: `Bài này ở BPM ${formatBpm(bpm)}`,
       body:
         `${where}, video sẽ không dựng được: kế hoạch lệch quá ±${t.gapPct}% độ dài đã chọn và bị ` +
         `chặn khi giao. BPM dựng được: ${formatRanges(chk.buildable)}. Chọn bài khác, hoặc đổi độ dài video.`,
@@ -95,7 +100,7 @@ export function bpmNotice(
   }
   return {
     level: 'WARNING',
-    headline: `Bài này ở BPM ${bpm}`,
+    headline: `Bài này ở BPM ${formatBpm(bpm)}`,
     body:
       `${where}, phần cuối video sẽ bị cắt bớt cho đúng độ dài (trong ±${t.gapPct}%). ` +
       'Muốn không cắt, chọn bài có BPM nằm ngoài các đoạn cắt đuôi.',

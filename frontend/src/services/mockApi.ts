@@ -10,6 +10,7 @@
  * realistic reference sample since this prototype has no ffmpeg/ebur128 to measure with.
  */
 
+import { MUSIC_LIBRARY } from '../data/mockMusic';
 import { RULES } from '../data/rules';
 import { validateMax } from '../lib/approval';
 import { runPreflight } from '../lib/preflight';
@@ -217,6 +218,10 @@ export const mockApi: StudioApi = {
       longVideo: true,
       budget: { limitVnd: null, spent24hVnd: 0, reservedVnd: 0 },
     };
+  },
+
+  async listMusic() {
+    return { configured: true, pending: 0, tracks: MUSIC_LIBRARY };
   },
 
   async listProjects() {

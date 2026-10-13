@@ -10,6 +10,7 @@ import type {
   ApiHealth,
   ApiJob,
   ApiJobDetail,
+  ApiMusicList,
   ApiPipeline,
   ApiPreflightResult,
   ApiProject,
@@ -22,6 +23,7 @@ import {
   parsePipelineCardId,
   pipelineBody,
   preflightBody,
+  toMusicList,
   toHealthInfo,
   toPipelineCard,
   toPreflightResult,
@@ -80,6 +82,10 @@ export const realApi: StudioApi = {
 
   async listProjects() {
     return (await requestJson<ApiProject[]>('/api/projects')).map(toProjectInfo);
+  },
+
+  async listMusic() {
+    return toMusicList(await requestJson<ApiMusicList>('/api/music'));
   },
 
   async preflight(options: VideoOptions) {
