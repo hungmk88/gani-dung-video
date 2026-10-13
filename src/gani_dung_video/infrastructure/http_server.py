@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Literal, cast
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -63,6 +63,8 @@ _ROUTES: list[tuple[re.Pattern[str], tuple[str, ...], str]] = [
         (r"^/api/pipelines$", ("POST",), "pipelines"),
         (rf"^/api/pipelines/{_ID}$", ("GET",), "pipeline"),
         (r"^/api/preflight$", ("POST",), "preflight"),
+        (r"^/api/music$", ("GET",), "music"),
+        (r"^/media/music/([^/]+)$", ("GET",), "music_media"),
         (rf"^/media/{_ID}/([a-z]{{1,10}})$", ("GET",), "media"),
     ]
 ]
@@ -468,6 +470,14 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
             except ValidationError as e:
                 raise _HttpError(400, "bad_request", _validation_text(e)) from e
             self._send_json(200, api_service.preflight(ctx, req))
+
+        def _r_music(self, query: Mapping[str, list[str]]) -> None:
+            self._send_json(200, api_service.list_music(ctx))
+
+        def _r_music_media(self, query: Mapping[str, list[str]], name: str) -> None:
+            media = api_service.resolve_music(ctx, unquote(name))
+            headers = [("Content-Type", media.content_type), ("Content-Disposition", "inline")]
+            self._send_file(media.path, media.size, headers)
 
         def _r_media(self, query: Mapping[str, list[str]], job_id: str, kind: str) -> None:
             media = api_service.resolve_media(ctx, int(job_id), kind)

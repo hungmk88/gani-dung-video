@@ -61,6 +61,12 @@ test('the notice names the track, the style, the length and the way out', () => 
   assert.match(n.body, /Chọn bài khác/);
 });
 
+test('a measured BPM is shown with at most one decimal', () => {
+  const n = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 100.04);
+  assert.ok(n);
+  assert.equal(n.headline, 'Bài này ở BPM 100');
+});
+
 test('a cut-only track gets the lighter notice and a fitting track none', () => {
   const cut = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 88);
   assert.ok(cut);

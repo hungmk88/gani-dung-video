@@ -213,3 +213,21 @@ export interface ApiPipeline {
   needs_approval: boolean;
   jobs: ApiJob[];
 }
+
+export interface ApiMusicTrack {
+  file: string;
+  /** Relative to the music folder (which is not walked): the same name as `file`. */
+  path: string;
+  title: string;
+  bpm: number | null;
+  bpm_source: 'library' | 'measured' | 'unknown' | 'pending';
+  first_beat_sec: number | null;
+  duration_sec: number | null;
+  rights: 'thu_vien_noi_bo' | 'mua_ban_quyen' | 'royalty_free';
+}
+
+export interface ApiMusicList {
+  configured: boolean;
+  pending: number;
+  tracks: ApiMusicTrack[];
+}

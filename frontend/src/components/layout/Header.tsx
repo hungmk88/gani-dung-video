@@ -1,7 +1,8 @@
 import { Cpu, Database, KeyRound, Music2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { MUSIC_LIBRARY } from '../../data/mockMusic';
+import { musicBadge } from '../../lib/music';
 import { api } from '../../services/api';
+import { useMusicTracks } from '../wizard/useMusicTracks';
 import type { HealthInfo } from '../../types/rules';
 
 function Badge({
@@ -67,6 +68,8 @@ function queueBadge(health: HealthInfo | null): { value: string; tone: 'emerald'
 export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabId) => void }) {
   const health = useHealth();
   const queue = queueBadge(health);
+  const { list } = useMusicTracks(true);
+  const music = musicBadge(api.mode, list);
   return (
     <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6">
@@ -93,8 +96,8 @@ export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabI
             <Badge
               icon={Music2}
               label="Thư viện nhạc"
-              value={`${MUSIC_LIBRARY.length}/24 bài (demo)`}
-              tone="amber"
+              value={music.value}
+              tone={music.tone}
             />
             <Badge icon={Cpu} label="Thiết bị CLIP/thẩm mỹ" value="auto: MPS (Mac) / CPU int8 (Dell)" />
           </div>

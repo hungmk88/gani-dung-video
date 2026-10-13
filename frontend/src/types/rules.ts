@@ -98,14 +98,32 @@ export interface RulesBundle {
 /** Pacing mode is a UI-facing grouping of `driver` used by the brief (LỜI/NHẠC/LƯỚI ẢO). */
 export type PacingMode = 'loi' | 'nhac' | 'luoi_ao';
 
+/** library = declared in library.json by a person; measured = by the machine; unknown = no
+ *  clear beat; pending = the background measurement has not reached it yet. */
+export type MusicBpmSource = 'library' | 'measured' | 'unknown' | 'pending';
+
 export interface MusicTrack {
   id: string;
   title: string;
-  bpm: number;
-  duration_sec: number;
+  /** null while the BPM is not known (pending) or could not be measured (unknown). */
+  bpm: number | null;
+  duration_sec: number | null;
   genre: string;
   rights: 'thu_vien_noi_bo' | 'mua_ban_quyen' | 'royalty_free';
+  /** The name the plan step finds the track by (sent as `nhac_file`). */
   file: string;
+  /** Where the preview plays from; the mock's `file` is already a URL. */
+  audio_url?: string;
+  /** Absent for the in-browser mock tracks. */
+  bpm_source?: MusicBpmSource;
+}
+
+export interface MusicListInfo {
+  /** GANI_DV_MUSIC_DIR is set and is a folder on the machine that renders. */
+  configured: boolean;
+  /** Tracks the machine is still measuring; the UI asks again while this is above 0. */
+  pending: number;
+  tracks: MusicTrack[];
 }
 
 export interface KhuyenMaiFields {
@@ -127,6 +145,8 @@ export interface VideoOptions {
   pacing: PacingMode;
   /** The person chose a track the BPM table warns about (ticket 13/10/2026); null = not asked. */
   bpm_override?: boolean | null;
+  /** BPM of the chosen track as the track list knows it; asked of the preflight, never queued. */
+  nhac_bpm?: number | null;
 }
 
 export interface FootageFile {

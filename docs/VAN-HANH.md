@@ -101,6 +101,12 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
   thoát 4 nếu kế hoạch lệch quá ±10% mà chưa chọn dùng tiếp: chưa gọi Claude, 0đ. Muốn dùng tiếp:
   thêm `--bpm-override` vào lệnh `plan`, hoặc `bpm_override: true` trong `yeu-cau.md`. Bật cờ chỉ
   tắt cảnh báo; `E1-DUR-GAP` vẫn chặn khi giao nếu kế hoạch vẫn lệch quá ±10%.
+- **Danh sách nhạc trên giao diện** đến từ `GET /api/music` (chế độ `real`); chế độ `mock` giữ
+  4 bài thử nghiệm. Chưa đặt `GANI_DV_MUSIC_DIR` thì giao diện hiện hướng dẫn, không rơi về
+  bài giả. Bài chưa có trong `library.json` được đo nền lần lượt từng bài (máy yếu), cache ở
+  `music-cache.json` cạnh `queue.db`; `library.json` và thư mục nhạc không bao giờ bị ghi.
+  `library.json` nhận thêm khóa tùy chọn `title` và `rights` (`thu_vien_noi_bo`,
+  `mua_ban_quyen`, `royalty_free`); bản chương trình cũ từ chối khóa lạ nên cập nhật cùng lúc.
 - Đổi phong cách, độ dài, quy tắc nhịp thì tạo lại bảng: `sweep_table` trong
   `domain/bpm_measure.py`; `tests/test_bpm_safety.py` quét lại bằng bộ lập kế hoạch và so với bảng.
   Bản sao cho giao diện nằm ở `frontend/src/data/bpmSafe.ts` (test của giao diện so với `rules.json`).
@@ -289,10 +295,12 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   trong ±10%, 21 ca (3,4%) vượt ±10% và bị `E1-DUR-GAP` chặn khi giao. 21 ca đó gần hết là Sang
   trọng ở video 15 và 30 giây (mỗi khối đã ở mức tối thiểu một cảnh nên không giảm được phách).
   Ca tệ nhất: Sang trọng 100 BPM, 15 giây, kế hoạch 21,6s (+44%).
-- **Cảnh báo BPM trên giao diện dùng danh sách bài có sẵn của giao diện** (4 bài thử nghiệm).
-  Chưa có API liệt kê nhạc thật và BPM của thư viện máy dựng, nên hộp cảnh báo chưa chạy với
-  nhạc thật trên giao diện; phía máy chủ (`preflight`, `plan`) đã dùng BPM thật. Component cảnh
-  báo chưa có test tự động (giao diện chỉ có test cho hàm thuần): cần thử tay trước T-F.
+- **Hộp cảnh báo BPM chưa được thử tay với nhạc thật của xưởng.** Đã thử trên máy dựng thật
+  với bài tổng hợp (ca vừa khít, cắt đuôi, không dựng được, đang đo, không đo được); giao diện
+  chỉ có test tự động cho hàm thuần, không có test component: cần thử tay trước T-F với nhạc
+  thật và `library.json` thật.
+- Danh sách nhạc không đệ quy thư mục con và tối đa 500 bài. Liên kết tượng trưng ra ngoài
+  thư mục nhạc bị bỏ qua (test liên kết bị bỏ qua trên Windows khi không đủ quyền tạo).
 - Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
   bằng bảng, bước `plan` vẫn đo chính xác.
 - Giao diện (web) chưa truyền `--san-pham` và `--chien-dich`: job tạo từ giao diện mang tên

@@ -32,6 +32,8 @@ from gani_dung_video.application.queue_service import (
     cancel_job,
     enqueue_pipeline,
     enqueue_project_render,
+    music_dir,
+    queue_dir,
     retry_job,
 )
 from gani_dung_video.application.render_limits import limits_of
@@ -48,6 +50,8 @@ from gani_dung_video.domain.api_models import (
     JobCreate,
     JobDetail,
     JobView,
+    MusicListView,
+    MusicTrackView,
     PipelineCreate,
     PipelineView,
     PreflightRequest,
@@ -78,6 +82,8 @@ from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
 from gani_dung_video.infrastructure.config_files import ConfigError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
+from gani_dung_video.infrastructure.music_analysis import MusicError
+from gani_dung_video.infrastructure.music_index import get_index
 from gani_dung_video.infrastructure.queue_db import QueueDb
 from gani_dung_video.infrastructure.settings import Settings
 from gani_dung_video.infrastructure.verify_report_file import read_report, report_path
@@ -85,6 +91,15 @@ from gani_dung_video.infrastructure.verify_report_file import read_report, repor
 JOB_KINDS = ("render", "draft", "analyze")
 _REPORT_SLACK_SEC = 2.0  # file systems round modification times
 _MEDIA_TYPES = {"video": "video/mp4", "cover": "image/jpeg", "srt": "text/plain; charset=utf-8"}
+_AUDIO_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+}
+MUSIC_CACHE_FILE = "music-cache.json"
 _MAX_PROJECTS_PER_ROOT = 200
 
 
@@ -591,6 +606,49 @@ def approve(ctx: ApiContext, job_id: int, req: ApproveRequest) -> JobView:
 def preflight(ctx: ApiContext, req: PreflightRequest) -> Mapping[str, Any]:
     """The same preflight the CLI runs before any AI spend (single source of truth)."""
     return preflight_check(req.options, ctx.rules)
+
+
+def _music_folder(ctx: ApiContext) -> Path | None:
+    raw = music_dir(ctx.settings)
+    if raw is None:
+        return None
+    folder = Path(raw).expanduser()
+    return folder if folder.is_dir() else None
+
+
+def list_music(ctx: ApiContext) -> MusicListView:
+    """The machine's music folder (GANI_DV_MUSIC_DIR) with BPM and length, from library.json or
+    measured in the background. Never an absolute path; not configured is an empty list."""
+    folder = _music_folder(ctx)
+    if folder is None:
+        return MusicListView(configured=False, pending=0, tracks=[])
+    cache = queue_dir(ctx.settings) / MUSIC_CACHE_FILE
+    index = get_index(folder, cache, ctx.rules["music_analysis"])
+    try:
+        tracks, pending = index.snapshot()
+    except MusicError as e:
+        raise ApiError(422, "music_library_invalid", str(e)) from e
+    return MusicListView(configured=True, pending=pending, tracks=[
+        MusicTrackView(file=t.file, path=t.file, title=t.title, bpm=t.bpm, bpm_source=t.bpm_source,
+                       first_beat_sec=t.first_beat_sec, duration_sec=t.duration_sec,
+                       rights=t.rights)
+        for t in tracks])  # fmt: skip
+
+
+def resolve_music(ctx: ApiContext, name: str) -> MediaFile:
+    """The audio file behind /media/music/<name>: a file name directly inside the music folder
+    with an audio extension, or a 404 (the same one for every refusal)."""
+    folder = _music_folder(ctx)
+    extensions = {str(e).lower() for e in ctx.rules["music_analysis"]["extensions"]}
+    suffix = Path(name).suffix.lower()
+    if (folder is None or not name or name != name.strip() or name.startswith(".")
+            or any(c in name for c in '/\\:\x00') or suffix not in extensions):  # fmt: skip
+        raise _not_found("bài nhạc")
+    path = (folder / name).resolve()
+    if path.parent != folder.resolve() or not path.is_file():
+        raise _not_found("bài nhạc")
+    return MediaFile(path=path, content_type=_AUDIO_TYPES.get(suffix, "application/octet-stream"),
+                     size=path.stat().st_size)  # fmt: skip
 
 
 def resolve_media(ctx: ApiContext, job_id: int, kind: str) -> MediaFile:

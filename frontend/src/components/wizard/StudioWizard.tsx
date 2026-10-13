@@ -6,6 +6,7 @@ import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
 import { MusicPicker } from './MusicPicker';
 import { PreflightValidator } from './PreflightValidator';
+import { useMusicTracks } from './useMusicTracks';
 import { ProjectPicker, type RealJobChoice } from './ProjectPicker';
 import { RuleSelector } from './RuleSelector';
 
@@ -16,6 +17,7 @@ const DEFAULT_OPTIONS: VideoOptions = {
   so_ban_nhap: 1,
   nhac: '',
   nhac_file: null,
+  nhac_bpm: null,
   nhac_quyen_su_dung: null,
   khuyen_mai: null,
   ghi_chu: '',
@@ -59,6 +61,19 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
       return next;
     });
   }
+
+  // The machine's music list, asked only while the music step shows one.
+  const { list: music, error: musicError } = useMusicTracks(
+    options.nhac === 'thu_vien' || options.nhac === 'ai_tu_chon',
+  );
+  const musicTracks = music?.tracks ?? [];
+
+  // A track measured after it was picked: carry its BPM into the options (the override stays).
+  useEffect(() => {
+    const t = musicTracks.find((x) => x.file === options.nhac_file);
+    if (t && (options.nhac_bpm ?? null) !== t.bpm) patch({ nhac_bpm: t.bpm });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [music, options.nhac_file, options.nhac_bpm]);
 
   const incomplete = !isOptionsComplete(options);
   // "Chỉ dựng lại": the server takes everything from plan.json, so the matrix is not sent.
@@ -158,8 +173,8 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
 
             <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">
               <div className="space-y-3">
-                <MusicPicker options={options} onChange={patch} />
-                <BpmWarning options={options} onChange={patch} />
+                <MusicPicker options={options} onChange={patch} list={music} error={musicError} />
+                <BpmWarning options={options} onChange={patch} tracks={musicTracks} />
               </div>
             </Panel>
           </>
