@@ -438,7 +438,9 @@ def test_cancelling_during_the_paid_call_stops_it_and_still_records_the_bill(
     approve(db, jid, clock)
     d.process_next()
     j = job(db, jid)
-    assert j.status == "cancelled" and j.spent_vnd == pytest.approx(700.0)
+    # 700đ was logged; the call in flight when it was cut may have cost up to one worst call
+    assert j.status == "cancelled" and j.spent_vnd == pytest.approx(700.0 + WORST_CALL)
+    assert "trần" in note_of(db, jid)
 
 
 def test_a_stop_request_during_the_paid_call_never_requeues_it(db: QueueDb, folder: Path,
@@ -449,7 +451,7 @@ def test_a_stop_request_during_the_paid_call_never_requeues_it(db: QueueDb, fold
     approve(db, jid, clock)
     d.process_next()
     j = job(db, jid)
-    assert j.status == "failed" and j.spent_vnd == pytest.approx(900.0)
+    assert j.status == "failed" and j.spent_vnd == pytest.approx(900.0 + WORST_CALL)
     assert "ai_log" in (j.error_msg or "") and "duyệt lại" in (j.error_msg or "")
 
 
@@ -460,7 +462,49 @@ def test_a_hung_paid_call_is_a_failure_not_a_retry(db: QueueDb, folder: Path,
     approve(db, jid, clock)
     d.process_next()
     j = job(db, jid)
-    assert j.status == "failed" and j.spent_vnd == pytest.approx(300.0)
+    assert j.status == "failed" and j.spent_vnd == pytest.approx(300.0 + WORST_CALL)
+
+
+# ─────────────── audit A4: a call cut in flight is not "free" ───────────────
+
+WORST_CALL = EST.worst_call_vnd
+
+
+def note_of(db: QueueDb, jid: int) -> str:
+    return " ".join(e.text for e in db.events(jid))
+
+
+@pytest.mark.parametrize("reason", ["cancelled", "shutdown", "stalled", "timeout"])
+def test_a_call_cut_before_anything_was_logged_still_counts_as_one_worst_call(
+    db: QueueDb, folder: Path, clock: Clock, reason: str
+) -> None:
+    """Cancel, retry, repeat used to record 0đ each time: the daily cap never filled."""
+    runner = FakeRunner(paid=paid_ends(reason, None))  # nothing reached ai_log.jsonl
+    d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock)
+    d.process_next()
+    assert job(db, jid).spent_vnd == pytest.approx(WORST_CALL)
+    assert db.spend_summary(clock())[0] == pytest.approx(WORST_CALL)  # the budget sees it
+
+
+def test_the_in_flight_allowance_never_goes_above_what_was_approved(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    runner = FakeRunner(paid=paid_ends("cancelled", None, 5000.0))
+    d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock, max_vnd=6000.0)
+    d.process_next()
+    assert job(db, jid).spent_vnd == pytest.approx(6000.0)  # 5000 + 4207 is capped at the approval
+
+
+def test_a_call_that_ended_by_itself_is_billed_by_the_log_alone(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    runner = FakeRunner(paid=paid_ends("exit", 1, 2024.0))
+    d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock)
+    d.process_next()
+    assert job(db, jid).spent_vnd == pytest.approx(2024.0)  # no allowance: nothing was cut
 
 
 def test_a_stop_during_the_free_phase_gives_the_job_back_at_no_cost(
