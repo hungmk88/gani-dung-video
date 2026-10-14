@@ -50,7 +50,13 @@ from gani_dung_video.infrastructure.config_files import (
     read_options_file,
 )
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
-from gani_dung_video.infrastructure.process_runner import RunResult, kill_tree, pid_alive, run_child
+from gani_dung_video.infrastructure.process_runner import (
+    RunResult,
+    is_our_child,
+    kill_tree,
+    pid_alive,
+    run_child,
+)
 from gani_dung_video.infrastructure.queue_db import QueueDb
 
 logger = logging.getLogger(__name__)
@@ -100,13 +106,15 @@ class Daemon:
     def __init__(
         self, db: QueueDb, rules: Rules, *, runner: Callable[..., RunResult] = run_child,
         clock: Callable[[], float] = time.time, alive: Callable[[int], bool] = pid_alive,
-        killer: Callable[[int], None] = kill_tree, pid: int | None = None,
+        killer: Callable[[int], None] = kill_tree, owns: Callable[[int], bool] = is_our_child,
+        pid: int | None = None,
         argv_base: Sequence[str] | None = None, log_dir: Path | None = None,
         whisper_model: str | None = None, music_dir: str | None = None,
         ai_key_present: Callable[[], bool] | None = None,
     ) -> None:  # fmt: skip
         self.db, self._cfg, self._rules = db, rules["queue"], rules
         self._runner, self._clock, self._alive, self._killer = runner, clock, alive, killer
+        self._owns = owns
         self._pid = pid if pid is not None else os.getpid()
         self._argv_base = argv_base
         self._whisper_model = whisper_model
@@ -180,6 +188,10 @@ class Daemon:
             logger.warning("Khôi phục job %d sau sập: %s", r.job_id, r.action)
             self.db.add_event(r.job_id, now, "warn", f"Khôi phục sau khi daemon sập: {r.action}.")
             if r.child_pid and r.heartbeat_age <= max_age and self._alive(r.child_pid):
+                if not self._owns(r.child_pid):  # the pid now belongs to another program
+                    logger.warning("Không kill pid %d: không còn là tiến trình của app.",
+                                   r.child_pid)  # fmt: skip
+                    continue
                 self._killer(r.child_pid)  # its ffmpeg would race the retry for the same file
 
     # ─────────────── one job ───────────────

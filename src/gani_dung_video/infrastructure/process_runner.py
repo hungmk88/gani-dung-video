@@ -68,6 +68,54 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+# Every job child is `python -m gani_dung_video …` (application/daemon.py, analyze_job.py).
+CLI_MARKER = "gani_dung_video"
+
+
+def pid_command(pid: int) -> str | None:
+    """The command line of `pid`, or None when the OS will not say (gone, no access, no tool).
+
+    Linux reads /proc; macOS asks `ps`; Windows asks CIM through PowerShell. Only used after
+    a crash, to make sure a pid read back from the queue is still OUR child before killing it.
+    """
+    if pid <= 0:
+        return None
+    proc = Path(f"/proc/{pid}/cmdline")
+    if sys.platform.startswith("linux"):
+        try:
+            raw = proc.read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        except OSError:
+            return None
+        return raw or None  # a zombie has an empty command line: unknown, not "someone else"
+    if sys.platform == "win32":
+        argv = [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
+        ]
+    else:
+        argv = ["ps", "-o", "command=", "-p", str(pid)]
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and out else None
+
+
+def is_our_child(pid: int) -> bool:
+    """False only when the OS shows `pid` running something that is not our CLI.
+
+    A pid stored before a crash may have been reused by an unrelated program (a shell, an
+    editor) and must not be killed. When the command line cannot be read, the old behaviour
+    stands (kill): the heartbeat-age limit of the caller already makes reuse unlikely.
+    """
+    cmd = pid_command(pid)
+    return cmd is None or CLI_MARKER in cmd
+
+
 def kill_tree(pid: int, grace_sec: float = 5.0) -> None:
     """Stop a process and everything it started (ffmpeg is a grandchild). Never raises."""
     if not pid_alive(pid):

@@ -240,7 +240,7 @@ def _run_paid(env: JobEnv, job: Job) -> None:
                              done=["estimate"], job_start=job_start, stall_sec=stall,
                              timeout_sec=timeout, tail=tail, capture=None)  # fmt: skip
     logged = spent_in_log(_log_since(folder, offset))
-    spent = _billed(job, res.reason, logged)
+    spent = _billed(job, res.reason, res.exit_code, logged)
     _finish_paid(env, job, folder, res.reason, res.exit_code, verdict.message, spent,
                  " | ".join(tail), logged)  # fmt: skip
 
@@ -249,16 +249,17 @@ def _run_paid(env: JobEnv, job: Job) -> None:
 _CUT_IN_FLIGHT = frozenset({"cancelled", "shutdown", "stalled", "timeout"})
 
 
-def _billed(job: Job, reason: str, logged: float) -> float:
+def _billed(job: Job, reason: str, code: int | None, logged: float) -> float:
     """What to book against the daily budget for this run.
 
     ai_log.jsonl is written after a call returns, so a child cut in the middle of one never
     logs it, yet the API bills it. Booking only the log made cancel → retry → cancel look
     free and the daily cap never filled. A cut run is therefore booked as its log plus one
     worst call (the most a single call can cost), never above the approved maximum. A child
-    that ended by itself is trusted: its log is complete.
+    that ended by itself is trusted: its log is complete. A negative exit code is a child the
+    OS killed by a signal (out of memory, a user's kill): cut like ours, so booked the same.
     """
-    if reason not in _CUT_IN_FLIGHT:
+    if reason not in _CUT_IN_FLIGHT and not (code is not None and code < 0):
         return logged
     in_flight = job.cost_worst_call_vnd or 0.0
     ceiling = job.approved_vnd if job.approved_vnd is not None else logged + in_flight
