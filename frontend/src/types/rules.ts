@@ -92,6 +92,8 @@ export interface RulesBundle {
   scenesNeeded: Record<StyleId, Record<string, number>>;
   conflicts: Record<string, ConflictDef>;
   bannedClaims: string[];
+  /** delivery.naming.products: the product names a delivered file may carry. */
+  deliveryProducts: readonly string[];
   pickTagNames: Record<string, string>;
 }
 
