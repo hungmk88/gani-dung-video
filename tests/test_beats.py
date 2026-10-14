@@ -145,6 +145,17 @@ def test_segment_refs_use_clip_stem_scene_and_pick_index() -> None:
     assert got["VID_1_s2_1"] == SceneRef(clip="VID_1.mp4", start=9, end=13, peak=10)
 
 
+def test_segment_refs_stay_unique_when_two_clips_share_a_stem() -> None:
+    def sc(clip: str) -> Scene:
+        return Scene(clip=clip, index=0, start=0.0, end=20.0, sharpness=100, motion="tinh",
+                     jitter=0, consistency=1,
+                     segments={"sang_trong": [Segment(start=1, end=5, peak=2)]})  # fmt: skip
+
+    got = segment_refs([sc("IMG_1.MOV"), sc("IMG_1.mp4"), sc("IMG_2.mp4")], "sang_trong")
+    assert len(got) == 3 and "IMG_2_s0_0" in got
+    assert {r.clip for r in got.values()} == {"IMG_1.MOV", "IMG_1.mp4", "IMG_2.mp4"}
+
+
 # ─────────────── snap_to_beats (spec §7.3, X17/X18) ───────────────
 
 

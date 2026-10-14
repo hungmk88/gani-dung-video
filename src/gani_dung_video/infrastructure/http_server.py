@@ -34,6 +34,7 @@ from gani_dung_video.domain.api_models import (
     JobCreate,
     PipelineCreate,
     PreflightRequest,
+    ReviewRequest,
 )
 from gani_dung_video.domain.static_paths import etag_matches, is_api_path, safe_segments
 from gani_dung_video.infrastructure.settings import dev_origins
@@ -61,6 +62,8 @@ _ROUTES: list[tuple[re.Pattern[str], tuple[str, ...], str]] = [
         (rf"^/api/jobs/{_ID}/cancel$", ("POST",), "cancel"),
         (rf"^/api/jobs/{_ID}/retry$", ("POST",), "retry"),
         (rf"^/api/jobs/{_ID}/approve$", ("POST",), "approve"),
+        (r"^/api/reviews$", ("GET",), "reviews"),
+        (rf"^/api/jobs/{_ID}/review/(approve|reject)$", ("POST",), "review_decide"),
         (r"^/api/pipelines$", ("POST",), "pipelines"),
         (rf"^/api/pipelines/{_ID}$", ("GET",), "pipeline"),
         (r"^/api/preflight$", ("POST",), "preflight"),
@@ -464,6 +467,20 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
             except ValidationError as e:
                 raise _HttpError(400, "bad_request", _validation_text(e)) from e
             self._send_json(200, api_service.approve(ctx, int(job_id), req))
+
+        def _r_reviews(self, query: Mapping[str, list[str]]) -> None:
+            self._send_json(200, api_service.list_reviews(
+                ctx, self._one(query, "status"), self._one(query, "from")))  # fmt: skip
+
+        def _r_review_decide(
+            self, query: Mapping[str, list[str]], job_id: str, action: str
+        ) -> None:
+            try:
+                req = ReviewRequest.model_validate(self._read_json())
+            except ValidationError as e:
+                raise _HttpError(400, "bad_request", _validation_text(e)) from e
+            self._send_json(200, api_service.review_decide(
+                ctx, int(job_id), "approve" if action == "approve" else "reject", req))  # fmt: skip
 
         def _r_preflight(self, query: Mapping[str, list[str]]) -> None:
             try:

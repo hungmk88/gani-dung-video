@@ -15,8 +15,6 @@ from gani_dung_video.domain.ass_text import ass_time, escape_ass
 from gani_dung_video.domain.emphasis import keyword_indexes
 from gani_dung_video.domain.speech import SpokenWord
 
-_HARD = ".?!…"
-
 
 def ass_colour(hex_rgb: str) -> str:
     """'#RRGGBB' → ASS '&H00BBGGRR&' (opaque)."""
@@ -24,23 +22,30 @@ def ass_colour(hex_rgb: str) -> str:
     return f"&H00{h[4:6]}{h[2:4]}{h[0:2]}&".upper()
 
 
-def _runs(words: Sequence[SpokenWord], gap: float) -> list[list[SpokenWord]]:
-    """Split at sentence ends and at pauses of at least `gap` seconds."""
+def _runs(words: Sequence[SpokenWord], gap: float, ends: str) -> list[list[SpokenWord]]:
+    """Split after a word ending in one of `ends` and at pauses of at least `gap` seconds."""
     runs: list[list[SpokenWord]] = [[]]
     for i, w in enumerate(words):
         if runs[-1] and w.start - words[i - 1].end >= gap - 1e-9:
             runs.append([])
         runs[-1].append(w)
-        if w.text.strip()[-1:] in _HARD:
+        if w.text.strip()[-1:] in ends:
             runs.append([])
     return [r for r in runs if r]
 
 
-def group_words(words: Sequence[SpokenWord], cfg: Mapping[str, Any]) -> list[list[SpokenWord]]:
-    """Balanced groups of min_words..max_words inside each run (short runs stay whole)."""
+def group_words(words: Sequence[SpokenWord], cfg: Mapping[str, Any], sentence_end: str
+                ) -> list[list[SpokenWord]]:  # fmt: skip
+    """Balanced groups of min_words..max_words inside each run (short runs stay whole).
+
+    Runs end at the sentence-end marks of rules.json speech_edit.sentence_end (the same marks
+    that end a phrase). The fewest groups that respect max_words, balanced, are never shorter
+    than min_words as long as min_words <= (max_words + 1) // 2 (true for 3..5): min_words is
+    the bound this split guarantees, not a second knob it can trade against max_words.
+    """
     most = int(cfg["max_words"])
     out: list[list[SpokenWord]] = []
-    for run in _runs(words, float(cfg["group_gap_sec"])):
+    for run in _runs(words, float(cfg["group_gap_sec"]), sentence_end):
         n = math.ceil(len(run) / most)
         base, extra = divmod(len(run), n)
         i = 0

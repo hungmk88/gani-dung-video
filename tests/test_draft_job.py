@@ -530,6 +530,18 @@ def test_a_call_that_ended_by_itself_is_billed_by_the_log_alone(
     assert job(db, jid).spent_vnd == pytest.approx(2024.0)  # no allowance: nothing was cut
 
 
+def test_a_child_the_os_killed_mid_call_is_booked_like_a_cut_call(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    # -9: killed by a signal we did not send (out of memory, a user's kill), maybe mid-call
+    runner = FakeRunner(paid=paid_ends("exit", -9, 300.0))
+    d, jid = ready_for_approval(db, folder, clock, runner)
+    approve(db, jid, clock)
+    d.process_next()
+    j = job(db, jid)
+    assert j.status == "failed" and j.spent_vnd == pytest.approx(300.0 + WORST_CALL)
+
+
 def test_a_stop_during_the_free_phase_gives_the_job_back_at_no_cost(
     db: QueueDb, folder: Path, clock: Clock
 ) -> None:

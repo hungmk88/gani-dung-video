@@ -52,6 +52,7 @@ import type {
   VerifyStatus,
   VideoOptions,
 } from '../types/rules.ts';
+import { latestReview, toReview } from '../lib/review.ts';
 
 // rules.json → qc.max_rounds; the API does not echo it, so it is mirrored here.
 const QC_MAX_ROUNDS = 3;
@@ -308,6 +309,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     qa: job.qa ? toQaReport(job.qa, job.verify != null) : null,
     verify: job.verify ? toVerify(job.verify) : null,
     ...(job.structure ? { structure: toStructure(job.structure) } : {}),
+    ...(latestReview(group) ? { review: latestReview(group) } : {}),
   };
 }
 
@@ -407,6 +409,7 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
     errorMsg: j.error_msg,
     retryable: status === 'error' || status === 'qa_review',
     spentVnd: j.cost?.spent_vnd ?? null,
+    ...(j.review ? { review: toReview(j.review) } : {}),
   };
 }
 
@@ -484,6 +487,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
     logLines: pipelineLog(details),
     approval: toApproval(jobs),
     jobs: jobs.map(toJobInfo),
+    ...(latestReview(jobs) ? { review: latestReview(jobs) } : {}),
     outputs,
     previewUrl: first?.previewUrl ?? null,
     finalUrl: first?.finalUrl ?? null,

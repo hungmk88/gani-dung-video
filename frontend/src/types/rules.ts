@@ -92,6 +92,8 @@ export interface RulesBundle {
   scenesNeeded: Record<StyleId, Record<string, number>>;
   conflicts: Record<string, ConflictDef>;
   bannedClaims: string[];
+  /** delivery.naming.products: the product names a delivered file may carry. */
+  deliveryProducts: readonly string[];
   pickTagNames: Record<string, string>;
 }
 
@@ -271,6 +273,17 @@ export interface ApprovalInfo {
   footage?: FootageInfo;
 }
 
+/** Where a delivered final video stands with its reviewer (T-F). */
+export interface ReviewInfo {
+  status: 'pending' | 'approved' | 'changes_requested';
+  reason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /** Waiting longer than the review limit and still undecided. */
+  overdue: boolean;
+  failedChecks: string[];
+}
+
 /** One server job inside a pipeline card (analyze / draft / render). */
 export interface PipelineJobInfo {
   id: string;
@@ -281,6 +294,8 @@ export interface PipelineJobInfo {
   /** failed / cancelled / QC-failed: `POST /api/jobs/{id}/retry` accepts it. */
   retryable: boolean;
   spentVnd: number | null;
+  /** Final render that was delivered: its review state (T-F). */
+  review?: ReviewInfo | null;
 }
 
 /** Playable result of one draft (A/B/C) of a pipeline. */
@@ -304,6 +319,8 @@ export interface RenderJob {
   structure?: Structure;
   jobs?: PipelineJobInfo[];
   outputs?: DraftOutput[];
+  /** Newest delivered final render of this card: its review state (T-F). */
+  review?: ReviewInfo | null;
   /** Real API only: the project/draft/size/ASR switch this job renders (needed to re-render).
    *  A pipeline card: 'all' unless it renders one letter, 'final' if any render is final. */
   projectId?: string;

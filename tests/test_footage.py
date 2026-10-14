@@ -9,6 +9,7 @@ import pytest
 from gani_dung_video.domain.footage import (
     ProbeDataError,
     clip_from_probe,
+    clip_stems,
     duplicate_candidates,
     orientation,
     parse_fps,
@@ -118,3 +119,13 @@ def test_duplicate_candidates_follow_spec_patterns() -> None:
 
 def test_no_candidates_without_original() -> None:
     assert duplicate_candidates(["Canh 2.mp4", "2.mp4", "Canh2.mp4"], PATTERNS) == []
+
+
+def test_clip_stems_add_the_extension_only_when_two_clips_share_a_stem() -> None:
+    got = clip_stems(["IMG_1.MOV", "IMG_1.mp4", "IMG_2.mp4", "VID.final.mov", "IMG_1_MOV.mp4"])
+    assert got["IMG_2.mp4"] == "IMG_2" and got["VID.final.mov"] == "VID.final"  # as before
+    assert got["IMG_1.MOV"] != got["IMG_1.mp4"]
+    assert got["IMG_1.MOV"].startswith("IMG_1_") and got["IMG_1.mp4"] == "IMG_1_mp4"
+    assert len(set(got.values())) == len(got)  # "IMG_1_MOV.mp4" keeps its plain stem too
+    assert got["IMG_1_MOV.mp4"] == "IMG_1_MOV"
+    assert clip_stems(["IMG_1.mp4", "IMG_1.MOV"]) == clip_stems(["IMG_1.MOV", "IMG_1.mp4"])
