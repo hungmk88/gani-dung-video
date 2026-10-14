@@ -22,8 +22,17 @@ from dataclasses import dataclass, replace
 
 # Keep '%' so "100%" stays one token; everything else non-word splits syllables.
 _TOKEN = re.compile(r"[\w%]+", re.UNICODE)
-# Claims only: letters, digits and "%" are separate pieces, so "số1" is "số" + "1".
-_CLAIM_PIECE = re.compile(r"[^\W\d_]+|\d+%?|%", re.UNICODE)
+# Claims only: letters, digits and "%" are separate pieces, so "số1" is "số" + "1". A number
+# written with a decimal or thousands mark stays one piece: "số 1,5 kg" is not "số 1".
+_CLAIM_PIECE = re.compile(r"[^\W\d_]+|\d+(?:[.,]\d+)*%?|%", re.UNICODE)
+# Two-syllable words (folded) whose SECOND syllable a banned phrase starts with: "giá trị bệnh
+# nhân" holds the syllables "trị bệnh" but says "value", not "cures disease". A match that
+# starts on the second half of one of these words is not a claim. Words that are claims
+# themselves ("điều trị") are never listed here.
+_WORD_BEFORE: frozenset[tuple[str, str]] = frozenset({
+    ("gia", "tri"), ("quan", "tri"), ("chinh", "tri"), ("cai", "tri"), ("thong", "tri"),
+    ("van", "phong"), ("sua", "chua"),
+})  # fmt: skip
 _SPACE_BEFORE_PERCENT = re.compile(r"(?<=\d)\s+%")
 _FOLD_LETTERS = str.maketrans({"đ": "d", "ð": "d"})  # ð (U+00F0) is not a Vietnamese letter
 
@@ -144,7 +153,8 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
     """Return the banned phrases that appear in text as whole syllable sequences (V7, C1).
 
     Tone marks and case are ignored on both sides ("Dac tri" matches "đặc trị"); syllables
-    still have to be next to each other, so "giá trị" never matches "trị bệnh".
+    still have to be next to each other, so "giá trị" never matches "trị bệnh", and a phrase
+    that starts on the second syllable of a listed word ("giá trị bệnh nhân") is not a claim.
 
     Example:
         >>> find_banned_claims("Giá trị thật, đặc trị mọi bệnh", ["trị bệnh", "đặc trị"])
@@ -154,6 +164,13 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
     found: list[str] = []
     for phrase in banned:
         pat = fold_tokens(phrase)
-        if any(_match_glued(toks, i, pat) for i in range(len(toks))):
+        if any(_match_glued(toks, i, pat) and not _inside_word(toks, i, pat)
+               for i in range(len(toks))):  # fmt: skip
             found.append(phrase)
     return found
+
+
+def _inside_word(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
+    """The match at toks[i] starts on the second syllable of a listed word ("trị" of "giá
+    trị"), so it is that word, not a claim. toks[i] may hold more syllables ("trịbệnh")."""
+    return i > 0 and bool(pattern) and (toks[i - 1], pattern[0]) in _WORD_BEFORE
