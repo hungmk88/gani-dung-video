@@ -6,7 +6,8 @@ Every request passes the same gate before anything else runs:
 3. a `Sec-Fetch-Site: cross-site` request needs a trusted Origin or Referer;
 4. a POST body must be JSON (Content-Type application/json, size-limited, Content-Length).
 Errors are always {"error": {"code", "message"}} in Vietnamese and never carry paths or
-tracebacks. Threads serve connections independently, so a stalled client blocks nobody.
+tracebacks. Threads serve connections independently, so a stalled client blocks nobody; at
+most `rules.api.max_concurrent_requests` at once, a connection past that is answered 503.
 
 From phase 6g the same server also hands out the built web UI (`rules.api.frontend_dist`) for
 any GET/HEAD path that is not /api/... or /media/...; see domain/static_paths.py for the rules.
@@ -19,6 +20,7 @@ import logging
 import re
 import socket
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -142,10 +144,60 @@ def parse_range(header: str | None, size: int) -> tuple[int, int] | Literal["uns
 # ─────────────── the server ───────────────
 
 
+_BUSY_MSG = "Máy chủ đang bận (quá nhiều kết nối cùng lúc); thử lại sau giây lát."
+_BUSY_BODY = json.dumps({"error": {"code": "may_chu_ban", "message": _BUSY_MSG}},
+                        ensure_ascii=False).encode()  # fmt: skip
+_BUSY = (b"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; charset=utf-8\r\n"
+         b"Content-Length: " + str(len(_BUSY_BODY)).encode() + b"\r\nRetry-After: 1\r\n"
+         b"Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n"
+         b"\r\n" + _BUSY_BODY)  # fmt: skip
+
+
+def _refuse_busy(sock: socket.socket) -> None:
+    """Answer 503 on a connection past the cap without a thread: the accept loop sends a few
+    hundred bytes, never waits, and reads out what already arrived so closing does not reset
+    the connection under the answer."""
+    try:
+        sock.settimeout(0.2)
+        sock.sendall(_BUSY)
+        sock.setblocking(False)
+        left = _LINGER_BYTES
+        while left > 0 and (data := sock.recv(65536)):
+            left -= len(data)
+    except OSError:
+        return  # nothing more to read (BlockingIOError), or the client left
+
+
 class _Server(ThreadingHTTPServer):
     # Windows lets a second server bind a port already in use when SO_REUSEADDR is on.
     allow_reuse_address = False
     daemon_threads = True
+
+    def __init__(self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler],
+                 max_handlers: int) -> None:  # fmt: skip
+        super().__init__(address, handler)
+        # One thread per connection: without a cap, stalled connections would use them all up.
+        self._max_handlers = max_handlers
+        self._slots = threading.BoundedSemaphore(max_handlers)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            logger.warning("api: quá %s kết nối cùng lúc, từ chối %s", self._max_handlers,
+                           client_address)  # fmt: skip
+            _refuse_busy(request)
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()  # no thread started: it will never give the place back
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         """A client that hangs up or stalls is routine; anything else goes to the log (the
@@ -181,7 +233,8 @@ def make_server(ctx: ApiContext, host: str | None = None, port: int | None = Non
         logger.warning("Chưa build giao diện (%s không có index.html): chạy `npm run build:real` "
                        "trong frontend để `serve` phục vụ luôn giao diện.", ui.name)  # fmt: skip
     try:
-        server = _Server((host, port), _make_handler(ctx, cfg))
+        server = _Server((host, port), _make_handler(ctx, cfg),
+                         int(cfg["max_concurrent_requests"]))  # fmt: skip
     except OSError as e:
         raise ApiServerError(f"Không mở được cổng {port}: {e.strerror or e}. Có thể một lệnh "
                              "`serve` khác đang chạy.") from e  # fmt: skip

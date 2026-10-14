@@ -77,6 +77,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | 415 | `content_type_no` | `Content-Type` có mặt nhưng không phải `application/json`, hoặc có thân mà thiếu `Content-Type` |
 | 500 | `loi_may_chu` | Lỗi không lường trước (chi tiết chỉ nằm ở log của `serve`) |
 | 503 | `unavailable` | Máy dựng chưa đặt `GANI_DV_ALLOWED_ROOTS` |
+| 503 | `may_chu_ban` | Đã có `api.max_concurrent_requests` (32) kết nối cùng lúc; kèm `Retry-After: 1`, kết nối bị đóng ngay |
 
 ## 3. Endpoint
 
@@ -627,6 +628,8 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
   thì không.
 - **POST** phải là `application/json` (chặn `text/plain`, `multipart`, form chéo trang), thân ≤
   64KB, `Content-Length`, không nhận `Transfer-Encoding`.
+- **Số kết nối**: mỗi kết nối một luồng, tối đa `api.max_concurrent_requests` (mặc định 32, kể cả
+  kết nối giữ mở); kết nối vượt quá nhận ngay `503 may_chu_ban` rồi bị đóng.
 - **CORS** chỉ trả cho Origin được phép; `OPTIONS` (preflight) chỉ cho Origin được phép.
 - **Media**: client chỉ gửi `id` + loại tệp; server tự dựng đường dẫn từ thư mục dự án và bản
   nháp của job, kiểm tra lại allow-list mỗi lần, chặn liên kết trỏ ra ngoài (tệp thật, sau khi
