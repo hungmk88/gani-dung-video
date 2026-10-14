@@ -580,8 +580,17 @@ def list_jobs(ctx: ApiContext, status: str | None = None, project_id: str | None
     if kind is not None and kind not in JOB_KINDS:
         raise ApiError(400, "bad_request", f"Loại job phải là một trong: {', '.join(JOB_KINDS)}.")
     folder = str(resolve_project(ctx, project_id)) if project_id else None
-    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind=kind)
-    return [_view(ctx, j) for j in jobs if _visible(ctx, j)]
+    want = max(1, min(limit, 200))
+    # Jobs outside the roots are dropped before the page is cut, so read on until it is full.
+    out: list[JobView] = []
+    offset = 0
+    while len(out) < want:
+        jobs = ctx.db.list_jobs(status, want, project_dir=folder, kind=kind, offset=offset)
+        out += [_view(ctx, j) for j in jobs if _visible(ctx, j)]
+        if len(jobs) < want:
+            break
+        offset += len(jobs)
+    return out[:want]
 
 
 def job_events(ctx: ApiContext, job_id: int, after: int) -> list[EventView]:

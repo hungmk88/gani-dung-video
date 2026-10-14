@@ -505,6 +505,21 @@ def test_a_job_outside_the_allowed_roots_is_invisible_and_untouchable(
     assert ctx.db.get(jid) is not None and get_job(ctx, jid).status == "queued"  # untouched
 
 
+def test_the_list_fills_its_page_past_jobs_outside_the_allowed_roots(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """Jobs outside the roots are dropped before the page is cut, not after: a page of `limit`
+    is still full when newer jobs belong to a folder that left the allow-list."""
+    inside = [analysis_job(ctx, root) for _ in range(3)]
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    for _ in range(5):  # newer than the three above, so they come first in id order
+        ctx.db.enqueue(NewJob(kind="analyze", project_dir=str(gone), options_file="", draft=""),
+                       time.time())  # fmt: skip
+    assert [v.id for v in list_jobs(ctx, limit=2)] == inside[::-1][:2]
+    assert [v.id for v in list_jobs(ctx, limit=50)] == inside[::-1]
+
+
 # ─────────────── no absolute paths leave the server (console lines, errors) ───────────────
 
 
