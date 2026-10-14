@@ -85,9 +85,17 @@ def beat_grid(beat_sec: float, count: int, first: float = 0.0) -> list[float]:
     return [first + k * beat_sec for k in range(count + 1)]
 
 
-def beats_that_fit(segment_sec: float, beat_sec: float, allowed: Sequence[int]) -> list[int]:
-    """Allowed beat counts whose length fits inside a segment of segment_sec seconds."""
-    return [n for n in allowed if n * beat_sec <= segment_sec + _EPS]
+def beats_that_fit(
+    segment_sec: float, beat_sec: float, allowed: Sequence[int], frame_sec: float = 1.0 / FPS
+) -> list[int]:
+    """Allowed beat counts whose cut is guaranteed to fit inside a segment of segment_sec seconds.
+
+    snap_to_beats rounds both ends of a cut to a whole frame, so a cut of n beats can come out
+    up to one frame longer than n * beat_sec (the two roundings differ by < 1 frame). A segment
+    must therefore hold n beats plus one frame, or the snap would refuse it ("quá ngắn") for
+    some positions on the grid, after the AI was told the scene fits.
+    """
+    return [n for n in allowed if n * beat_sec + frame_sec <= segment_sec + _EPS]
 
 
 def loop_info(
