@@ -88,6 +88,17 @@ def test_phrases_from_a_speech_clip_are_kept_and_banned_ones_reported(
     assert len(data["phrases"]) == 2 and len(data["excluded"]) == 1
 
 
+def test_phrase_ids_stay_unique_when_two_clips_share_a_stem(tmp_path: Path) -> None:
+    f = tmp_path / "xuong"
+    write_inventory(f, ["IMG_1.MOV", "IMG_1.mp4", "b.mp4"])
+    for clip in ("IMG_1.MOV", "IMG_1.mp4", "b.mp4"):
+        write_transcript(f, clip, "Xin chào các bạn hôm nay nhé.")
+    result, _ = build_phrases(write_options(tmp_path / "o.json"), f, RULES, GLOSSARY)
+    ids = [p.id for p in result.phrases]
+    assert len(ids) == 3 and len(set(ids)) == 3
+    assert "b_p0" in ids  # a clip whose stem is its own keeps the id it always had
+
+
 def test_no_speech_clips_contribute_nothing(folder: Path, tmp_path: Path) -> None:
     opt = write_options(tmp_path / "o.json")
     result, _ = build_phrases(opt, folder, RULES, GLOSSARY)

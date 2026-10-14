@@ -214,7 +214,8 @@ def test_gives_up_after_three_rounds_and_writes_no_drafts(tmp_path: Path) -> Non
 def test_broll_too_tight_for_any_beat_count_is_sent_back(tmp_path: Path) -> None:
     write_folder(tmp_path)
     # Shrink m1 so no beat count (2 or 4 × 0.6 s beat) fits inside its cut window, and give the
-    # seconds to m2 and m4: S2 judges the total of the cuts, which must stay at the target.
+    # seconds to m2 and m3: S2 judges the total of the cuts, which must stay at the target (not to
+    # m4, whose B-roll would then be too short for its longer slot).
     path = tmp_path / "edit" / "phrases.json"
     ph = PhrasesFile.model_validate_json(path.read_text(encoding="utf-8"))
     by_id = {p.id: p for p in ph.phrases}
@@ -223,7 +224,7 @@ def test_broll_too_tight_for_any_beat_count_is_sent_back(tmp_path: Path) -> None
     def reshape(p: Phrase) -> Phrase:
         if p.id == "m1":
             return p.model_copy(update={"cut_out": p.cut_in + 0.5})
-        if p.id in ("m2", "m4"):  # A and B both hold seconds m1 gave up
+        if p.id in ("m2", "m3"):  # A and B both hold seconds m1 gave up
             return p.model_copy(update={"cut_out": p.cut_out + lost})
         return p
 
@@ -234,6 +235,23 @@ def test_broll_too_tight_for_any_beat_count_is_sent_back(tmp_path: Path) -> None
     fake = FakeClaude({"drafts": [A, B]}, {"drafts": [fixed_a]})
     result, _ = run(tmp_path, fake)
     assert result.attempts == 2 and "SNAP [A]" in fake.prompts[1] and "quá ngắn" in fake.prompts[1]
+
+
+def test_broll_shorter_than_its_beat_slot_is_sent_back(tmp_path: Path) -> None:
+    write_folder(tmp_path)
+    path = tmp_path / "edit" / "candidates.json"
+    pick = PickFile.model_validate_json(path.read_text(encoding="utf-8"))
+    short = Candidate(id="brs", clip="c.mp4", start=0.0, end=1.5, peak=0.5, duration=1.5,
+                      fits_beats=[2], labels=["thanh_pham"], aesthetic=9.0)  # fmt: skip
+    blocks = [b.model_copy(update={"candidates": [*b.candidates, short]}) for b in pick.blocks]
+    path.write_text(pick.model_copy(update={"blocks": blocks}).model_dump_json(), encoding="utf-8")
+    bad = json.loads(json.dumps(A))
+    bad["segments"][1]["broll"] = "brs"  # m1 (4.5 s) holds a 2-beat slot: 2.5 s > 1.5 s
+    fake = FakeClaude({"drafts": [bad, B]}, {"drafts": [A]})
+    result, _ = run(tmp_path, fake)
+    assert result.attempts == 2 and "SNAP [A]" in fake.prompts[1]
+    assert "B-roll 'brs' chỉ dài 1.50s" in fake.prompts[1] and "2.50s" in fake.prompts[1]
+    assert [b.clip for b in result.drafts[0].broll] == ["b.mp4"]
 
 
 def test_a_failed_api_call_is_logged_without_the_key(tmp_path: Path) -> None:

@@ -114,12 +114,15 @@ def _breaks(words: Sequence[SpokenWord], cfg: Mapping[str, Any], style: Mapping[
 
 
 def split_phrases(words: Sequence[SpokenWord], clip: str, cfg: Mapping[str, Any],
-                  style: Mapping[str, Any]) -> list[Phrase]:  # fmt: skip
-    """Cut a clip's words into phrases with padded cut windows (pad_ms of the style)."""
+                  style: Mapping[str, Any], stem: str | None = None) -> list[Phrase]:  # fmt: skip
+    """Cut a clip's words into phrases with padded cut windows (pad_ms of the style).
+
+    `stem` is the id prefix (footage.clip_stems over the whole folder); default: the file
+    name without its extension."""
     if not words:
         return []
     before, after = (float(x) / 1000 for x in style["pad_ms"])
-    stem, first = clip.rsplit(".", 1)[0], 0
+    stem, first = stem if stem is not None else clip.rsplit(".", 1)[0], 0
     out: list[Phrase] = []
     for end_idx in _breaks(words, cfg, style):
         ws = list(words[first : end_idx + 1])
@@ -217,8 +220,12 @@ def duck_intervals(cuts: Sequence[SpeechCut], merge_gap: float) -> list[tuple[fl
 
 def duck_gain(t: float, spans: Sequence[tuple[float, float]], duck_db: float, fade: float
               ) -> float:  # fmt: skip
-    """Music gain at time t: 1 outside speech, 10^(duck_db/20) under it, linear ramps."""
+    """Music gain at time t: 1 outside speech, 10^(duck_db/20) under it, linear ramps
+    (fade 0 = a hard step at the span edges)."""
     floor = 10 ** (duck_db / 20)
+    if fade <= 0:
+        inside = any(a <= t <= b for a, b in spans)
+        return floor if inside else 1.0
     w = max((min(max((t - (a - fade)) / fade, 0.0), 1.0) *
              min(max(((b + fade) - t) / fade, 0.0), 1.0)
              for a, b in spans), default=0.0)  # fmt: skip
@@ -228,8 +235,11 @@ def duck_gain(t: float, spans: Sequence[tuple[float, float]], duck_db: float, fa
 def duck_expression(spans: Sequence[tuple[float, float]], duck_db: float, fade: float) -> str:
     """The same gain as an ffmpeg `volume` expression of t (eval=frame)."""
     floor = 10 ** (duck_db / 20)
-    terms = [f"clip((t-{a - fade:.6f})/{fade:.6f},0,1)*clip(({b + fade:.6f}-t)/{fade:.6f},0,1)"
-             for a, b in spans]  # fmt: skip
+    if fade <= 0:  # hard step: no ramp to divide by
+        terms = [f"between(t,{a:.6f},{b:.6f})" for a, b in spans]
+    else:
+        terms = [f"clip((t-{a - fade:.6f})/{fade:.6f},0,1)*clip(({b + fade:.6f}-t)/{fade:.6f},0,1)"
+                 for a, b in spans]  # fmt: skip
     if not terms:
         return "1"
     w = terms[0]
