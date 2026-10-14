@@ -49,8 +49,8 @@ def test_is_no_speech(words: list[SpokenWord], speech: float, expected: bool) ->
 
 def test_build_transcript_fixes_brand_and_keeps_timing() -> None:
     t = build_transcript("a.mp4", "small", "k", raw(SPEECH), TERMS, CFG)
-    assert t.text == "Xin chào GANI"
-    assert t.words[-1] == w("GANI", 0.7, 1.3)  # merged word spans both, keeps first prob
+    assert t.text == "Xin chào GANI FOODS"  # full brand name since 14/10/2026
+    assert t.words[-1] == w("GANI FOODS", 0.7, 1.3)  # merged word spans both, keeps first prob
     assert (t.word_count, t.no_speech, t.model, t.cache_key) == (3, False, "small", "k")
 
 
@@ -93,7 +93,7 @@ def test_transcribe_folder_writes_files_and_summary(folder: Path) -> None:
     assert {c.file: c.no_speech for c in s.clips} == {"noi.mp4": False, "xuong.mp4": True}
     assert json.loads(out.read_text(encoding="utf-8"))["co_loi_noi"] is True
     t = json.loads((folder / "edit" / "transcripts" / "noi.mp4.json").read_text(encoding="utf-8"))
-    assert t["text"] == "Xin chào GANI"
+    assert t["text"] == "Xin chào GANI FOODS"
 
 
 def test_rerun_uses_cache_and_never_loads_model(folder: Path) -> None:

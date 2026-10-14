@@ -85,13 +85,13 @@ export function JobQueue({
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[280px_1fr]">
       <aside className="space-y-2">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Hàng đợi ({jobs.length})
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Video đang làm ({jobs.length})
         </h2>
         {jobs.length === 0 && (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-xs text-slate-600">
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-800 px-4 py-8 text-center text-xs text-slate-400">
             <Inbox className="h-6 w-6" />
-            Chưa có tác vụ nào. Tạo video mới ở tab Studio Wizard.
+            Chưa có video nào. Bấm "Tạo video mới" ở trên để bắt đầu.
           </div>
         )}
         {jobs.map((j) => (
@@ -110,12 +110,12 @@ export function JobQueue({
             </div>
             <div className="mt-1.5 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[j.status].cls}`}>
                   {STATUS_LABEL[j.status].label}
                 </span>
                 <ReviewBadge review={j.review} />
               </span>
-              <span className="flex items-center gap-1 text-[10px] text-slate-500">
+              <span className="flex items-center gap-1 text-xs text-slate-400">
                 <Clock3 className="h-3 w-3" />
                 {new Date(j.createdAt).toLocaleTimeString('vi-VN')}
               </span>
@@ -126,8 +126,8 @@ export function JobQueue({
 
       <div className="space-y-4">
         {!displayedJob ? (
-          <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-600">
-            Chọn một tác vụ ở danh sách bên trái để xem tiến trình.
+          <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-800 text-sm text-slate-400">
+            Chọn một video ở danh sách để xem tiến trình.
           </div>
         ) : (
           <>
@@ -179,7 +179,7 @@ export function JobQueue({
                 className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-rose-500 hover:text-rose-300"
               >
                 <Ban className="h-3.5 w-3.5" />
-                Hủy tác vụ
+                Hủy video này
               </button>
             )}
 
@@ -231,12 +231,12 @@ function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jo
               {KIND_LABEL[j.kind] ?? j.kind}
               {j.draft ? ` ${j.draft}` : ''}
             </span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[j.status].cls}`}>
               {STATUS_LABEL[j.status].label}
             </span>
             <ReviewBadge review={j.review} />
             {j.spentVnd !== null && (
-              <span className="text-slate-500">đã chi {j.spentVnd.toLocaleString('vi-VN')}đ</span>
+              <span className="text-slate-400">đã chi {j.spentVnd.toLocaleString('vi-VN')}đ</span>
             )}
             {j.errorMsg && <span className="min-w-0 flex-1 truncate text-rose-400" title={j.errorMsg}>{j.errorMsg}</span>}
             {j.retryable && (
@@ -244,7 +244,7 @@ function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jo
                 type="button"
                 onClick={() => onRetry(j.id)}
                 title={j.kind === 'draft' ? 'Thử lại kịch bản cần duyệt lại chi phí' : undefined}
-                className="ml-auto flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-amber-500 hover:text-amber-300"
+                className="ml-auto flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:border-amber-500 hover:text-amber-300"
               >
                 <RotateCw className="h-3 w-3" />
                 Thử lại{j.kind === 'draft' ? ' (duyệt lại)' : ''}

@@ -10,7 +10,7 @@ function StatusIcon({ status }: { status: PipelineStep['status'] }) {
     case 'error':
       return <XCircle className="h-5 w-5 text-rose-400" />;
     default:
-      return <CircleDot className="h-5 w-5 text-slate-600" />;
+      return <CircleDot className="h-5 w-5 text-slate-400" />;
   }
 }
 
@@ -21,10 +21,10 @@ export function PipelineStepper({ steps, etaSec }: { steps: PipelineStep[]; etaS
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-200">
-          Pipeline 8 bước ({doneCount}/{steps.length})
+          Các bước dựng ({doneCount}/{steps.length} xong)
         </h3>
         {etaSec !== null && etaSec > 0 && (
-          <span className="font-mono-studio text-xs text-amber-300">ETA ~{etaSec}s</span>
+          <span className="text-xs text-amber-300">còn khoảng {etaSec}s</span>
         )}
       </div>
 
@@ -44,10 +44,10 @@ export function PipelineStepper({ steps, etaSec }: { steps: PipelineStep[]; etaS
           >
             <div className="flex items-center gap-2">
               <StatusIcon status={s.status} />
-              <span className="text-[11px] font-medium text-slate-500">Bước {i + 1}</span>
+              <span className="text-xs font-medium text-slate-400">Bước {i + 1}</span>
             </div>
             <div className="mt-1 text-xs font-medium text-slate-200">{s.label}</div>
-            {s.detail && <div className="mt-0.5 truncate text-[10px] text-slate-500">{s.detail}</div>}
+            {s.detail && <div className="mt-0.5 truncate text-xs text-slate-400">{s.detail}</div>}
           </li>
         ))}
       </ol>

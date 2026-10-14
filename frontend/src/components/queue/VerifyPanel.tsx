@@ -7,7 +7,7 @@ const STATUS_STYLE: Record<VerifyStatus, { icon: typeof XCircle; cls: string }> 
   fail: { icon: XCircle, cls: 'text-rose-400' },
   fixed: { icon: Wrench, cls: 'text-sky-400' },
   warn: { icon: AlertTriangle, cls: 'text-amber-400' },
-  skipped: { icon: Minus, cls: 'text-slate-600' },
+  skipped: { icon: Minus, cls: 'text-slate-400' },
 };
 
 const TONE_CLS = {
@@ -39,7 +39,7 @@ export function VerifyPanel({ report }: { report: VerifyReport }) {
     <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-200">Kiểm tra kịch bản AI ({range})</h3>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-xs text-slate-400">
           vòng {report.roundsUsed}/{report.maxRounds}
         </span>
       </div>
@@ -51,7 +51,7 @@ export function VerifyPanel({ report }: { report: VerifyReport }) {
       {report.checks.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+            <thead className="text-xs uppercase tracking-wide text-slate-400">
               <tr>
                 <th className="py-1 pr-2 font-medium">Mã</th>
                 <th className="py-1 pr-2 font-medium">Phép kiểm</th>
@@ -70,7 +70,7 @@ export function VerifyPanel({ report }: { report: VerifyReport }) {
             <tbody className="divide-y divide-slate-800/60">
               {report.checks.map((c) => (
                 <tr key={c.code} className={c.status === 'fail' ? 'bg-rose-950/10' : undefined}>
-                  <td className="py-1.5 pr-2 font-mono-studio text-slate-500">{c.code}</td>
+                  <td className="py-1.5 pr-2 font-mono-studio text-slate-400">{c.code}</td>
                   <td className="py-1.5 pr-2 text-slate-300">{c.label || '—'}</td>
                   {roundStatus(report, c.code).map((s, i) => (
                     <td key={i} className="px-2 py-1.5 text-center">
@@ -82,7 +82,7 @@ export function VerifyPanel({ report }: { report: VerifyReport }) {
                       <StatusIcon status={c.status} />
                       <span>{VERIFY_STATUS_LABEL[c.status]}</span>
                     </span>
-                    {showDetail(c) && <span className="mt-0.5 block text-[11px] text-slate-500">{c.detail}</span>}
+                    {showDetail(c) && <span className="mt-0.5 block text-xs text-slate-400">{c.detail}</span>}
                   </td>
                 </tr>
               ))}
@@ -91,7 +91,7 @@ export function VerifyPanel({ report }: { report: VerifyReport }) {
         </div>
       )}
 
-      <p className="text-[11px] text-slate-600">
+      <p className="text-xs text-slate-400">
         Mỗi cột là một vòng gọi Claude; vòng sau chỉ hỏi lại bản bị lỗi. “Code tự sửa” là lỗi làm tròn phách mà code
         tự chỉnh, không gửi lại Claude.
       </p>

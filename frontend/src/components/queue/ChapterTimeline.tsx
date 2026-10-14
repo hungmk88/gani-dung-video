@@ -31,7 +31,7 @@ export function ChapterTimeline({
           <Clapperboard className="h-3.5 w-3.5 text-amber-400" />
           Cấu trúc video {clock(structure.durationSec)}
         </h4>
-        <span className="text-[10px] text-slate-500">
+        <span className="text-xs text-slate-400">
           {segs.filter((s) => s.kind === 'chapter').length} chương
           {onSeek ? ' · bấm để tua tới' : ''}
         </span>
@@ -41,7 +41,7 @@ export function ChapterTimeline({
         {segs.map((s, i) => {
           const body = (
             <>
-              {s.showLabel && <span className="truncate px-1.5 text-[11px] font-medium">{s.label}</span>}
+              {s.showLabel && <span className="truncate px-1.5 text-xs font-medium">{s.label}</span>}
               <span className="sr-only">
                 {s.label} {clock(s.startSec)}–{clock(s.endSec)}
               </span>
@@ -73,19 +73,19 @@ export function ChapterTimeline({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="flex shrink-0 items-center gap-1 text-[10px] uppercase tracking-wide text-slate-500">
+        <span className="flex shrink-0 items-center gap-1 text-xs uppercase tracking-wide text-slate-400">
           <Captions className="h-3 w-3" />
           Tiêu đề (đầu khung hình)
         </span>
         <div className="flex min-w-0 flex-1 gap-0.5">
           {segs.map((s) => (
-            <div key={s.id} style={{ width: `${s.pct}%` }} className="min-w-0 text-[11px]">
+            <div key={s.id} style={{ width: `${s.pct}%` }} className="min-w-0 text-xs">
               {s.kind === 'chapter' && (
                 <span
                   className={`block truncate rounded border px-1.5 py-0.5 ${
                     s.title
                       ? 'border-amber-700/50 bg-amber-950/30 text-amber-200'
-                      : 'border-dashed border-slate-800 text-slate-600'
+                      : 'border-dashed border-slate-800 text-slate-400'
                   }`}
                   title={s.title ?? 'Chưa có tiêu đề'}
                 >
@@ -96,7 +96,7 @@ export function ChapterTimeline({
           ))}
         </div>
       </div>
-      <p className="text-[10px] text-slate-600">
+      <p className="text-xs text-slate-400">
         Tiêu đề chương hiện khoảng 1,5 giây đầu mỗi chương ở đầu khung hình; phụ đề nằm cuối khung hình.
       </p>
     </div>

@@ -1,7 +1,7 @@
 """Glossary: fix misheard proper names in transcripts + find banned claims in on-screen text.
 
 Vietnamese words are space-separated syllables, so matching works on syllable sequences:
-- "gani foods" (2 syllables heard) → "GANI" (1 word) keeps the span start→end of the
+- "ga ni phu đi" (4 syllables heard) → "GANI FOODS" (2 words) keeps the span start→end of the
   original words, so subtitle timing stays exact.
 - Banned claims are PHRASES (decision 28/09/2026): "trị bệnh" is banned, while "giá trị"
   is not — a substring or regex \\b check would wrongly flag it, because "trị" is its own

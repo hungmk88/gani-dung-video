@@ -81,7 +81,7 @@ export function ProjectPicker({
             }`}
           >
             <div className="text-xs font-semibold">{m.label}</div>
-            <div className="mt-0.5 max-w-64 text-[11px] text-slate-500">{m.hint}</div>
+            <div className="mt-0.5 max-w-64 text-xs text-slate-400">{m.hint}</div>
           </button>
         ))}
       </div>
@@ -91,11 +91,11 @@ export function ProjectPicker({
           {error}
         </p>
       ) : projects === null ? (
-        <p className="flex items-center gap-2 text-xs text-slate-500">
+        <p className="flex items-center gap-2 text-xs text-slate-400">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang lấy danh sách dự án…
         </p>
       ) : projects.length === 0 ? (
-        <p className="text-xs text-slate-500">Không có dự án nào trong GANI_DV_ALLOWED_ROOTS của máy dựng.</p>
+        <p className="text-xs text-slate-400">Không có dự án nào trong GANI_DV_ALLOWED_ROOTS của máy dựng.</p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {[...projects]
@@ -122,13 +122,13 @@ export function ProjectPicker({
                       <FolderOpen className="h-4 w-4 shrink-0 text-amber-400" />
                       <span className="truncate">{p.name}</span>
                     </div>
-                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
                       <Flag ok={p.has_inventory} label="inventory" />
                       <Flag ok={p.has_plan} label="plan" />
                       <Flag ok={p.has_drafts} label="kịch bản" />
                     </div>
                     {!selectable && (
-                      <div className="mt-1 text-[11px] text-amber-400/80">
+                      <div className="mt-1 text-xs text-amber-400/80">
                         Chưa có kịch bản — dùng "Chạy cả chuỗi".
                       </div>
                     )}
@@ -186,7 +186,7 @@ export function ProjectPicker({
         )}
       </div>
       {pipeline && (
-        <p className="text-[11px] text-slate-500">
+        <p className="text-xs text-slate-400">
           Footage phải nằm sẵn trong thư mục dự án trên máy dựng (không tải lên qua trình duyệt).
           Bước gọi Claude luôn dừng lại chờ bạn duyệt chi phí.
         </p>
@@ -198,7 +198,7 @@ export function ProjectPicker({
 function Flag({ ok, label }: { ok: boolean; label: string }) {
   const Icon = ok ? CheckCircle2 : CircleSlash;
   return (
-    <span className={`flex items-center gap-1 ${ok ? 'text-emerald-400' : 'text-slate-600'}`}>
+    <span className={`flex items-center gap-1 ${ok ? 'text-emerald-400' : 'text-slate-400'}`}>
       <Icon className="h-3 w-3" />
       {label}
     </span>

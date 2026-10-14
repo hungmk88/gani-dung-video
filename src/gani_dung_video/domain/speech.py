@@ -72,7 +72,7 @@ def is_no_speech(t: RawTranscript | Transcript, cfg: Mapping[str, Any]) -> bool:
 
 
 def fix_names(words: Sequence[SpokenWord], terms: Sequence[Term]) -> list[SpokenWord]:
-    """Apply the glossary (e.g. "gani foods" → "GANI") while keeping word timing."""
+    """Apply the glossary (e.g. "gani food" → "GANI FOODS") while keeping word timing."""
     fixed = apply_glossary([Word(w.text.strip(), w.start, w.end) for w in words], terms)
     # A merged word keeps the probability of its first source word (same start time).
     prob_by_start = {w.start: w.prob for w in words}

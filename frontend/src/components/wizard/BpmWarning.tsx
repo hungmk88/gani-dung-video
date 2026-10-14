@@ -64,7 +64,7 @@ export function BpmWarning({
           </div>
         )}
         {blocking && chosen && (
-          <p className="text-[11px] text-yellow-300/80">
+          <p className="text-xs text-yellow-300/80">
             Bạn đã chọn dùng bài này. Khi giao, video vẫn bị chặn nếu kế hoạch lệch quá ±{BPM_SAFE.gapPct}%.{' '}
             <button
               type="button"
