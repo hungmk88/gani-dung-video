@@ -37,8 +37,10 @@ python -m gani_dung_video serve       # in "Giao diện: mở http://127.0.0.1:8
   Build xong **không cần khởi động lại** `serve`.
 - Giao diện gọi API bằng đường dẫn tương đối (`/api/...`, `/media/...`) nên cùng nguồn gốc
   (origin) với `serve`; mở bằng `127.0.0.1:8765` hoặc `localhost:8765` đều được.
-- Khi phát triển giao diện (`npm run dev`, cổng 5173) không đổi gì: Vite vẫn proxy `/api` và
-  `/media` sang `serve`.
+- Khi phát triển giao diện (`npm run dev`, cổng 5173): Vite vẫn proxy `/api` và `/media` sang
+  `serve`, nhưng `serve` **không còn tin cổng 5173 mặc định**. Đặt
+  `GANI_DV_DEV_ORIGINS=http://localhost:5173,http://127.0.0.1:5173` trong `.env` của máy lập
+  trình rồi chạy lại `serve`. Máy dựng thật không cần biến này (giao diện build cùng nguồn gốc).
 
 ## 2. Quy ước chung
 
@@ -610,9 +612,13 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
 ## 7. An toàn (đã kiểm bằng test với server thật)
 
 - **Host**: chỉ `127.0.0.1:<cổng>`, `localhost:<cổng>` (chặn DNS rebinding).
-- **Origin**: nếu có, phải nằm trong `api.allowed_origins` (mặc định
-  `http://localhost:5173`, `http://127.0.0.1:5173`) hoặc là chính server. Không có Origin
-  (curl, công cụ dòng lệnh) được chấp nhận; trình duyệt luôn gửi Origin cho POST.
+- **Origin**: nếu có, phải là chính server hoặc nằm trong `api.allowed_origins` (mặc định
+  rỗng) cộng `GANI_DV_DEV_ORIGINS` trong `.env`. Không có Origin (curl, công cụ dòng lệnh)
+  được chấp nhận; trình duyệt luôn gửi Origin cho POST. Cổng 5173 của Vite **không còn được
+  tin mặc định**: một trang chạy ở cổng đó gọi được API như chính người dùng, kể cả duyệt
+  chi phí. Tiến trình đã chạy trên máy vốn đọc ghi thẳng được `queue.db`, nên không có Origin
+  không phải đường tấn công thêm; token xác thực chỉ đáng làm khi mở server ra ngoài
+  `127.0.0.1` hoặc nhiều người dùng chung một máy.
 - **Chéo trang**: `Sec-Fetch-Site: cross-site` chỉ qua nếu Origin hoặc Referer tin cậy —
   nên `<video src="http://127.0.0.1:8765/media/…">` từ giao diện Vite hoạt động, còn trang lạ
   thì không.

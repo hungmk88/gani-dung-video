@@ -27,6 +27,14 @@ from gani_dung_video.infrastructure.settings import Settings
 
 RULES = load_rules()
 VITE = "http://localhost:5173"
+
+
+@pytest.fixture(autouse=True)
+def _trust_the_dev_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing but the server itself is trusted by default; these tests act as the Vite UI."""
+    monkeypatch.setenv("GANI_DV_DEV_ORIGINS", VITE)
+
+
 SR = 8000
 
 
