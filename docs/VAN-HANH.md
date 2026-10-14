@@ -341,6 +341,14 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   · `100pt tự nhiên` (viết tắt)
   · `100 phần trămm tự nhiên` (chèn ký tự lạ vào "trăm")
   · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
+  · chữ trông giống chữ Việt nhưng là chữ Cyrillic (`sо 1` với "о" Cyrillic), chữ số cách nhau
+    (`1 0 0 %`)
+- Không coi là cụm cấm (14/10/2026): cụm bắt đầu ở âm tiết thứ hai của một từ có sẵn trong
+  danh sách `_WORD_BEFORE` (`domain/glossary.py`: giá trị, quản trị, chính trị, cai trị, thống
+  trị, văn phòng, sửa chữa), nên "giá trị bệnh nhân" không bị bắt là "trị bệnh"; số có dấu thập
+  phân hoặc dấu nghìn là một số ("số 1,5 kg", "số 1.000 khách" không bị bắt là "số 1"). Vẫn
+  bị bắt: "trị bệnh nhân", "điều trị bệnh", "top số 1, giá tốt". Còn bắt nhầm: "bước số 1",
+  "phòng số 1" ("số 1" theo nghĩa thứ tự). Cần NVH xem lại danh sách từ.
 
 ## 10. Xử lý sự cố nhanh
 
