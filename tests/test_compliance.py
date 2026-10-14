@@ -14,6 +14,7 @@ import pytest
 
 from gani_dung_video.domain.compliance import (
     CODE,
+    KARAOKE_JOIN_MAX_GAP_SEC,
     ClaimHit,
     check_claims,
     check_edl_claims,
@@ -149,3 +150,66 @@ def test_a_phrase_can_cross_more_than_two_groups() -> None:
 def test_clean_speech_stays_clean_across_groups() -> None:
     e = _edl_with_karaoke([["Giá"], ["trị", "thật"], ["từ", "xưởng"]])
     assert check_edl_claims(e, BANNED) == []
+
+
+# ─────────────── NVH 14/10: a phrase is joined across groups only inside one phrase ───────────────
+
+
+def _timed(groups: list[tuple[float, str]], shots: list[tuple[float, float]]) -> Edl:
+    """Karaoke groups that start at the given seconds (0.25 s per word) over the given shots."""
+    karaoke = [[SpokenWord(text=w, start=t0 + 0.25 * i, end=t0 + 0.25 * i + 0.25, prob=0.9)
+                for i, w in enumerate(text.split())] for t0, text in groups]  # fmt: skip
+    cuts = [Shot(source="a.mp4", src_in=0, src_out=b - a, t_start=a, t_end=b, block="speech",
+                 hdr=False, dissolve_out_sec=0, pad_sec=0) for a, b in shots]  # fmt: skip
+    return Edl(style="ban_hang_co_loi", width=540, height=960, fps=30, video_kbps=2500,
+               shots=cuts, content_end=shots[-1][1], end_card_sec=2.0,
+               duration=shots[-1][1] + 2.0, music=None, ambient_db=None, lufs=-14.0,
+               true_peak_db=-2.0, font="x", captions=[], karaoke=karaoke, emphasis=[],
+               mode="speech")  # fmt: skip
+
+
+def test_the_join_limit_is_half_a_second() -> None:
+    assert KARAOKE_JOIN_MAX_GAP_SEC == 0.5
+
+
+def test_groups_in_one_phrase_with_a_short_pause_are_joined() -> None:
+    # "...uy tín" ends at 1.25 s, "nhất là..." starts at 1.45 s: 0.2 s apart, one shot
+    e = _timed([(0.0, "Sản phẩm của xưởng uy tín"), (1.45, "nhất là giò lụa")], [(0.0, 4.0)])
+    assert [(h.source, h.phrase) for h in check_edl_claims(e, BANNED)] == [
+        ("lời 1–2", "uy tín nhất")
+    ]
+
+
+def test_a_pause_of_exactly_the_limit_still_joins() -> None:
+    e = _timed([(0.0, "Sản phẩm của xưởng uy tín"), (1.75, "nhất là giò lụa")], [(0.0, 4.0)])
+    assert [h.phrase for h in check_edl_claims(e, BANNED)] == ["uy tín nhất"]  # gap 0.5 s
+
+
+def test_groups_in_different_shots_are_never_joined() -> None:
+    """NVH condition 2: "…uy tín" closes one phrase, "nhất là…" opens the next one."""
+    e = _timed(
+        [(0.0, "Sản phẩm của xưởng uy tín"), (1.3, "nhất là giò lụa")], [(0.0, 1.3), (1.3, 4.0)]
+    )
+    assert check_edl_claims(e, BANNED) == []
+
+
+def test_a_silence_longer_than_the_limit_breaks_the_join() -> None:
+    """NVH condition 3: 0.8 s of silence inside one shot is not one sentence any more."""
+    e = _timed([(0.0, "Sản phẩm uy tín"), (1.55, "nhất vùng này")], [(0.0, 4.0)])  # gap 0.8 s
+    assert check_edl_claims(e, BANNED) == []
+
+
+def test_only_the_joins_that_hold_are_checked_in_a_longer_chain() -> None:
+    # g1+g2 sit in shot 1 ("chất lượng" + "nhất"); g2 ends "ngon" and g3 opens shot 2 with
+    # "nhất": that pair is across a cut and must stay silent.
+    e = _timed([(0.0, "Giò chất lượng"), (0.9, "nhất vùng này ngon"), (1.95, "nhất")],
+               [(0.0, 1.9), (1.9, 4.0)])  # fmt: skip
+    hits = check_edl_claims(e, BANNED)
+    assert [(h.source, h.phrase) for h in hits] == [("lời 1–2", "chất lượng nhất")]
+
+
+def test_a_group_that_itself_crosses_a_shot_boundary_is_still_checked_whole() -> None:
+    """One group is one line on screen: the per-group check is unchanged by the join rule."""
+    e = _timed([(0.0, "Ai cũng nói uy tín nhất")], [(0.0, 0.8), (0.8, 4.0)])
+    assert [h.phrase for h in check_claims(edl_texts(e), BANNED)] == ["uy tín nhất"]
+    assert [(h.source, h.phrase) for h in check_edl_claims(e, BANNED)] == [("lời 1", "uy tín nhất")]

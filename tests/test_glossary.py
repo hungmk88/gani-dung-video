@@ -199,3 +199,17 @@ def test_spellings_that_used_to_slip_past_are_caught(text: str, found: list[str]
 )
 def test_the_stricter_matching_adds_no_false_alarms(text: str) -> None:
     assert find_banned_claims(text, BANNED) == []
+
+
+# ─────────────── NVH 14/10: words that only share a syllable with a banned phrase ───────────────
+
+
+@pytest.mark.parametrize(
+    "word",
+    ["thống nhất", "nhất quán", "nhất loạt", "quản trị", "thống trị", "trị vì", "long lanh",
+     "long trọng", "trường tồn", "chữa lành", "uy tín", "ngon miệng", "tốt bụng", "đặc biệt",
+     "điều chỉnh", "phòng ngừa", "sạch sẽ", "thần kỳ", "duy trì", "số lượng",
+     "thốngnhất", "quảntrị", "longlanh"],  # written together as well: still not a banned phrase
+)  # fmt: skip
+def test_words_that_only_share_a_syllable_are_never_a_claim(word: str) -> None:
+    assert find_banned_claims(word, BANNED) == []

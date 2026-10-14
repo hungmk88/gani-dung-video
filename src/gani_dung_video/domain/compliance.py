@@ -19,6 +19,10 @@ from gani_dung_video.domain.glossary import find_banned_claims
 
 CODE = "C1"
 
+# Two karaoke groups are read as one sentence only when the silence between them is at most this
+# long (NVH 14/10/2026); the people who own the claim list can tune it after real videos.
+KARAOKE_JOIN_MAX_GAP_SEC = 0.5
+
 
 @dataclass(frozen=True)
 class ClaimHit:
@@ -53,20 +57,49 @@ def check_edl_claims(e: Edl, banned: Sequence[str]) -> list[ClaimHit]:
     """C1 over everything a viewer reads or hears: every text of `edl_texts`, plus phrases that
     the karaoke grouping splits (spoken as one sentence, drawn as two or more groups).
 
-    A phrase wholly inside one group is reported once, under that group's own name; one that
-    crosses groups is named "lời 1–2" and carries the text of the groups it covers.
+    Two consecutive groups are read together only when they belong to the same cut (one phrase
+    of the speaker) and the silence between them is at most KARAOKE_JOIN_MAX_GAP_SEC: across a
+    cut or a long pause the words are not one sentence, and joining them would flag valid
+    videos (NVH 14/10/2026). A phrase wholly inside one group is reported once, under that
+    group's own name; one that crosses groups is named "lời 1–2" with the text it covers.
     """
     hits = check_claims(edl_texts(e), banned)
     groups = [" ".join(w.text for w in g) for g in e.karaoke]
     for phrase in banned:
         if any(find_banned_claims(g, [phrase]) for g in groups):
             continue  # already reported (or about to be) as a single group's text
-        span = _crossing_span(groups, phrase)
-        if span is not None:
-            first, last = span
-            hits.append(ClaimHit(f"lời {first + 1}–{last + 1}",
-                                 " ".join(groups[first : last + 1]), phrase))  # fmt: skip
+        for run in _joined_runs(e):
+            span = _crossing_span([groups[i] for i in run], phrase)
+            if span is not None:
+                first, last = run[span[0]], run[span[1]]
+                hits.append(ClaimHit(f"lời {first + 1}–{last + 1}",
+                                     " ".join(groups[first : last + 1]), phrase))  # fmt: skip
+                break
     return hits
+
+
+def _joined_runs(e: Edl) -> list[list[int]]:
+    """Indexes of karaoke groups, split wherever two neighbours are not one sentence."""
+    spans = sorted((s.t_start, s.t_end) for s in e.shots)  # one shot per spoken phrase
+
+    def cut_of(t: float) -> int:
+        for i, (a, b) in enumerate(spans):
+            if a - 1e-6 <= t < b - 1e-6:
+                return i
+        return -1  # outside every cut: never joined
+
+    runs: list[list[int]] = []
+    for i, g in enumerate(e.karaoke):
+        if not g:
+            continue
+        if runs and e.karaoke[runs[-1][-1]]:
+            prev = e.karaoke[runs[-1][-1]]
+            same_cut = cut_of(prev[-1].start) == cut_of(g[0].start) != -1
+            if same_cut and g[0].start - prev[-1].end <= KARAOKE_JOIN_MAX_GAP_SEC + 1e-9:
+                runs[-1].append(i)
+                continue
+        runs.append([i])
+    return runs
 
 
 def _crossing_span(groups: Sequence[str], phrase: str) -> tuple[int, int] | None:
