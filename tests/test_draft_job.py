@@ -128,6 +128,13 @@ class FakeRunner:
         return scenario(Ctx(cmd, a, folder, on_line, should_stop))
 
 
+@pytest.fixture(autouse=True)
+def ffmpeg_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The paid phase refuses to start on ffmpeg < 7; these tests fake every child process, so
+    # the ffmpeg installed on the machine running them must not decide the outcome.
+    monkeypatch.setattr("gani_dung_video.application.draft_job.ffmpeg_problem", lambda: None)
+
+
 @pytest.fixture
 def clock() -> Clock:
     return Clock()
