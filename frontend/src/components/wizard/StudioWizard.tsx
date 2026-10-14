@@ -5,7 +5,7 @@ import type { FootageFile, PreflightResult, VideoOptions } from '../../types/rul
 import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
 import { MusicPicker } from './MusicPicker';
-import { PreflightValidator } from './PreflightValidator';
+import { PreflightValidator, type MissingChoice } from './PreflightValidator';
 import { useMusicTracks } from './useMusicTracks';
 import { ProjectPicker, type RealJobChoice } from './ProjectPicker';
 import { RuleSelector } from './RuleSelector';
@@ -126,6 +126,15 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   }, [options, footage, incomplete, renderOnly]);
 
   const needsProject = isReal && choice.projectId === null;
+  // What is still to choose, in page order, each with the place on the page to jump to.
+  const missing: MissingChoice[] = renderOnly
+    ? []
+    : [
+        { done: Boolean(options.phong_cach), label: 'phong cách', target: 'chon-phong-cach' },
+        { done: Boolean(options.muc_dich), label: 'mục đích', target: 'chon-muc-dich' },
+        { done: Boolean(options.do_dai_giay), label: 'thời lượng', target: 'chon-thoi-luong' },
+        { done: Boolean(options.nhac), label: 'nhạc nền', target: 'chon-nhac' },
+      ].filter((m) => !m.done);
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -157,7 +166,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_380px]">
       <div className="space-y-6">
         {isReal ? (
-          <Panel title="1. Chọn dự án trên máy dựng">
+          <Panel title="1. Chọn dự án trên máy dựng" id="chon-du-an">
             <ProjectPicker
               value={choice}
               draftLetters={draftLetters}
@@ -165,18 +174,18 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
             />
           </Panel>
         ) : (
-          <Panel title="1. Quản lý footage đầu vào">
+          <Panel title="1. Footage đầu vào" id="chon-footage">
             <FootageDropzone files={footage} onChange={setFootage} />
           </Panel>
         )}
 
         {!renderOnly && (
           <>
-            <Panel title="2. Ma trận cấu hình kịch bản">
+            <Panel title="2. Kiểu video">
               <RuleSelector options={options} onChange={patch} longVideo={longVideo} />
             </Panel>
 
-            <Panel title="3. Thư viện âm nhạc & bản quyền (X14)">
+            <Panel title="3. Nhạc nền" id="chon-nhac">
               <div className="space-y-3">
                 <MusicPicker options={options} onChange={patch} list={music} error={musicError} />
                 <BpmWarning options={options} onChange={patch} tracks={musicTracks} />
@@ -186,10 +195,11 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         )}
       </div>
 
-      <div className="lg:sticky lg:top-24 lg:self-start">
+      <div className="lg:sticky lg:top-20 lg:self-start">
         <PreflightValidator
           result={incomplete ? null : withoutBpmWarnings(preflight)}
           incomplete={incomplete}
+          missing={missing}
           renderOnly={renderOnly}
           checking={checking}
           error={preflightError}
@@ -209,9 +219,9 @@ function withoutBpmWarnings(r: PreflightResult | null): PreflightResult | null {
   return { ...r, warnings: r.warnings.filter((w) => !w.code.startsWith('W_BPM')) };
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 sm:p-5">
+    <section id={id} className="scroll-mt-20 rounded-xl border border-slate-800 bg-slate-900/30 p-4 sm:p-5">
       <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-400">{title}</h2>
       {children}
     </section>

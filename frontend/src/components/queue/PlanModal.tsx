@@ -28,7 +28,7 @@ export function PlanModal({ onClose }: { onClose: () => void }) {
             <h3 id="plan-modal-title" className="text-sm font-semibold text-slate-200">
               edit/plan.json
             </h3>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs text-slate-400">
               Mẫu thật từ lần chạy 29/09/2026 (review_mon_an · ban_hang · 30s) — minh hoạ hình
               dạng dữ liệu, không phải tác vụ đang chọn.
             </p>
@@ -37,12 +37,12 @@ export function PlanModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Đóng"
-            className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+            className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <pre className="max-h-[65vh] overflow-auto scroll-thin p-4 font-mono-studio text-[11px] leading-relaxed text-emerald-300">
+        <pre className="max-h-[65vh] overflow-auto scroll-thin p-4 font-mono-studio text-xs leading-relaxed text-emerald-300">
           {JSON.stringify(SAMPLE_PLAN_JSON, null, 1)}
         </pre>
       </div>

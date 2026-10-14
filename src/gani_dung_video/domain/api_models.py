@@ -441,13 +441,13 @@ class RunInfo(BaseModel):
 
 
 STEP_LABELS: dict[str, str] = {
-    "inventory": "Inventory (kiểm kê footage)",
-    "nhan_dang": "Nhận dạng (Whisper + CLIP + OpenCV)",
-    "plan_compile": "Biên dịch plan (khối / phách)",
-    "pick": "Chọn ứng viên cảnh",
-    "ai_draft": "AI viết kịch bản (Claude)",
-    "render_preview": "Dựng bản xem trước (540p)",
-    "qc_verify": "Soát kỹ thuật (T1–T7)",
+    "inventory": "Kiểm kê footage",
+    "nhan_dang": "Nghe lời & nhận diện hình",
+    "plan_compile": "Lập kế hoạch nhịp",
+    "pick": "Chọn cảnh ứng viên",
+    "ai_draft": "AI viết kịch bản",
+    "render_preview": "Dựng bản xem nhanh (540p)",
+    "qc_verify": "Soát kỹ thuật",
     "final_export": "Xuất bản cuối (1080×1920)",
 }
 
