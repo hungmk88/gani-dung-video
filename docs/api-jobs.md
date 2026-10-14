@@ -92,7 +92,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | `POST /api/pipelines` | Ghi `options.json` + tạo chuỗi `analyze → draft → render` (mục 4b) | `201` + `PipelineView` |
 | `GET /api/pipelines/{id}` | Các job của một pipeline và trạng thái chung | `PipelineView` |
 | `POST /api/jobs/{id}/approve` | Duyệt chi phí gọi Claude của job `draft` đang chờ | `JobView` |
-| `GET /api/jobs?status=&project_id=&kind=&limit=` | Danh sách mọi loại job, mới nhất trước (`limit` 1–200, mặc định 50; `kind` = `render`\|`draft`\|`analyze`, mặc định không lọc) | `JobView[]` |
+| `GET /api/jobs?status=&project_id=&kind=&limit=` | Danh sách mọi loại job, mới nhất trước (`limit` 1–200, mặc định 50; `kind` = `render`\|`draft`\|`analyze`, mặc định không lọc). Job ngoài `GANI_DV_ALLOWED_ROOTS` bị bỏ trước khi cắt trang, nên trang vẫn đủ `limit` khi còn job hợp lệ | `JobView[]` |
 | `GET /api/jobs/{id}` | Chi tiết kèm 200 dòng console cuối | `JobDetail` |
 | `GET /api/jobs/{id}/events?after=N` | Dòng console có `id > N` (con trỏ) | `EventView[]` |
 | `POST /api/jobs/{id}/cancel` | Chờ thì hủy ngay; đang chạy thì gửi cờ dừng | `JobView` |

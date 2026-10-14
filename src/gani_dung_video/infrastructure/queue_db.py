@@ -449,7 +449,7 @@ class QueueDb:
 
     def list_jobs(
         self, status: str | None = None, limit: int = 100, project_dir: str | None = None,
-        kind: str | None = None,
+        kind: str | None = None, offset: int = 0,
     ) -> list[Job]:  # fmt: skip
         where, args = [], []
         if status:
@@ -463,7 +463,8 @@ class QueueDb:
             args.append(kind)
         sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         with self._conn() as con:
-            rows = con.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+            rows = con.execute(sql + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                               (*args, limit, offset)).fetchall()  # fmt: skip
         return [_job(r) for r in rows]
 
     def counts(self) -> dict[str, int]:
