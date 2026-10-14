@@ -52,8 +52,11 @@ function newSteps(): PipelineStep[] {
   }));
 }
 
+let lastLogId = 0;
+
 function log(level: ConsoleLine['level'], text: string): ConsoleLine {
-  return { ts: nowIso(), level, text };
+  lastLogId += 1;
+  return { id: lastLogId, ts: nowIso(), level, text };
 }
 
 function stepDetail(id: PipelineStepId, options: VideoOptions, footage: FootageFile[]): string {

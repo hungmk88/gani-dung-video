@@ -323,6 +323,8 @@ export interface RenderJob {
 }
 
 export interface ConsoleLine {
+  /** Stable row id (the server's event id, unique per queue.db; a counter in the mock). */
+  id?: number;
   ts: string;
   level: 'info' | 'warn' | 'error';
   text: string;

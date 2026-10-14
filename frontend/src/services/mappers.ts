@@ -123,7 +123,7 @@ function toStatus(s: string): JobStatus {
 
 export function toConsoleLine(e: ApiEvent): ConsoleLine {
   const level = e.level === 'warn' || e.level === 'error' ? e.level : 'info';
-  return { ts: e.ts, level, text: e.text };
+  return { id: e.id, ts: e.ts, level, text: e.text };
 }
 
 const TEXT_GROUP = 'Chữ & phụ đề (T6, T7, T8)';

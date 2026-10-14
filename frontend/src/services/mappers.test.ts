@@ -99,6 +99,8 @@ test('toRenderJob maps events of a detail to console lines and coerces odd level
     ],
   };
   assert.deepEqual(toRenderJob(detail, []).logLines.map((l) => l.level), ['info', 'info', 'warn']);
+  // The server's event id is the row key of the console (stable when old lines drop off).
+  assert.deepEqual(toRenderJob(detail, []).logLines.map((l) => l.id), [1, 2, 3]);
 });
 
 test('groupLatest yields one job per (project, draft), newest first', () => {

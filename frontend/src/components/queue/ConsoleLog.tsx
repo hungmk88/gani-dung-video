@@ -10,10 +10,13 @@ const LEVEL_COLOR: Record<ConsoleLine['level'], string> = {
 
 export function ConsoleLog({ lines }: { lines: ConsoleLine[] }) {
   const boxRef = useRef<HTMLDivElement>(null);
+  // Keyed on the newest line, not the count: at the 400-line cap the count stops changing.
+  const last = lines[lines.length - 1];
+  const lastKey = last ? `${last.id ?? ''}|${last.ts}|${last.text}` : '';
 
   useEffect(() => {
     boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight });
-  }, [lines.length]);
+  }, [lastKey]);
 
   return (
     <div className="rounded-xl border border-slate-800 bg-black/40">
@@ -23,7 +26,7 @@ export function ConsoleLog({ lines }: { lines: ConsoleLine[] }) {
       <div ref={boxRef} className="max-h-48 overflow-y-auto scroll-thin px-3 py-2 font-mono-studio text-[11px]">
         {lines.length === 0 && <p className="text-slate-600">Chưa có tín hiệu.</p>}
         {lines.map((l, i) => (
-          <div key={i} className="flex gap-2">
+          <div key={l.id ?? `i${i}`} className="flex gap-2">
             <span className="shrink-0 text-slate-600">
               {new Date(l.ts).toLocaleTimeString('vi-VN')}
             </span>
