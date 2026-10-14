@@ -409,7 +409,7 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
     errorMsg: j.error_msg,
     retryable: status === 'error' || status === 'qa_review',
     spentVnd: j.cost?.spent_vnd ?? null,
-    ...(j.review ? { review: toReview(j.review) } : {}),
+    ...(j.review ? { review: toReview(j.review, j.id) } : {}),
   };
 }
 

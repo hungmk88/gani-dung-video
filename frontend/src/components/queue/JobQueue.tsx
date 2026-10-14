@@ -8,7 +8,9 @@ import { ConsoleLog } from './ConsoleLog';
 import { FootageWarning } from './FootageWarning';
 import { PipelineStepper } from './PipelineStepper';
 import { PlanModal } from './PlanModal';
+import { cardReviews } from '../../lib/review';
 import { ReviewBadge } from './ReviewBadge';
+import { ReviewPanel } from './ReviewPanel';
 import { VerifyPanel } from './VerifyPanel';
 import { VideoPlayerWithQA } from './VideoPlayerWithQA';
 
@@ -197,6 +199,17 @@ export function JobQueue({
                 })
               }
             />
+            {cardReviews(displayedJob).length > 0 && (
+              <ReviewPanel
+                // A decision belongs to one card: switching cards drops typed notes and errors.
+                key={`review|${displayedJob.id}`}
+                items={cardReviews(displayedJob)}
+                onDecide={async (jobId, decision, reviewer, reason) => {
+                  await api.decideReview(jobId, decision, reviewer, reason);
+                  setSubscription((n) => n + 1);
+                }}
+              />
+            )}
             <ConsoleLog lines={displayedJob.logLines} />
           </>
         )}

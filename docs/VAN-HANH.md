@@ -335,7 +335,10 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 
 Một **bản cuối 1080×1920** đã qua mọi kiểm tra nằm ở `edit/delivery/<chiến-dịch>/drafts/` với
 `review.status = pending` trong manifest. Bản **nháp 540p không bao giờ được duyệt**. Người duyệt
-quyết định bằng dòng lệnh (hoặc API, mục 9c-API); giao diện chỉ hiện huy hiệu trạng thái.
+quyết định **trên giao diện** (tab "Video đang làm" → chọn video → khung "Duyệt video cuối": ghi
+tên, bấm "Duyệt video" hoặc ghi lý do rồi bấm "Yêu cầu sửa"), bằng dòng lệnh, hoặc qua API (cuối
+mục này). Giao diện nhớ tên người duyệt trên máy đó và hỏi xác nhận trước khi gửi. Nút "Duyệt
+video" bị khóa khi còn mục kiểm tra hỏng (danh sách hiện ngay trên nút).
 
 | Việc | Lệnh | Kết quả |
 |---|---|---|

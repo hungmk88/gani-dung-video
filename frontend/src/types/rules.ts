@@ -275,6 +275,8 @@ export interface ApprovalInfo {
 
 /** Where a delivered final video stands with its reviewer (T-F). */
 export interface ReviewInfo {
+  /** Server id of the final render job this review belongs to (approve/reject target). */
+  jobId: string;
   status: 'pending' | 'approved' | 'changes_requested';
   reason: string | null;
   decidedBy: string | null;

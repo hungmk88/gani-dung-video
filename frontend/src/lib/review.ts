@@ -2,9 +2,10 @@
 import type { ApiJob, ApiReview } from '../types/api';
 import type { ReviewInfo } from '../types/rules';
 
-export function toReview(r: ApiReview | null | undefined): ReviewInfo | null {
+export function toReview(r: ApiReview | null | undefined, jobId: number | string): ReviewInfo | null {
   if (!r) return null;
   return {
+    jobId: String(jobId),
     status: r.status,
     reason: r.reason,
     decidedBy: r.decided_by,
@@ -52,5 +53,43 @@ export function latestReview(jobs: ApiJob[]): ReviewInfo | null {
   const mine = jobs
     .filter((j) => j.kind === 'render' && j.size === 'final' && j.review != null)
     .sort((a, b) => b.id - a.id)[0];
-  return mine ? toReview(mine.review) : null;
+  return mine ? toReview(mine.review, mine.id) : null;
+}
+
+/** One decision a person can take on a card: the final video of one draft. */
+export interface ReviewItem {
+  label: string;
+  review: ReviewInfo;
+}
+
+/**
+ * Every reviewable final video of a card, one per draft. A pipeline lists its render jobs
+ * (a re-render's newer final replaces the older one of the same draft); a lone card has one.
+ */
+export function cardReviews(job: {
+  draft?: string;
+  review?: ReviewInfo | null;
+  jobs?: { kind: string; draft: string; review?: ReviewInfo | null }[];
+}): ReviewItem[] {
+  const chain = (job.jobs ?? []).filter((j) => j.kind === 'render' && j.review);
+  if (chain.length > 0) {
+    const newest = new Map<string, ReviewInfo>();
+    for (const j of chain) {
+      const seen = newest.get(j.draft);
+      if (!seen || Number(j.review!.jobId) > Number(seen.jobId)) newest.set(j.draft, j.review!);
+    }
+    return [...newest.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([draft, review]) => ({ label: `Bản cuối ${draft}`.trim(), review }));
+  }
+  if (!job.review) return [];
+  const draft = job.draft && job.draft !== 'all' ? ` ${job.draft}` : '';
+  return [{ label: `Bản cuối${draft}`, review: job.review }];
+}
+
+/** Why a decision cannot be sent yet (Vietnamese), or null. Same rules as the server. */
+export function reviewProblem(decision: 'approve' | 'reject', reviewer: string, reason: string): string | null {
+  if (!reviewer.trim()) return 'Ghi tên người duyệt.';
+  if (decision === 'reject' && !reason.trim()) return 'Yêu cầu sửa cần ghi lý do (sửa gì, ở giây nào).';
+  return null;
 }
