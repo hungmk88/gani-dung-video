@@ -210,6 +210,22 @@ hơn, nên đừng bật khử ồn cho chế độ lời trước khi người 
   không dựng**, và báo "C1: …" kèm nguồn chữ và cụm cấm. Ngoài ra, nạp `glossary.json` cũng dừng nếu một
   từ nhấn chứa cụm cấm, trống hay bị lặp. Soát không phân biệt hoa thường và dấu thanh.
 
+## 6c. Logo và số Zalo (từ 14/10/2026)
+
+Mọi video mang logo thật của GANI và số **Zalo 0853 9999 77**. Thông số nằm trong
+`config/rules.json` → `render.brand`; đổi số ở đó, không cần sửa mã.
+
+- **Logo trong video:** lá và chữ GANI (`assets/brand/logo-video.png`). Logo chỉ hiện **từ giây
+  thứ 5** (`logo_start_sec`), sau đó cứ **4 giây** (`logo_hop_sec`) lại nhảy sang vị trí kế tiếp
+  trong `logo_positions`: trên trái → trên phải → giữa bên trái → lặp lại. Logo không đứng yên
+  một chỗ. Mọi vị trí đều nằm trong vùng an toàn, không đè tiêu đề chương, phụ đề hay cột nút
+  bên phải của TikTok (một test kiểm điều này). Độ rộng 170 px trên khung 1080, mờ 80%.
+- **Khung kết 2 giây:** logo đầy đủ trên nền tối (`assets/brand/logo-khung-ket.png`), dưới là số
+  Zalo và dòng "GANI FOODS – Đạt chuẩn HACCP Codex 2022".
+- **Đổi logo:** thay `assets/brand/logo-goc.ai` (file Illustrator của bên thiết kế) rồi chạy
+  `python scripts/tao_logo_video.py` (cần `pdftocairo` và Pillow, chỉ dùng khi tạo lại ảnh).
+  Muốn quay về logo chữ thì xóa khóa `logo_image`.
+
 ## 7. Nhãn QC T8 (chế độ lời)
 
 T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch lời và độ lệch phụ đề; chỉ chạy cho

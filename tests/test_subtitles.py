@@ -6,6 +6,7 @@ import re
 
 from gani_dung_video.domain.edl import Caption, Edl, MusicTrack, Shot
 from gani_dung_video.domain.karaoke import ass_colour
+from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.subtitles import ass_document, ass_time, escape_ass, srt_document
 from gani_dung_video.infrastructure.config_files import load_rules
@@ -83,14 +84,28 @@ def test_sang_trong_uses_the_light_font() -> None:
         "Be Vietnam Pro Light")  # fmt: skip
 
 
-def test_logo_is_top_left_at_80_percent_and_marked_placeholder() -> None:
-    doc = ass_document(edl(), RULES)
+def text_logo_rules() -> Rules:
+    """rules.json without the picture logo: the .ass draws the "GANI" text instead."""
+    brand = {k: v for k, v in R["brand"].items() if k != "logo_image"}
+    return {**RULES, "render": {**R, "brand": {**brand, "logo_placeholder": True}}}
+
+
+def test_text_logo_is_top_left_at_80_percent_and_marked_placeholder() -> None:
+    doc = ass_document(edl(), text_logo_rules())
     s = style_line(doc, "Logo")
     assert s["Alignment"] == "7" and int(s["MarginV"]) >= R["safe"]["top"]
     assert s["PrimaryColour"].startswith("&H33")  # alpha 0x33 = 20 % transparent = 80 % opaque
     assert "placeholder" in section(doc, "Script Info").lower()
     logo = [ln for ln in doc.splitlines() if ln.startswith("Dialogue:") and ",Logo," in ln]
     assert len(logo) == 1 and ass_time(0) in logo[0] and ass_time(3.0) in logo[0]
+
+
+def test_picture_logo_leaves_no_logo_text_in_the_ass() -> None:
+    # 14/10/2026: the real logo is a picture laid over by ffmpeg (moving, from 5 s).
+    assert R["brand"]["logo_image"] and not R["brand"]["logo_placeholder"]
+    doc = ass_document(edl(), RULES)
+    assert not [ln for ln in doc.splitlines() if ",Logo," in ln or ",EndCardLogo," in ln]
+    assert "brand kit thật" in section(doc, "Script Info")
 
 
 # ─────────────── events ───────────────
@@ -105,7 +120,10 @@ def test_captions_and_end_card_become_dialogue_lines() -> None:
     joined = "\n".join(card)
     assert "0:00:03.00,0:00:05.00" in card[0]
     assert R["brand"]["zalo"] in joined and R["brand"]["footer"] in joined
-    assert R["brand"]["logo_text"] in joined
+    assert R["brand"]["zalo"] == "Zalo 0853 9999 77"
+    text_card = [ln for ln in ass_document(edl(), text_logo_rules()).splitlines()
+                 if ",EndCardLogo," in ln]  # fmt: skip
+    assert len(text_card) == 1 and R["brand"]["logo_text"] in text_card[0]
 
 
 def test_cta_caption_uses_the_cta_style() -> None:

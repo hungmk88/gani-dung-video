@@ -59,11 +59,13 @@ class DeliveryTarget:
 
 
 def _brand_texts(e: Edl, rules: Rules) -> list[tuple[str, str]]:
-    """(text, font family) of the logo and the end card, which are drawn on every video."""
+    """(text, font family) of the text logo and the end card, which are drawn on every video."""
     r = rules["render"]
     brand = r["brand"]
-    return [(str(brand["logo_text"]), str(r["fonts"]["default"])),
-            (str(brand["zalo"]), e.font), (str(brand["footer"]), e.font)]  # fmt: skip
+    texts = [(str(brand["zalo"]), e.font), (str(brand["footer"]), e.font)]
+    if brand.get("logo_image"):  # a picture: no glyph to check
+        return texts
+    return [(str(brand["logo_text"]), str(r["fonts"]["default"])), *texts]
 
 
 def apply_e1(
