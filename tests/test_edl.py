@@ -253,6 +253,16 @@ def test_speech_edl_refuses_broll_from_an_unknown_clip() -> None:
         build_speech_edl(speech_cuts(), [ov], speech_plan(), CLIPS, RULES, preview=True)
 
 
+def test_speech_edl_refuses_broll_shorter_than_its_slot() -> None:
+    from gani_dung_video.domain.edl import BrollPlacement, build_speech_edl
+    from gani_dung_video.domain.speech_edit import Overlay
+
+    ov = BrollPlacement(overlay=Overlay(phrase_id="s_p3", t_start=2.4, t_end=3.6, beats=2),
+                        clip="b.mp4", start=5.0, end=5.8, peak=5.4)  # fmt: skip
+    with pytest.raises(EdlError, match="B-roll"):
+        build_speech_edl(speech_cuts(), [ov], speech_plan(), CLIPS, RULES, preview=True)
+
+
 # ─────────────── music mode: cut at the chosen length (plan.trim_to_sec) ───────────────
 
 

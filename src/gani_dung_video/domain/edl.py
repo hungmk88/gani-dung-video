@@ -274,6 +274,9 @@ def _broll_shot(b: BrollPlacement, clips: Mapping[str, Clip], fps: int) -> Shot:
     if b.clip not in clips:
         raise EdlError(f"B-roll dùng clip '{b.clip}' không có trong inventory.json.")
     d = b.overlay.t_end - b.overlay.t_start
+    if b.end - b.start + 1e-6 < d:  # would show other footage, or the speaker past clip end
+        raise EdlError(f"B-roll '{b.clip}' ({b.start:.2f}–{b.end:.2f}s) ngắn hơn ô {d:.2f}s của "
+                       f"câu '{b.overlay.phrase_id}' — chạy lại lệnh `draft`.")  # fmt: skip
     src_in = min(max(b.peak - 0.35 * d, b.start), max(b.start, b.end - d))  # peak at 35 %
     return Shot(source=b.clip, src_in=_frame(src_in, fps), src_out=_frame(src_in + d, fps),
                 t_start=_frame(b.overlay.t_start, fps), t_end=_frame(b.overlay.t_end, fps),
