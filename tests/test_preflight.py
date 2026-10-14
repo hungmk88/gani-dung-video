@@ -311,10 +311,10 @@ def luxe(**kw: Any) -> Result:
 
 
 def test_a_track_the_table_blocks_is_a_warning_not_an_error() -> None:
-    r = luxe(nhac_bpm=100)
+    r = luxe(nhac_bpm=104)
     assert r["valid"] and "W_BPM_BLOCK" in codes(r)
     text = next(w["msg"] for w in r["warnings"] if w["code"] == "W_BPM_BLOCK")
-    assert "BPM 100" in text and "Sang trọng" in text and "66–82" in text
+    assert "BPM 104" in text and "Sang trọng" in text and "66–82" in text
 
 
 def test_a_track_that_only_needs_a_cut_gets_the_lighter_warning() -> None:

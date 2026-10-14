@@ -114,7 +114,7 @@ def test_outside_the_measured_domain_the_table_stays_silent() -> None:
 def test_a_decimal_bpm_is_looked_up_at_the_nearest_whole_one() -> None:
     assert check_bpm_safe(RULES, "sang_trong", 15, 104.4).level == "BLOCKING"
     assert check_bpm_safe(RULES, "sang_trong", 15, 103.6).level == "BLOCKING"
-    assert check_bpm_safe(RULES, "sang_trong", 15, 102.4).level == "WARNING"
+    assert check_bpm_safe(RULES, "sang_trong", 15, 100.4).level == "WARNING"
 
 
 def test_buildable_ranges_are_what_blocked_leaves_free() -> None:

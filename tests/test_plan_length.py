@@ -139,7 +139,7 @@ def test_music_plan_shorter_than_the_threshold_is_rebuilt_with_more_beats() -> N
 
 def test_policy_none_turns_the_music_trim_off_but_not_the_grid_stretch() -> None:
     rules = with_qc(duration_trim_policy="none")
-    p = compile_plan(opts("sang_trong", 15, music=True), rules, music=track(100.0),
+    p = compile_plan(opts("sang_trong", 15, music=True), rules, music=track(104.0),
                      available_tags=TAGS)  # fmt: skip
     assert p.trim_to_sec is None and p.planned_beats * p.beat_sec > 20  # as before
     g = compile_plan(opts("tvc_cat_nhanh", 15, music=False), rules, music=None, available_tags=TAGS)
@@ -224,7 +224,7 @@ def test_when_nothing_is_within_the_threshold_the_smallest_cut_wins_over_a_short
 
 
 def test_a_plan_beyond_the_gap_limit_is_warned_about_at_plan_time() -> None:
-    bad = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(100.0),
+    bad = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(104.0),
                        available_tags=TAGS)  # fmt: skip
     assert natural_sec(bad) > 15 * 1.1 and any(w.startswith("W_DUR_GAP") for w in bad.warnings)
     fine = compile_plan(opts("ke_chuyen_nghe", 15, music=True), RULES, music=track(100.0),
