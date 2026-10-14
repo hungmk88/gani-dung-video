@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -181,6 +182,39 @@ def test_a_link_pointing_outside_the_root_is_not_a_project(ctx: ApiContext, root
             pytest.skip("cannot create links here")
     with pytest.raises(ApiError) as e:
         resolve_project(ctx, "0/sneaky")
+    assert e.value.status == 404
+
+
+def test_a_project_id_in_another_letter_case_names_the_same_folder(
+    ctx: ApiContext, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On macOS (and Windows) '0/gani' opens the folder 'Gani' too; kept in the client's case,
+    its jobs were filed under another path and slipped past the one-pipeline guard (M4).
+    Here a case-insensitive file system is played by is_dir; listing the folder is real."""
+    (root / "Gani").mkdir()
+    real = Path.is_dir
+
+    def insensitive(self: Path) -> bool:
+        if real(self):
+            return True
+        with contextlib.suppress(OSError):
+            return any(p.name.casefold() == self.name.casefold() and real(p)
+                       for p in self.parent.iterdir())  # fmt: skip
+        return False
+
+    monkeypatch.setattr(Path, "is_dir", insensitive)
+    want = (root / "Gani").resolve()
+    assert resolve_project(ctx, "0/gani") == want and resolve_project(ctx, "0/GANI") == want
+    assert resolve_project(ctx, "0/Gani") == want
+
+
+def test_letter_case_still_matters_where_the_file_system_says_so(ctx: ApiContext,
+                                                                 root: Path) -> None:  # fmt: skip
+    (root / "Gani").mkdir()
+    if (root / "gani").exists():
+        pytest.skip("case-insensitive file system")
+    with pytest.raises(ApiError) as e:
+        resolve_project(ctx, "0/gani")
     assert e.value.status == 404
 
 

@@ -49,7 +49,9 @@ python -m gani_dung_video serve       # in "Giao diện: mở http://127.0.0.1:8
 - Dữ liệu là JSON UTF-8. Thời gian là ISO 8601 UTC, đuôi `Z` (`2026-09-29T04:56:08Z`).
 - Mã dự án (`project_id`) là chuỗi **mờ** `"<chỉ số thư mục gốc>/<tên thư mục>"`, ví dụ
   `"0/Xuong GANI"` (`"0/."` nếu chính thư mục gốc là dự án). Server không bao giờ trả đường
-  dẫn tuyệt đối. Giao diện lấy mã từ `GET /api/projects`, không tự ghép.
+  dẫn tuyệt đối. Giao diện lấy mã từ `GET /api/projects`, không tự ghép. Trên ổ không phân biệt
+  hoa/thường (macOS), `"0/gani"` và `"0/Gani"` là **cùng một** dự án: server dùng đúng tên thư
+  mục trên đĩa, nên chốt "một dự án một pipeline" và khóa thư mục không bị lách bằng cách đổi chữ.
 - **Không có tải footage lên qua HTTP.** Footage nằm sẵn trên máy dựng, trong một thư mục
   thuộc `GANI_DV_ALLOWED_ROOTS`.
 - Mỗi job có `kind`: `render` (một bản nháp ở một kích thước, `preview` 540p hoặc `final`

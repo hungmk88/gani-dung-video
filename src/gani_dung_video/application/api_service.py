@@ -210,7 +210,27 @@ def resolve_project(ctx: ApiContext, project_id: str) -> Path:
     folder = (root if name == "." else root / name).resolve()
     if not _inside(folder, root) or not folder.is_dir():  # also stops links leading outside
         raise _not_found("dự án")
-    return folder
+    return _true_case(root, folder)
+
+
+def _true_case(root: Path, folder: Path) -> Path:
+    """`folder` spelled as its directory entries are. A case-insensitive file system (macOS)
+    opens 'gani' for 'Gani' and resolve() keeps the client's spelling, but the queue compares
+    folders as text: one folder must have one name. A name the folder lists as it is stays as
+    it is, so on a case-sensitive file system (Linux) nothing ever changes."""
+    out = root
+    for part in folder.relative_to(root).parts:
+        try:
+            names = [p.name for p in out.iterdir()]
+        except OSError:
+            return folder
+        if part not in names:
+            same = [n for n in names if n.casefold() == part.casefold()]
+            if len(same) != 1:  # none, or two that differ only in case: do not guess
+                return folder
+            part = same[0]
+        out = out / part
+    return out
 
 
 def _project_id_of(ctx: ApiContext, folder: Path) -> str | None:
