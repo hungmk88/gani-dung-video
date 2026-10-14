@@ -69,7 +69,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | 405 | `method_not_allowed` | Sai phương thức (kèm header `Allow`) |
 | 409 | `not_ready` | Dự án chưa có `plan.json` hoặc `drafts.json`/`speech_drafts.json` — chạy `plan`/`pick`/`draft` trước |
 | 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt, hoặc job có thư mục dự án không còn; duyệt chi phí một job không phải `draft` |
-| 409 | `pipeline_active` | Dự án đã có job đang chờ/chạy/chờ duyệt (kèm `pipeline_id`, `job_id`) |
+| 409 | `pipeline_active` | `POST /api/pipelines`: dự án đã có job đang chờ/chạy/chờ duyệt; `POST /api/jobs`: dự án có pipeline đang hoạt động (kèm `pipeline_id`, `job_id`) |
 | 409 | `project_locked` | Thư mục dự án đang được **một hàng đợi khác** (`queue.db` khác) dùng (kèm `pipeline_id`, `job_id` của hàng đợi đó nếu biết) |
 | 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
 | 411 | `can_content_length` | Thân dùng `Transfer-Encoding` (không hỗ trợ) |
@@ -140,7 +140,9 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 
 `draft`: `"A"`, `"B"`, `"C"` hoặc `"all"` (mặc định, mọi bản kế hoạch có). Hỏi lại đúng bản
 đang chờ hoặc đang chạy thì trả về job cũ, không xếp trùng. Tùy chọn (phong cách, độ dài…) lấy
-từ `plan.json` của dự án, không gửi lại.
+từ `plan.json` của dự án, không gửi lại. Dự án đang có **pipeline** hoạt động (job của nó đang
+chờ, chạy hoặc chờ duyệt) thì trả **409 `pipeline_active`** (kèm `pipeline_id`, `job_id`) và không
+xếp gì: bản dựng lẻ sẽ ghi đè tệp của pipeline. Job dựng lẻ và job phân tích lẻ thì vẫn đi cùng nhau.
 
 ## 4. Ví dụ (in từ mã nguồn)
 

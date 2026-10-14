@@ -525,8 +525,18 @@ def _locked(e: ProjectLockedError) -> ApiError:
     return ApiError(409, "project_locked", str(e), pipeline_id=e.pipeline_id, job_id=e.job_id)
 
 
+def _busy(e: PipelineBusyError) -> ApiError:
+    """The folder has an active pipeline (or job): 409 naming it."""
+    return ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id, job_id=e.job_id)
+
+
 def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
-    """Queue the render(s) a request asks for and return their views."""
+    """Queue the render(s) a request asks for and return their views.
+
+    Raises:
+        ApiError: 404 project, 409 not ready, a pipeline active in the folder, or the folder
+            held by another queue.
+    """
     folder = resolve_project(ctx, req.project_id)
     try:
         queued = enqueue_project_render(folder, ctx.db, draft=req.draft, final=req.final,
@@ -534,6 +544,8 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
                                         settings=ctx.settings, now=ctx.clock())  # fmt: skip
     except NotReadyError as e:
         raise ApiError(409, "not_ready", str(e)) from e
+    except PipelineBusyError as e:
+        raise _busy(e) from e
     except ProjectLockedError as e:
         raise _locked(e) from e
     except ConfigError as e:
@@ -611,8 +623,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
             force_analyze=req.force_analyze, rules=ctx.rules, settings=ctx.settings,
             now=ctx.clock())  # fmt: skip
     except PipelineBusyError as e:
-        raise ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id,
-                       job_id=e.job_id) from e  # fmt: skip
+        raise _busy(e) from e
     except ProjectLockedError as e:
         raise _locked(e) from e
     except ConfigError as e:

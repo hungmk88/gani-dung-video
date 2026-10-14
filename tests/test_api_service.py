@@ -636,6 +636,19 @@ def test_a_second_pipeline_on_a_busy_project_is_a_conflict_that_names_the_first(
     assert len(ctx.db.list_jobs()) == 4
 
 
+def test_a_plain_render_while_a_pipeline_runs_is_a_409_pipeline_active(
+    ctx: ApiContext, root: Path
+) -> None:
+    make_project(root)
+    first = start(ctx, root)
+    with pytest.raises(ApiError) as caught:
+        create_jobs(ctx, JobCreate(project_id="0/footage", draft="all", final=True))
+    err = caught.value
+    assert (err.status, err.code) == (409, "pipeline_active")
+    assert err.extra == {"pipeline_id": first.id, "job_id": first.jobs[0].id}
+    assert len(ctx.db.list_jobs()) == 4
+
+
 def test_a_pipeline_can_be_read_back_and_unknown_ones_are_404(ctx: ApiContext,
                                                               root: Path) -> None:  # fmt: skip
     view = start(ctx, root)

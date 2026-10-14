@@ -795,6 +795,28 @@ def test_a_plain_render_job_in_the_folder_also_blocks_a_pipeline(db: QueueDb, ro
     assert caught.value.pipeline_id is None  # that render was not part of any pipeline
 
 
+@pytest.mark.parametrize("draft,final", [("all", False), ("A", False), ("A", True)])
+def test_a_plain_render_is_refused_while_a_pipeline_of_the_folder_is_active(
+    db: QueueDb, root: Path, draft: str, final: bool
+) -> None:
+    """The guard used to go one way only: a pipeline waited for plain renders, but a plain
+    render could join a running pipeline and overwrite its files (audit L6)."""
+    folder = ready_project(root)
+    first = pipe(db, root)
+    before = [j.id for j in db.list_jobs()]
+    with pytest.raises(PipelineBusyError) as caught:
+        by_project(db, folder, root, draft=draft, final=final)
+    assert (caught.value.job_id, caught.value.pipeline_id) == (first.analyze_id, first.pipeline_id)
+    assert "footage" in str(caught.value) and str(root) not in str(caught.value)
+    assert [j.id for j in db.list_jobs()] == before
+
+
+def test_plain_renders_and_analyses_outside_a_pipeline_still_mix(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root)
+    enqueue_analyze(folder, db, rules=RULES, settings=cfg(root))
+    assert len(by_project(db, folder, root)) == 2
+
+
 def test_once_everything_ended_a_new_pipeline_may_start(db: QueueDb, root: Path) -> None:
     first = pipe(db, root)
     for jid in [first.analyze_id, first.draft_id, *first.render_ids]:
