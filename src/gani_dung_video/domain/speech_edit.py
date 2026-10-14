@@ -85,6 +85,12 @@ def _frame(t: float, fps: int) -> float:
     return round(t * fps) / fps
 
 
+def cut_length(p: Phrase, fps: int) -> float:
+    """Seconds this phrase takes on the timeline: its padded cut window, frame-accurate
+    (exactly what `aroll_timeline` lays down). Longer than `p.duration`, the spoken words."""
+    return _frame(p.cut_out, fps) - _frame(p.cut_in, fps)
+
+
 # ─────────────── phrases ───────────────
 
 
@@ -162,7 +168,7 @@ def aroll_timeline(phrases: Sequence[Phrase], fps: int) -> list[SpeechCut]:
     out, t = [], 0.0
     for p in phrases:
         src_in, src_out = _frame(p.cut_in, fps), _frame(p.cut_out, fps)
-        t_end = _frame(t + (src_out - src_in), fps)
+        t_end = _frame(t + cut_length(p, fps), fps)
         shift = t - src_in
         ws = [w.model_copy(update={"start": round(w.start + shift, 3),
                                    "end": round(w.end + shift, 3)}) for w in p.words]  # fmt: skip

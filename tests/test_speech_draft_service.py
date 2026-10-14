@@ -213,11 +213,21 @@ def test_gives_up_after_three_rounds_and_writes_no_drafts(tmp_path: Path) -> Non
 
 def test_broll_too_tight_for_any_beat_count_is_sent_back(tmp_path: Path) -> None:
     write_folder(tmp_path)
-    # Shrink m1 so no beat count (2 or 4 × 0.6 s beat) fits inside its cut window.
+    # Shrink m1 so no beat count (2 or 4 × 0.6 s beat) fits inside its cut window, and give the
+    # seconds to m2 and m4: S2 judges the total of the cuts, which must stay at the target.
     path = tmp_path / "edit" / "phrases.json"
     ph = PhrasesFile.model_validate_json(path.read_text(encoding="utf-8"))
-    short = [p.model_copy(update={"cut_out": p.cut_in + 0.5}) if p.id == "m1" else p
-             for p in ph.phrases]  # fmt: skip
+    by_id = {p.id: p for p in ph.phrases}
+    lost = (by_id["m1"].cut_out - by_id["m1"].cut_in) - 0.5
+
+    def reshape(p: Phrase) -> Phrase:
+        if p.id == "m1":
+            return p.model_copy(update={"cut_out": p.cut_in + 0.5})
+        if p.id in ("m2", "m4"):  # A and B both hold seconds m1 gave up
+            return p.model_copy(update={"cut_out": p.cut_out + lost})
+        return p
+
+    short = [reshape(p) for p in ph.phrases]
     path.write_text(ph.model_copy(update={"phrases": short}).model_dump_json(), encoding="utf-8")
     fixed_a = json.loads(json.dumps(A))
     fixed_a["segments"][1]["broll"] = None  # no B-roll on the now-too-short m1

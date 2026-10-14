@@ -90,7 +90,8 @@ def response_schema(letters: Sequence[str]) -> dict[str, Any]:
 
 
 def _phrases_payload(phrases: PhrasesFile) -> list[dict[str, Any]]:
-    return [{"id": p.id, "clip": p.clip, "sec": round(p.duration, 2), "text": p.text}
+    # "sec" is the length of the cut (padded): the number S2 adds up, so the AI sums what is judged.
+    return [{"id": p.id, "clip": p.clip, "sec": round(p.cut_out - p.cut_in, 2), "text": p.text}
             for p in phrases.phrases]  # fmt: skip
 
 
