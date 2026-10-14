@@ -321,7 +321,7 @@ chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi đ�
 **Giao hàng:** video đạt cả bộ kiểm tra được chép sang `edit/delivery/<chiến-dịch>/drafts/` với tên
 `GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_v{n}_{YYYYMMDD}.mp4` (chữ thường, gạch
 ngang, không dấu; `v{n}` tăng theo số bản cùng ngày, tính cả `drafts/` lẫn `final/`), manifest sang
-`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9c) và `raw/` dành cho footage gốc
+`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9b) và `raw/` dành cho footage gốc
 (không chép vào đây).
 Đặt sản phẩm và chiến dịch bằng cờ của lệnh dựng: `render <thư mục> --san-pham "Giò lụa"
 --chien-dich "Ra mắt tháng 10"`; không đặt thì sản phẩm là `chung` và chiến dịch là tên thư mục
@@ -331,7 +331,7 @@ footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn đượ
 kịch bản gần nhất (phần của bản nháp này = chi phí mỗi vòng chia đều cho các bản nó viết), cộng thời
 gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do thay vì số 0.
 
-## 9c. Duyệt video cuối (T-F)
+## 9b. Duyệt video cuối (T-F)
 
 Một **bản cuối 1080×1920** đã qua mọi kiểm tra nằm ở `edit/delivery/<chiến-dịch>/drafts/` với
 `review.status = pending` trong manifest. Bản **nháp 540p không bao giờ được duyệt**. Người duyệt
@@ -367,7 +367,7 @@ video" bị khóa khi còn mục kiểm tra hỏng (danh sách hiện ngay trên
 `POST /api/jobs/{id}/review/reject`. Chưa có xác thực: máy chủ chỉ nghe `127.0.0.1` và vẫn kiểm
 Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`.
 
-## 9b. Hạn chế đã biết
+## 9c. Hạn chế đã biết
 
 - **Có nhạc, cắt đuôi:** phần cuối bị cắt thuộc khối cuối của video (thường là cảnh kêu gọi).
   Đo trên 620 tổ hợp phong cách × độ dài × BPM 55–145: 27% bị cắt (169), trung vị 0,82s; 148 ca

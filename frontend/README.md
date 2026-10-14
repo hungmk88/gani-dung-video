@@ -1,4 +1,4 @@
-# GANI FOODY AI Studio — frontend (GĐ6 UI prototype)
+# GANI FOODS AI Studio — frontend (GĐ6 UI prototype)
 
 Bảng điều khiển (Studio Wizard + Job Queue) cho pipeline dựng video tự động
 `gani-dung-video`. Đây là **bản mockup phương án B**: giao diện + logic Preflight Validator
