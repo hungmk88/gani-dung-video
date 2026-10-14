@@ -179,3 +179,14 @@ def test_duck_expression_for_ffmpeg_matches_the_python_gain() -> None:
     for t in (0.2, 0.9, 1.5, 2.1, 3.2, 4.0):
         assert eval(expr, {**ns, "t": t}) == pytest.approx(duck_gain(t, spans, -18, 0.15))
     assert expr.count("clip(") == 2 * len(spans)
+
+
+def test_zero_duck_fade_is_a_hard_step_in_python_and_in_ffmpeg() -> None:
+    spans = [(1.0, 2.0), (3.0, 3.5)]
+    g = 10 ** (-18 / 20)
+    expr = duck_expression(spans, -18, 0.0)
+    assert "/0.000000" not in expr  # ffmpeg would divide by zero
+    ns = {"between": lambda x, lo, hi: float(lo <= x <= hi), "max": max}
+    for t, want in ((0.99, 1.0), (1.0, g), (1.5, g), (2.0, g), (2.01, 1.0), (3.2, g), (4.0, 1.0)):
+        assert duck_gain(t, spans, -18, 0.0) == pytest.approx(want)
+        assert eval(expr, {**ns, "t": t}) == pytest.approx(want)

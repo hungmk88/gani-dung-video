@@ -7,7 +7,8 @@ No I/O here: ffprobe output and file names come in, a typed Clip comes out, so e
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import PurePath
 from typing import Any
 
@@ -166,3 +167,30 @@ def duplicate_candidates(names: Sequence[str], patterns: Sequence[str]) -> list[
                 pairs.append((n, original))
                 break
     return pairs
+
+
+def clip_stems(names: Iterable[str]) -> dict[str, str]:
+    """Id prefix of each clip file: its name without the extension ("IMG_1.mp4" → "IMG_1").
+
+    Scene, candidate and phrase ids start with it, so two clips that share a stem
+    ("IMG_1.MOV", "IMG_1.mp4") each get their extension as well ("IMG_1_MOV", "IMG_1_mp4");
+    a clip whose stem is its own keeps the plain stem, so the ids of existing folders do not
+    change. Deterministic: the result depends on the set of names only, not their order.
+
+    Example:
+        >>> clip_stems(["IMG_1.MOV", "IMG_1.mp4", "IMG_2.mp4"])["IMG_1.MOV"]
+        'IMG_1_MOV'
+    """
+    unique = sorted(set(names))
+    stem = {n: n.rsplit(".", 1)[0] for n in unique}
+    shared = Counter(stem.values())
+    out = {n: stem[n] for n in unique if shared[stem[n]] == 1}
+    taken = set(out.values())
+    for n in (n for n in unique if n not in out):
+        base = f"{stem[n]}_{n[len(stem[n]) + 1 :]}"
+        prefix, k = base, 2
+        while prefix in taken:  # "IMG_1_MOV.mp4" already holds "IMG_1_MOV"
+            prefix, k = f"{base}_{k}", k + 1
+        out[n] = prefix
+        taken.add(prefix)
+    return out

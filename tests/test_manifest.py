@@ -67,3 +67,61 @@ def test_a_draft_the_run_did_not_write_gets_no_share() -> None:
 
 def test_sha256_is_the_standard_hex_digest() -> None:
     assert sha256_of(b"") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+# ─────────────── T-F: the `review` block and files written before it ───────────────
+
+
+def _manifest(**kw: Any) -> Any:
+    from gani_dung_video.domain.delivery_checks import E1Report
+    from gani_dung_video.domain.manifest import Manifest
+
+    base: dict[str, Any] = {
+        "created_at": "2026-10-15T08:00:00+00:00",
+        "video": "video_A_1080x1920.mp4",
+        "delivered_as": "GANI_x_v1.mp4",
+        "draft": "A",
+        "label": "Tối ưu",
+        "resolution": "1080x1920",
+        "deviation_vs_chosen": 0.0,
+        "deviation_vs_plan": 0.0,
+        "options": {"style": "tvc_cat_nhanh"},
+        "plan_sha256": "0" * 64,
+        "rules_version": "2.0",
+        "rules_sha256": "0" * 64,
+        "glossary_sha256": "0" * 64,
+        "models": {"ai": None, "asr": None},
+        "source_files": ["a.mp4"],
+        "e1": E1Report(passed=True, items=[]),
+        "cost": CostFacts(source="x", render_sec=1.0),
+    }
+    return Manifest(**{**base, **kw})
+
+
+def test_the_manifest_version_is_two_since_the_review_block() -> None:
+    from gani_dung_video.domain.manifest import MANIFEST_VERSION
+
+    assert MANIFEST_VERSION == 2 and _manifest().manifest_version == 2
+
+
+def test_a_version_one_file_without_review_still_loads() -> None:
+    import json
+
+    from gani_dung_video.domain.manifest import Manifest
+
+    old = json.loads(_manifest().model_dump_json())
+    old.pop("review")
+    old["manifest_version"] = 1
+    m = Manifest.model_validate_json(json.dumps(old))
+    assert m.review is None and m.manifest_version == 1
+
+
+def test_a_review_block_survives_a_round_trip() -> None:
+    from gani_dung_video.domain.manifest import Manifest
+    from gani_dung_video.domain.review import ReviewBlock
+
+    block = ReviewBlock(status="changes_requested", requested_at="2026-10-15T08:00:00Z",
+                        decided_at="2026-10-15T09:00:00Z", decided_by="NVH",
+                        reason="chữ cuối bị che", reminded_at="2026-10-17T08:01:00Z")  # fmt: skip
+    again = Manifest.model_validate_json(_manifest(review=block).model_dump_json())
+    assert again.review == block

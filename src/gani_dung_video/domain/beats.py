@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
+from gani_dung_video.domain.footage import clip_stems
 from gani_dung_video.domain.scenes import Scene
 
 FPS = 30
@@ -121,10 +122,12 @@ def loop_info(
 
 
 def segment_refs(scenes: Sequence[Scene], style: str) -> dict[str, SceneRef]:
-    """Ids the AI may pick: "<clip stem>_s<scene index>_<n-th segment of the style>"."""
+    """Ids the AI may pick: "<clip stem>_s<scene index>_<n-th segment of the style>"
+    (stems from `clip_stems`, unique even when two clips differ only by extension)."""
     out: dict[str, SceneRef] = {}
+    stems = clip_stems(sc.clip for sc in scenes)
     for sc in scenes:
-        stem = sc.clip.rsplit(".", 1)[0]
+        stem = stems[sc.clip]
         for k, seg in enumerate(sc.segments.get(style, [])):
             out[f"{stem}_s{sc.index}_{k}"] = SceneRef(
                 clip=sc.clip, start=seg.start, end=seg.end, peak=seg.peak

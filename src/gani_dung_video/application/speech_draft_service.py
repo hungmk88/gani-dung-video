@@ -145,7 +145,11 @@ def _log(folder: Path, **entry: Any) -> None:
 def _resolve(d: AiSpeechDraft, job: _Job) -> tuple[SpeechDraft | None, Issue | None]:
     """Turn a checked answer into a renderable SpeechDraft: chain the chosen phrases, then
     place each requested B-roll on the beat window default_overlays computes for its phrase
-    (5c-1's rule-based placement, now filled in only where the AI asked for a B-roll)."""
+    (5c-1's rule-based placement, now filled in only where the AI asked for a B-roll).
+
+    A B-roll shorter than its window (plus the frame snap_to_beats/beats_that_fit keep for
+    rounding) is sent back like a phrase too short for one: the overlay would otherwise run
+    past the chosen segment, into other footage or past the clip's end (the speaker shows)."""
     phrases = [job.ctx.phrase_by_id[s.phrase_id] for s in d.segments]
     cuts = aroll_timeline(phrases, job.fps)
     slots = {o.phrase_id: o for o in default_overlays(
@@ -160,6 +164,12 @@ def _resolve(d: AiSpeechDraft, job: _Job) -> tuple[SpeechDraft | None, Issue | N
             return None, Issue("SNAP", "ai", f"Câu '{s.phrase_id}' quá ngắn, không đủ chỗ cho "
                                "B-roll theo phách.", d.draft)  # fmt: skip
         cand = job.ctx.cand_by_id[s.broll]
+        need = slot.t_end - slot.t_start
+        if cand.end - cand.start + 1e-9 < need + 1 / job.fps:
+            return None, Issue("SNAP", "ai", f"B-roll '{s.broll}' chỉ dài "
+                               f"{cand.end - cand.start:.2f}s, quá ngắn cho ô B-roll {need:.2f}s "
+                               f"({slot.beats} phách) của câu '{s.phrase_id}' — chọn B-roll dài "
+                               "hơn hoặc bỏ B-roll ở câu này.", d.draft)  # fmt: skip
         broll.append(BrollPlacement(overlay=slot, clip=cand.clip, start=cand.start,
                                     end=cand.end, peak=cand.peak))  # fmt: skip
     return SpeechDraft(draft=d.draft, label=d.label, cuts=cuts, broll=broll,

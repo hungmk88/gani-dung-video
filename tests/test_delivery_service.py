@@ -421,3 +421,83 @@ def test_a_cut_beyond_ten_percent_is_stopped_by_the_gap_guard_not_hidden_by_the_
     assert items["E1-DUR"].passed  # the video itself is exactly 15 s long …
     assert items["E1-DUR-GAP"].value == pytest.approx(6.6, abs=0.05)  # … the plan was not
     assert "chọn bài có BPM hợp phong cách" in items["E1-DUR-GAP"].detail
+
+
+# ─────────────── T-F: review block at delivery; versions across drafts/ and final/ ───────
+
+
+def test_a_delivered_final_video_starts_pending_and_nothing_else_does() -> None:
+    from gani_dung_video.application.delivery_service import initial_review
+
+    block = initial_review("GANI_x_v1.mp4", False, "2026-10-15T08:00:00Z")
+    assert block is not None and block.status == "pending"
+    assert block.requested_at == "2026-10-15T08:00:00Z"
+    assert initial_review("GANI_x_v1.mp4", True, "2026-10-15T08:00:00Z") is None  # a preview
+    assert initial_review(None, False, "2026-10-15T08:00:00Z") is None  # blocked, not delivered
+
+
+def test_a_preview_delivery_has_no_review_block(tmp_path: Path, clips: Path) -> None:
+    folder = make_project(tmp_path, clips, "xuong", opts())
+    build_render(folder, preview=True, rules=RULES)
+    m = manifest_of(folder)
+    assert m.delivered_as is not None and m.review is None and m.manifest_version == 2
+
+
+def test_an_approved_video_in_final_keeps_its_version_number(tmp_path: Path) -> None:
+    """After approval drafts/ is empty again: v1 must not be handed out a second time."""
+    from datetime import date
+    from types import SimpleNamespace
+
+    from gani_dung_video.application.delivery_service import DeliveryTarget, export_name
+
+    plan = SimpleNamespace(options={"style": "tvc_cat_nhanh", "purpose": "ban_hang",
+                                    "duration": 15})  # fmt: skip
+    target = DeliveryTarget(product="gio-lua", campaign="ra-mat", day=date(2026, 10, 15))
+    root, first, _ = export_name(None, plan, tmp_path, RULES, target)  # type: ignore[arg-type]
+    assert "_v1_" in first
+    (root / "final" / first).write_bytes(b"x")  # the approved copy; drafts/ is empty
+    _, second, _ = export_name(None, plan, tmp_path, RULES, target)  # type: ignore[arg-type]
+    assert "_v2_" in second and second != first
+
+
+def test_a_real_final_render_is_delivered_pending_and_a_person_can_approve_it(
+    tmp_path: Path, clips: Path
+) -> None:
+    """The whole T-F chain with the real renderer: 1080×1920 final → drafts/ + `pending` in both
+    manifests → `review approve` moves the file to final/ → the next video gets v2, not v1."""
+    import time
+
+    from gani_dung_video.application import review_service as rs
+    from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
+
+    folder = make_project(tmp_path, clips, "xuong", opts())
+    db = QueueDb(tmp_path / "q" / "queue.db")
+    jid = db.enqueue(NewJob(kind="render", project_dir=str(folder), options_file="o", draft="A",
+                            final=True, max_attempts=1), time.time())  # fmt: skip
+    assert db.claim(time.time(), 1) is not None  # the job starts before the video is made
+    [res] = build_render(folder, preview=False, rules=RULES, product="Giò Lụa", campaign="Ra mắt")
+    assert res.qc_passed
+    db.finish(jid, time.time(), "completed", "passed", 0, None, str(res.video))
+    m = manifest_of(folder)
+    assert m.resolution == "1080x1920" and m.manifest_version == 2
+    assert m.review is not None and m.review.status == "pending" and m.delivered_as is not None
+    root = delivery(folder, "ra-mat")
+    assert (root / "drafts" / m.delivered_as).is_file()
+    meta = root / "metadata" / f"{Path(m.delivered_as).stem}.manifest.json"
+    assert meta.read_text(encoding="utf-8") == (res.video.parent / "manifest.json").read_text(
+        encoding="utf-8")  # fmt: skip
+
+    [row] = rs.list_reviews(db, RULES)
+    assert row.block.status == "pending" and row.problems == [] and row.overdue is False
+    done = rs.approve(db, RULES, jid, "Hùng", None)
+    assert done.block.status == "approved"
+    assert (root / "final" / m.delivered_as).is_file()
+    assert not (root / "drafts" / m.delivered_as).exists()
+    assert (res.video.parent / "manifest.json").is_file()
+    after = manifest_of(folder)
+    assert after.review is not None and after.review.decided_by == "Hùng"
+
+    # the next video of the day must not take the version that is now in final/
+    build_render(folder, preview=False, rules=RULES, product="Giò Lụa", campaign="Ra mắt")
+    names = sorted(p.name for p in (root / "drafts").iterdir())
+    assert len(names) == 1 and "_v2_" in names[0]

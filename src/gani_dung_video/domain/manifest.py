@@ -14,8 +14,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.delivery_checks import E1Report
+from gani_dung_video.domain.review import ReviewBlock
 
-MANIFEST_VERSION = 1
+# 2 (T-F): adds `review`. A version 1 file has no such key and still loads (review = None).
+MANIFEST_VERSION = 2
 
 
 def sha256_of(data: bytes) -> str:
@@ -64,6 +66,9 @@ class Manifest(BaseModel):
     e1: E1Report
     cost: CostFacts
     warnings: list[str] = []
+    # T-F: where a delivered FINAL video stands with its reviewer. None for a preview, a
+    # blocked video, and files written before T-F (see application/review_service).
+    review: ReviewBlock | None = None
 
 
 def last_run(
