@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from ffmpeg_marks import needs_render_ffmpeg
 
 from gani_dung_video.domain.edl import Caption, Edl, MusicTrack, Shot
 from gani_dung_video.domain.subtitles import ass_document
@@ -230,7 +231,7 @@ def probe(path: Path) -> dict[str, object]:
     return data
 
 
-@needs_ffmpeg
+@needs_render_ffmpeg
 def test_real_render_has_the_planned_size_length_fps_and_audio(tmp_path: Path) -> None:
     ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
     ff(tmp_path / "b.mp4", "smptebars=s=1280x720:r=25:d=3", 3.0, audio=False)
@@ -256,7 +257,7 @@ def test_real_render_has_the_planned_size_length_fps_and_audio(tmp_path: Path) -
     assert isinstance(fmt, dict) and float(fmt["duration"]) == pytest.approx(3.0, abs=0.1)
 
 
-@needs_ffmpeg
+@needs_render_ffmpeg
 def test_real_speech_render_with_broll_overlay_and_ducked_music(tmp_path: Path) -> None:
     ff(tmp_path / "a.mp4", "testsrc2=s=360x640:r=30:d=5", 5.0)  # the "speaker"
     ff(tmp_path / "b.mp4", "smptebars=s=640x360:r=30:d=5", 5.0, audio=False)  # B-roll
@@ -309,7 +310,7 @@ def test_pure_cuts_and_pure_crossfades_keep_their_graph() -> None:
     assert "settb" not in cuts  # one concat over every shot: nothing to reset
 
 
-@needs_ffmpeg
+@needs_render_ffmpeg
 def test_real_render_survives_crossfade_cut_cut_crossfade(tmp_path: Path) -> None:
     ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=8", 8.0)
     e = edl(list(MIXED))

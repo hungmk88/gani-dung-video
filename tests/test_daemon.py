@@ -8,7 +8,6 @@ daemon's decisions (retry, cancel, graceful stop, recovery) are tested without f
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import threading
 import time
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ffmpeg_marks import needs_render_ffmpeg
 
 from gani_dung_video.application.daemon import Daemon, DaemonError, render_argv
 from gani_dung_video.application.inventory_service import build_inventory
@@ -485,7 +485,7 @@ def test_start_up_makes_a_backup_of_the_queue(db: QueueDb, clock: Clock) -> None
 # ─────────────── the real thing: a real child process runs the real CLI ───────────────
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
+@needs_render_ffmpeg
 def test_a_real_child_process_renders_a_job_end_to_end(tmp_path: Path) -> None:
     d = tmp_path / "footage"
     d.mkdir()

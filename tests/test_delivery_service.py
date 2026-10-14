@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ffmpeg_marks import needs_render_ffmpeg
 
 from gani_dung_video.application import render_service
 from gani_dung_video.application.draft_service import DraftsFile
@@ -27,7 +28,7 @@ from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.speech_edit import SpeechCut
 from gani_dung_video.infrastructure.config_files import ConfigError, GlossaryFile, load_rules
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="cần ffmpeg")
+pytestmark = needs_render_ffmpeg
 RULES = load_rules()
 PATTERN = re.compile(r"^GANI_[a-z0-9-]+_[a-z0-9-]+_[a-z0-9-]+_\d+s_9x16_v\d+_\d{8}\.mp4$")
 TODAY = datetime.now().astimezone().strftime("%Y%m%d")

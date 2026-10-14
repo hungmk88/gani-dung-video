@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from ffmpeg_marks import needs_render_ffmpeg
 
 from gani_dung_video.application import render_service
 from gani_dung_video.application.draft_service import DraftsFile
@@ -127,6 +128,7 @@ def duration(path: Path) -> float:
     return float(r.stdout)
 
 
+@needs_render_ffmpeg
 def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> None:
     [res] = build_render(folder, preview=True, rules=RULES)
     out = folder / "edit" / "render" / "A"
@@ -198,6 +200,7 @@ def test_c1_checks_the_highlight_keywords_too(
     assert ran == [] and "từ nhấn" in str(err.value)
 
 
+@needs_render_ffmpeg
 def test_a_clean_render_highlights_the_approved_keyword_in_the_ass_file(
     folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -226,6 +229,7 @@ def test_drafts_json_is_required(tmp_path: Path) -> None:
         build_render(tmp_path, preview=True, rules=RULES)
 
 
+@needs_render_ffmpeg
 def test_cli_render_preview(folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["render", str(folder), "--preview", "--ban", "A"]) == 0
     out = capsys.readouterr().out
@@ -233,6 +237,7 @@ def test_cli_render_preview(folder: Path, capsys: pytest.CaptureFixture[str]) ->
     assert "nhap_A_540p.mp4" in out and "(17s)" in out
 
 
+@needs_render_ffmpeg
 def test_cli_qc_rechecks_an_existing_video(
     folder: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -248,6 +253,7 @@ def test_cli_qc_without_a_rendered_video(folder: Path) -> None:
 # ─────────────── speech mode (5c-1) ───────────────
 
 
+@needs_render_ffmpeg
 def test_speech_mode_renders_the_voice_the_broll_overlay_and_the_cta(speech_folder: Path) -> None:
     [res] = build_render(speech_folder, preview=True, rules=RULES)
     out = speech_folder / "edit" / "render" / "A"
@@ -274,6 +280,7 @@ def test_speech_drafts_json_is_required_for_a_speech_style(tmp_path: Path) -> No
         build_render(d, preview=True, rules=RULES)
 
 
+@needs_render_ffmpeg
 def test_cli_render_speech_mode(speech_folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["render", str(speech_folder), "--preview", "--ban", "A"]) == 0
     out = capsys.readouterr().out
@@ -300,6 +307,7 @@ class Listener:
         return RawTranscript(language="vi", duration_sec=10.0, speech_sec=7.0, words=self.words)
 
 
+@needs_render_ffmpeg
 def test_final_speech_render_is_listened_to_and_passes_when_heard_right(
     speech_folder: Path,
 ) -> None:
@@ -309,6 +317,7 @@ def test_final_speech_render_is_listened_to_and_passes_when_heard_right(
     assert not any("T8" in n for n in res.qc_notes)
 
 
+@needs_render_ffmpeg
 def test_final_speech_render_fails_qc_when_the_voice_cannot_be_heard(speech_folder: Path) -> None:
     ear = Listener([word("ồn", 0.1, 0.5)])
     [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, transcribe=ear)
@@ -317,6 +326,7 @@ def test_final_speech_render_fails_qc_when_the_voice_cannot_be_heard(speech_fold
     assert report["passed"] is False and any(f["code"] == "T8" for f in report["findings"])
 
 
+@needs_render_ffmpeg
 def test_no_asr_and_preview_never_load_the_recogniser(speech_folder: Path) -> None:
     ear = Listener([word("ồn", 0.1, 0.5)])
     [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL, asr=False,
@@ -326,6 +336,7 @@ def test_no_asr_and_preview_never_load_the_recogniser(speech_folder: Path) -> No
     assert ear.calls == 0
 
 
+@needs_render_ffmpeg
 def test_qc_command_listens_to_an_existing_final_video(speech_folder: Path) -> None:
     build_render(speech_folder, preview=False, rules=SMALL_FINAL, asr=False)
     bad = Listener([word("ồn", 0.1, 0.5)])
@@ -335,12 +346,14 @@ def test_qc_command_listens_to_an_existing_final_video(speech_folder: Path) -> N
     assert not any("T8" in f for f in quiet) and bad.calls == 1
 
 
+@needs_render_ffmpeg
 def test_cli_accepts_no_asr(speech_folder: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["render", str(speech_folder), "--preview", "--ban", "A", "--no-asr"]) == 0
     assert main(["qc", str(speech_folder), "--ban", "A", "--no-asr"]) == 0
     assert "QC: ĐẠT" in capsys.readouterr().out
 
 
+@needs_render_ffmpeg
 def test_voice_only_mix_has_the_video_timeline_and_needs_no_music_file(
     speech_folder: Path, tmp_path: Path
 ) -> None:
@@ -356,6 +369,7 @@ def test_voice_only_mix_has_the_video_timeline_and_needs_no_music_file(
     assert wav.suffix == ".wav" and duration(wav) == pytest.approx(e.duration, abs=0.1)
 
 
+@needs_render_ffmpeg
 def test_t8_uses_its_own_whisper_model_not_the_transcription_default(
     speech_folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -378,6 +392,7 @@ def qc_of(res: Any) -> dict[str, Any]:
     return dict(json.loads((res.video.parent / "qc_report.json").read_text(encoding="utf-8")))
 
 
+@needs_render_ffmpeg
 def test_a_final_speech_render_that_passes_still_records_what_whisper_measured(
     speech_folder: Path,
 ) -> None:
@@ -389,6 +404,7 @@ def test_a_final_speech_render_that_passes_still_records_what_whisper_measured(
     assert t8["median_drift_sec"] is not None and t8["voice_only_wer"] is None
 
 
+@needs_render_ffmpeg
 def test_a_failed_listen_records_its_numbers_next_to_the_finding(speech_folder: Path) -> None:
     [res] = build_render(speech_folder, preview=False, rules=SMALL_FINAL,
                          transcribe=Listener([word("ồn", 0.1, 0.5)]))  # fmt: skip
@@ -397,6 +413,7 @@ def test_a_failed_listen_records_its_numbers_next_to_the_finding(speech_folder: 
     assert any(f["code"] == "T8" for f in report["findings"])
 
 
+@needs_render_ffmpeg
 def test_a_video_nobody_listened_to_has_no_t8_entry(speech_folder: Path) -> None:
     [preview] = build_render(speech_folder, preview=True, rules=SMALL_FINAL,
                              transcribe=Listener(SPOKEN))  # fmt: skip
