@@ -335,6 +335,12 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
   như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
   báo vào manifest. Cờ CLI `--san-pham` / `--chien-dich` vẫn ghi đè được khi gõ `render` tay.
+- Biến thể chưa bắt (theo dõi, bổ sung nếu gặp thực tế):
+  · `trăm phần trăm tự nhiên` (viết "trăm" thay "100")
+  · `100 phần trăm nguyên chất` (claim tương đương)
+  · `100pt tự nhiên` (viết tắt)
+  · `100 phần trămm tự nhiên` (chèn ký tự lạ vào "trăm")
+  · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
 
 ## 10. Xử lý sự cố nhanh
 
