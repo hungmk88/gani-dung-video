@@ -285,12 +285,12 @@ export const RULES: RulesBundle = {
     },
   },
 
-  // config/glossary.json → banned_claims (V7 checks these on AI-written on-screen text)
+  // config/glossary.json → banned_claims (V7 checks these on AI-written on-screen text).
+  // Same text, same order: src/data/rules.test.ts fails when this copy drifts from the file.
   bannedClaims: [
     '100%',
     'duy nhất',
     'số 1',
-    'hàn the',
     'điều trị',
     'đặc trị',
     'chữa trị',
@@ -304,10 +304,13 @@ export const RULES: RulesBundle = {
     'sạch nhất',
     'uy tín nhất',
     'thần dược',
-    'không chất bảo quản',
     'minh long',
     'atala',
     'foco',
+    '100 phần trăm tự nhiên',
+    '100 phần trăm thiên nhiên',
+    'tự nhiên 100 phần trăm',
+    'thiên nhiên 100 phần trăm',
   ],
 
   // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
