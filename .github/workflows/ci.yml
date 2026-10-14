@@ -3,9 +3,13 @@
 # Notes for whoever maintains this file:
 # - ffmpeg: the render graph needs ffmpeg >= 7.0 (`-/filter_complex`, see ffmpeg_render.py), but
 #   ubuntu-latest ships 6.1, so the real-render tests would stop at the version check. The job
-#   installs a static BtbN build instead and verifies it against the checksums published in the
-#   same release (integrity against a corrupt download, not authenticity of the publisher).
-#   The tested version is the one the app was developed on (9.0); bump FFMPEG_ASSET deliberately.
+#   installs a static BtbN build instead, pinned by release tag, file name AND sha256 written
+#   here: a moved or replaced file fails the job instead of being installed. The tag is the last
+#   build of a month on purpose: BtbN prunes daily builds after 14 but keeps each month's last
+#   build for 24 months (util/prunetags.sh in BtbN/FFmpeg-Builds). The "latest" release must
+#   not be used: it is replaced every day and its file names change with each point release.
+#   To bump: pick another month-end autobuild tag, copy the linux64-gpl line of its
+#   checksums.sha256 into FFMPEG_TAG / FFMPEG_ASSET / FFMPEG_SHA256 together.
 # - No secrets are used and none are needed: the tests run without ANTHROPIC_API_KEY.
 # - Runs on Linux, so it also covers the POSIX branch of process_runner that the Windows dev
 #   machine cannot exercise.
@@ -25,8 +29,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FFMPEG_BASE: https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
-  FFMPEG_ASSET: ffmpeg-n9.0-latest-linux64-gpl-9.0.tar.xz
+  FFMPEG_TAG: autobuild-2026-09-30-13-08
+  FFMPEG_ASSET: ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-9.0.tar.xz
+  FFMPEG_SHA256: 68ee646831adaae2495618346f3bba94ff207ff83bbd34d643e7004730d66269
 
 jobs:
   python:
@@ -45,9 +50,9 @@ jobs:
       - name: Install ffmpeg (static build, >= 7)
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o "$FFMPEG_ASSET" "$FFMPEG_BASE/$FFMPEG_ASSET"
-          curl -fsSL --retry 3 -o checksums.sha256 "$FFMPEG_BASE/checksums.sha256"
-          grep " $FFMPEG_ASSET\$" checksums.sha256 | sha256sum -c -
+          curl -fsSL --retry 3 -o "$FFMPEG_ASSET" \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/$FFMPEG_TAG/$FFMPEG_ASSET"
+          echo "$FFMPEG_SHA256  $FFMPEG_ASSET" | sha256sum -c -
           mkdir -p "$HOME/ffmpeg"
           tar -xJf "$FFMPEG_ASSET" -C "$HOME/ffmpeg" --strip-components=1
           echo "$HOME/ffmpeg/bin" >> "$GITHUB_PATH"
