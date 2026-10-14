@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -397,7 +398,10 @@ def test_media_stops_at_once_when_the_folder_leaves_the_allow_list(
     narrowed = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(other)))
     with pytest.raises(ApiError) as e:
         resolve_media(narrowed, jid, "video")
-    assert e.value.status == 404 and get_job(narrowed, jid).video_url is None
+    assert e.value.status == 404
+    with pytest.raises(ApiError) as e:
+        get_job(narrowed, jid)  # the whole job is out of sight now (audit L2)
+    assert e.value.status == 404
 
 
 def test_a_forged_row_cannot_point_media_elsewhere(ctx: ApiContext, root: Path,
@@ -442,6 +446,29 @@ def test_a_render_folder_linked_outside_the_roots_is_not_served(
         with pytest.raises(ApiError) as e:
             resolve_media(ctx, jid, kind)
         assert e.value.status == 404
+
+
+def test_a_job_outside_the_allowed_roots_is_invisible_and_untouchable(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """Every job route re-checks the allow-list, not only the pipeline one (audit L2)."""
+    jid = queue_one(ctx, root)
+    ctx.db.add_event(jid, time.time(), "info", "dòng")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    other = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(elsewhere)))
+    calls: dict[str, Callable[[], object]] = {
+        "get": lambda: get_job(other, jid), "events": lambda: job_events(other, jid, 0),
+        "cancel": lambda: cancel(other, jid), "retry": lambda: retry(other, jid),
+        "approve": lambda: approve(other, jid, ApproveRequest(max_vnd=1.0, estimate_vnd=1.0)),
+        "media": lambda: resolve_media(other, jid, "video"),
+    }  # fmt: skip
+    for name, call in calls.items():
+        with pytest.raises(ApiError) as e:
+            call()
+        assert e.value.status == 404, name
+    assert list_jobs(other) == [] and list_jobs(ctx)[0].id == jid
+    assert ctx.db.get(jid) is not None and get_job(ctx, jid).status == "queued"  # untouched
 
 
 # ─────────────── no absolute paths leave the server (console lines, errors) ───────────────
@@ -797,6 +824,21 @@ def test_a_plain_render_on_a_folder_another_queue_holds_is_also_a_409(
     with pytest.raises(ApiError) as caught:
         create_jobs(ctx, JobCreate(project_id="0/footage", draft="A"))
     assert (caught.value.status, caught.value.code) == (409, "project_locked")
+
+
+def test_retrying_a_job_whose_folder_another_queue_took_meanwhile_is_a_409(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """A retry puts a job back in the queue: it needs the folder as much as a new job (L2)."""
+    jid = queue_one(ctx, root)
+    cancel(ctx, jid)  # nothing active here any more: another queue may take the folder
+    (root / "footage" / "edit" / ".project.lock").unlink()  # (without waiting out the grace)
+    held_elsewhere(ctx, root, tmp_path)
+    with pytest.raises(ApiError) as caught:
+        retry(ctx, jid)
+    assert (caught.value.status, caught.value.code) == (409, "project_locked")
+    assert str(root) not in caught.value.message
+    assert get_job(ctx, jid).status == "cancelled"
 
 
 # ─────────────── 6f: T8 in the job's QA ───────────────

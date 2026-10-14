@@ -347,7 +347,7 @@ def _run_queue(args: argparse.Namespace) -> int:
     elif cmd == "cancel":
         lines = [f"Job #{args.id}: {cancel_job(db, args.id)}"]
     elif cmd == "retry":
-        ok = retry_job(db, args.id)
+        ok = retry_job(db, args.id, rules=rules)
         lines = [
             f"Job #{args.id}: đã đưa vào hàng đợi lại."
             if ok

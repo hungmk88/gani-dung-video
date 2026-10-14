@@ -483,10 +483,17 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
     )  # fmt: skip
 
 
+def _visible(ctx: ApiContext, job: Job) -> bool:
+    """The job's folder is (still) inside the allow-list: the API neither shows nor touches
+    any other job, whatever queue.db holds."""
+    folder = Path(job.project_dir).resolve()
+    return any(_inside(folder, r) for r in ctx.roots)
+
+
 def _need(ctx: ApiContext, job_id: int) -> Job:
-    """A job (of any kind) by id, or a 404."""
+    """A job (of any kind) by id, or a 404 (also for a job outside the allow-list)."""
     job = ctx.db.get(job_id)
-    if job is None:
+    if job is None or not _visible(ctx, job):
         raise _not_found(f"job #{job_id}")
     return job
 
@@ -520,7 +527,7 @@ def list_jobs(ctx: ApiContext, status: str | None = None, project_id: str | None
         raise ApiError(400, "bad_request", f"Loại job phải là một trong: {', '.join(JOB_KINDS)}.")
     folder = str(resolve_project(ctx, project_id)) if project_id else None
     jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind=kind)
-    return [_view(ctx, j) for j in jobs]
+    return [_view(ctx, j) for j in jobs if _visible(ctx, j)]
 
 
 def job_events(ctx: ApiContext, job_id: int, after: int) -> list[EventView]:
@@ -546,7 +553,14 @@ def cancel(ctx: ApiContext, job_id: int) -> JobView:
 
 def retry(ctx: ApiContext, job_id: int) -> JobView:
     job = _need(ctx, job_id)
-    if not retry_job(ctx.db, job_id):
+    try:
+        retried = retry_job(ctx.db, job_id, rules=ctx.rules, settings=ctx.settings,
+                            now=ctx.clock())  # fmt: skip
+    except ProjectLockedError as e:
+        raise _locked(e) from e
+    except ConfigError as e:  # the folder went away or left the allow-list meanwhile
+        raise ApiError(409, "conflict", _scrub(ctx, job.project_dir, str(e)) or "") from e
+    if not retried:
         raise ApiError(409, "conflict", f"Job #{job.id} đang '{job.status}': chỉ thử lại được job "
                                         "lỗi, đã hủy hoặc QC không đạt.")  # fmt: skip
     return _view(ctx, _need(ctx, job_id))
@@ -586,9 +600,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
 
 def get_pipeline(ctx: ApiContext, pipeline_id: int) -> PipelineView:
     jobs = ctx.db.jobs_of_pipeline(pipeline_id)
-    roots = ctx.roots
-    if not jobs or not all(any(_inside(Path(j.project_dir).resolve(), r) for r in roots)
-                           for j in jobs):  # fmt: skip
+    if not jobs or not all(_visible(ctx, j) for j in jobs):
         raise _not_found(f"pipeline #{pipeline_id}")
     return _pipeline_view(ctx, pipeline_id, jobs)
 

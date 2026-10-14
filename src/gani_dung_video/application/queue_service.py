@@ -211,9 +211,43 @@ def cancel_job(db: QueueDb, job_id: int, now: float | None = None) -> str:
     return db.request_cancel(job_id, now if now is not None else time.time())
 
 
-def retry_job(db: QueueDb, job_id: int) -> bool:
-    """Queue a failed, cancelled or QC-failed job again."""
-    return db.retry_manual(job_id)
+def retry_job(db: QueueDb, job_id: int, *, rules: Rules | None = None,
+              settings: Settings | None = None, now: float | None = None) -> bool:  # fmt: skip
+    """Queue a failed, cancelled or QC-failed job again. False: no such job, or not one of those.
+
+    A retried job is a job entering the queue: its folder must still be inside the allow-list
+    and is taken for this queue, as when it was first queued (another queue may have taken it
+    since).
+
+    Raises:
+        ConfigError: no allow-list, or the job's folder is outside it or missing.
+        ProjectLockedError: another queue owns the folder (nothing changed).
+    """
+    job = db.get(job_id)
+    if job is None:
+        return False
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    project = Path(job.project_dir).resolve()
+    if not _inside(project, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=project))
+    if not project.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=project))
+    stamp = now if now is not None else time.time()
+    took = _take_folder(db, project, rules, stamp)
+    try:
+        ok = db.retry_manual(job_id)
+    except BaseException:
+        if took:
+            _give_back(db, project)
+        raise
+    if took and not ok:  # nothing went back in: a lock taken just now is not ours to keep
+        _give_back(db, project)
+    return ok
 
 
 def enqueue_project_render(

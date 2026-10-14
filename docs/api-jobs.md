@@ -65,10 +65,10 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 |---|---|---|
 | 400 | `bad_request` | Thân/tham số sai (`draft` không phải A/B/C/all, `limit` ngoài 1–200, `project_id` sai dạng, JSON hỏng, trường thừa) |
 | 403 | `host_khong_hop_le` / `origin_khong_hop_le` / `yeu_cau_cheo_trang` | Sai Host, Origin không nằm trong danh sách, yêu cầu chéo trang không có Origin/Referer tin cậy |
-| 404 | `not_found` | Không có dự án / job / tệp / đường dẫn |
+| 404 | `not_found` | Không có dự án / job / tệp / đường dẫn; job hoặc pipeline có thư mục nằm ngoài `GANI_DV_ALLOWED_ROOTS` cũng là 404 (mọi route `/api/jobs/{id}…`, `/media/{id}/…`; `GET /api/jobs` bỏ hẳn các job đó khỏi danh sách) |
 | 405 | `method_not_allowed` | Sai phương thức (kèm header `Allow`) |
 | 409 | `not_ready` | Dự án chưa có `plan.json` hoặc `drafts.json`/`speech_drafts.json` — chạy `plan`/`pick`/`draft` trước |
-| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt; duyệt chi phí một job không phải `draft` |
+| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt, hoặc job có thư mục dự án không còn; duyệt chi phí một job không phải `draft` |
 | 409 | `pipeline_active` | Dự án đã có job đang chờ/chạy/chờ duyệt (kèm `pipeline_id`, `job_id`) |
 | 409 | `project_locked` | Thư mục dự án đang được **một hàng đợi khác** (`queue.db` khác) dùng (kèm `pipeline_id`, `job_id` của hàng đợi đó nếu biết) |
 | 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
@@ -334,7 +334,7 @@ duyệt (bất kể loại), server trả **409** và **không ghi gì** (kể c
 
 `pipeline_id` là `null` khi job đang chạy là một job dựng lẻ (`POST /api/jobs`).
 
-**Khóa cấp thư mục (giữa nhiều hàng đợi).** Chốt "một dự án một pipeline" ở trên chỉ nhìn thấy job trong cùng một `queue.db`. Nếu hai hàng đợi (hai `queue.db`, ví dụ hai lần chạy `serve`/`daemon` riêng) cùng làm việc trên một thư mục, chúng sẽ ghi đè `options.json`, `plan.json` và tệp dựng của nhau. Vì vậy mọi cách đưa job vào hàng đợi (`POST /api/pipelines`, `POST /api/jobs`, và các lệnh `queue add/analyze/draft`) còn lấy khóa `<dự án>/edit/.project.lock`, ghi tên `queue.db` đang giữ. Hàng đợi khác thấy khóa còn hiệu lực thì bị từ chối bằng **409 `project_locked`** (không ghi gì, kể cả `options.json`). Khóa còn hiệu lực khi hàng đợi giữ nó còn job chờ/đang chạy/chờ duyệt cho thư mục đó; hết job hoặc mất `queue.db` thì khóa cũ và hàng đợi khác chiếm được. Đọc không được `queue.db` của chủ khóa thì coi là còn hiệu lực. Các lệnh chạy tay (`plan`, `pick`, `draft`, `render`) không kiểm tra khóa. Gỡ khẩn cấp: xóa tệp `edit/.project.lock`; tắt hẳn bằng `queue.project_lock = false` trong `rules.json`. Muốn đổi cấu
+**Khóa cấp thư mục (giữa nhiều hàng đợi).** Chốt "một dự án một pipeline" ở trên chỉ nhìn thấy job trong cùng một `queue.db`. Nếu hai hàng đợi (hai `queue.db`, ví dụ hai lần chạy `serve`/`daemon` riêng) cùng làm việc trên một thư mục, chúng sẽ ghi đè `options.json`, `plan.json` và tệp dựng của nhau. Vì vậy mọi cách đưa job vào hàng đợi (`POST /api/pipelines`, `POST /api/jobs`, `POST /api/jobs/{id}/retry`, và các lệnh `queue add/analyze/draft/retry`) còn lấy khóa `<dự án>/edit/.project.lock`, ghi tên `queue.db` đang giữ. Hàng đợi khác thấy khóa còn hiệu lực thì bị từ chối bằng **409 `project_locked`** (không ghi gì, kể cả `options.json`). Khóa còn hiệu lực khi hàng đợi giữ nó còn job chờ/đang chạy/chờ duyệt cho thư mục đó; hết job hoặc mất `queue.db` thì khóa cũ và hàng đợi khác chiếm được. Đọc không được `queue.db` của chủ khóa thì coi là còn hiệu lực. Các lệnh chạy tay (`plan`, `pick`, `draft`, `render`) không kiểm tra khóa. Gỡ khẩn cấp: xóa tệp `edit/.project.lock`; tắt hẳn bằng `queue.project_lock = false` trong `rules.json`. Muốn đổi cấu
 hình: `POST /api/jobs/{id}/cancel` cho các job cũ (job đang chờ bị hủy ngay; job phụ thuộc vào
 nó bị hủy theo), rồi tạo lại.
 
@@ -512,7 +512,8 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
   lỗi thì các job sau nó bị hủy dây chuyền; thử lại job phân tích **không** tự khôi phục các job
   đã hủy — giao diện thử lại từng job theo thứ tự (`analyze`, `draft`, `render`). Thử lại job
   `draft` luôn quay về bước ước tính và **cần duyệt lại chi phí**; job `draft` không bao giờ tự
-  thử lại.
+  thử lại. Thử lại cũng lấy lại khóa thư mục như khi tạo job: nếu trong lúc đó một hàng đợi
+  khác đã nhận thư mục thì trả **409 `project_locked`** và job giữ nguyên trạng thái.
 - **Hủy**: job đang chờ hủy ngay và kéo theo các job chờ nó; job đang chạy nhận cờ dừng. Hủy job
   `draft` đang chờ duyệt không tốn đồng nào.
 - `GET /api/jobs` mặc định **không lọc** theo loại; `?kind=render|draft|analyze` để lọc. Thẻ
