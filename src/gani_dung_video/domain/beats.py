@@ -81,6 +81,19 @@ def fold_bpm(
     return eff, mode
 
 
+def other_folds(
+    bpm: float, bpm_range: tuple[float, float] | None, chosen: str, max_deviation: float = 0.2
+) -> list[tuple[float, str]]:
+    """The X12 counts other than `chosen` that are still within max_deviation of the range,
+    best fit first: the planner falls back on one when `chosen` cannot reach the length."""
+    if bpm_range is None:
+        return []
+    lo, hi = bpm_range
+    candidates = [(bpm, "giu_nguyen"), (bpm / 2, "dem_2_thanh_1"), (bpm * 2, "tach_1_thanh_2")]
+    ok = [c for c in candidates if c[1] != chosen and _deviation(c[0], lo, hi) <= max_deviation]
+    return sorted(ok, key=lambda c: _deviation(c[0], lo, hi))
+
+
 def beat_grid(beat_sec: float, count: int, first: float = 0.0) -> list[float]:
     """count + 1 beat boundaries: a segment of n beats from boundary i ends at boundary i + n."""
     return [first + k * beat_sec for k in range(count + 1)]

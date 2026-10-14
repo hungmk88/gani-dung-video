@@ -13,7 +13,7 @@ from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.beats import beat_grid, fold_bpm, loop_info
+from gani_dung_video.domain.beats import beat_grid, fold_bpm, loop_info, other_folds
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.preflight import Rules
 
@@ -458,23 +458,43 @@ def compile_plan(
     driver, beat_sec, pm, warnings = _music_setup(o, rules, style, music, allowed)
     if speech:
         driver, warnings = "speech", [w for w in warnings if not w.startswith("W_GRID_NO_MUSIC")]
-    target = max(1, math.floor(o.do_dai_giay / beat_sec + 0.5))
-
     cta = str(purpose["cta"]).replace("[ngày]", o.khuyen_mai.thoi_han if o.khuyen_mai else "")
     text_rules = dict(style.get("text", {}))
-    nominal = beat_sec
+    chosen, pct = float(o.do_dai_giay), float(rules["qc"]["duration_plan_gap_pct"])
 
-    def build(t: int) -> tuple[list[PlanBlock], list[PlanChapter]]:
-        if dur_cfg.get("chapters"):
-            return _chapter_blocks(o, purpose, dur_cfg, nominal, allowed, t, cta)
-        return _short_blocks(o, purpose, dur_cfg, nominal, allowed, t, cta), []
+    def plan_at(nominal: float) -> tuple[int, _Fit]:
+        """Blocks and fit when beats are counted every `nominal` seconds."""
+
+        def build(t: int) -> tuple[list[PlanBlock], list[PlanChapter]]:
+            if dur_cfg.get("chapters"):
+                return _chapter_blocks(o, purpose, dur_cfg, nominal, allowed, t, cta)
+            return _short_blocks(o, purpose, dur_cfg, nominal, allowed, t, cta), []
+
+        t = max(1, math.floor(chosen / nominal + 0.5))
+        return t, _fit_to_chosen(chosen, driver, nominal, allowed, t, build, build(t),
+                                 trim_policy(rules))  # fmt: skip
+
+    def gap(f: _Fit) -> float:
+        return abs(sum(b.beats for b in f.blocks) * f.beat_sec - chosen)
 
     if dur_cfg.get("chapters"):
         text_rules.pop("per_block", None)  # a chapter is long: count the lines per chapter
         text_rules.update(dur_cfg.get("text", {}))
-    blocks, chapters = build(target)
-    fit = _fit_to_chosen(float(o.do_dai_giay), driver, beat_sec, allowed, target, build,
-                         (blocks, chapters), trim_policy(rules))  # fmt: skip
+    target, fit = plan_at(beat_sec)
+    if driver == "music" and pm is not None and gap(fit) > pct * chosen + _EPS:
+        # 14/10/2026: the X12 count chosen for the feel cannot reach the length (Sang trọng at
+        # 100 BPM counted as 50: one 7.2 s scene per block, 21.6 s for 15 s). Another count
+        # still inside the style's tempo tolerance may: keep the one closest to the length.
+        rng = style.get("bpm_range")
+        span = (float(rng[0]), float(rng[1])) if rng else None
+        for eff, mode in other_folds(pm.bpm, span, pm.fold,
+                                     float(rules["music"]["bpm_max_deviation"])):  # fmt: skip
+            t2, f2 = plan_at(60.0 / eff)
+            if gap(f2) < gap(fit) - _EPS:
+                note = (f"Nhạc: đếm phách ở {eff:g} BPM ({mode}) thay vì {pm.effective_bpm:g} BPM "
+                        f"({pm.fold}) để kế hoạch gần {chosen:g}s hơn.")  # fmt: skip
+                target, fit = t2, f2._replace(notes=[note, *f2.notes])
+                pm = pm.model_copy(update={"effective_bpm": eff, "fold": mode})
     blocks, chapters, beat_sec = fit.blocks, fit.chapters, fit.beat_sec
     missing = list(dict.fromkeys(t for b in blocks for t in b.required_tags
                                  if t not in available_tags))  # fmt: skip
@@ -483,7 +503,6 @@ def compile_plan(
     natural = sum(b.beats for b in blocks) * beat_sec
     if pm is not None:  # what is rendered: the chosen length when trimmed, else the plan itself
         pm = _with_loop(pm, rules, fit.trim_to_sec if fit.trim_to_sec is not None else natural)
-    pct = float(rules["qc"]["duration_plan_gap_pct"])
     if driver == "music" and natural > o.do_dai_giay * (1 + pct) + _EPS:
         warnings.append("W_DUR_GAP: " + rules["compat_msgs"]["W_DUR_GAP"].format(
             plan=f"{natural:.1f}", chosen=o.do_dai_giay, pct=f"{pct * 100:g}"))  # fmt: skip
