@@ -329,8 +329,9 @@ quyết định bằng dòng lệnh (hoặc API, mục 9c-API); giao diện ch�
 
 - `ID` là số job dựng bản cuối (cột `#` của `review list`). Không đặt `--nguoi-duyet` thì dùng tên
   người dùng của hệ điều hành.
-- **Duyệt cần MỌI mục kiểm tra trong manifest đạt.** Mục nào hỏng thì bị từ chối và liệt kê từng
-  mã ("E1-SAFE: …"); `review reject` thì vẫn bấm được.
+- **Duyệt cần MỌI mục kiểm tra E1 trong manifest đạt.** Mục nào hỏng thì bị từ chối và liệt kê
+  từng mã ("E1-SAFE: …"); `review reject` thì vẫn bấm được. Chỉ mục **hỏng** mới chặn: cảnh báo
+  (`warn`, ví dụ lệch độ dài trong biên chế độ lời) và `manifest.warnings` không chặn duyệt.
 - Một video đã quyết định (duyệt hay yêu cầu sửa) **không đổi được nữa**; bấm lần hai bị từ chối,
   không ghi gì. Muốn làm lại thì dựng lại: video mới có phiên bản `v{n}` mới và chờ duyệt riêng.
 - **Quá hạn:** video chờ lâu hơn `review.ttl_sec` (172800 giây = 48 giờ, trong `config/rules.json`)

@@ -549,8 +549,8 @@ Cả hai `POST` trả `200` + một phần tử như trong `items`. Lỗi (thân
 | `bad_request` | 400 | thiếu `reviewer`, trường thừa, kiểu sai |
 | `reason_required` / `reviewer_required` | 422 | lý do hoặc người duyệt rỗng |
 | `not_found` | 404 | không có job, hoặc job ngoài thư mục được phép |
-| `already_decided` | 409 | đã duyệt/yêu cầu sửa rồi; thân có `current_status` |
-| `checks_failed` | 409 | còn mục kiểm tra chưa đạt; thân có `problems` (mảng chuỗi) |
+| `already_decided` | 409 | đã duyệt/yêu cầu sửa rồi; thân có `current_status` (không đặt tên `status` vì trùng tham số HTTP của lỗi) |
+| `checks_failed` | 409 | còn mục kiểm tra E1 **hỏng** (cảnh báo `warn` không tính); thân có `problems` (mảng chuỗi) |
 | `preview_not_reviewable`, `not_a_render_job`, `not_delivered`, `file_missing`, `copy_failed`, `lock_busy` | 409 | không duyệt được video này lúc này |
 
 Chưa có xác thực (máy chủ chỉ nghe `127.0.0.1`, Host/Origin vẫn được kiểm). Mọi route đi qua một
