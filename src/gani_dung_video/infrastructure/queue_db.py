@@ -166,6 +166,19 @@ class Recovered(BaseModel):
     heartbeat_age: float
 
 
+def _spend_summary(con: sqlite3.Connection, now: float, window_sec: float) -> tuple[float, float]:
+    """(spent in the window, reserved) read on `con`: see QueueDb.spend_summary."""
+    spent = con.execute(
+        "SELECT COALESCE(SUM(COALESCE(spent_vnd, approved_vnd, 0)), 0) FROM jobs "
+        "WHERE kind = 'draft' AND phase = 'paid' AND finished_at IS NOT NULL "
+        "AND finished_at >= ?", (now - window_sec,)).fetchone()[0]  # fmt: skip
+    reserved = con.execute(
+        "SELECT COALESCE(SUM(approved_vnd), 0) FROM jobs WHERE kind = 'draft' "
+        "AND phase = 'paid' AND status IN ('queued', 'processing') "
+        "AND approved_vnd IS NOT NULL").fetchone()[0]  # fmt: skip
+    return float(spent), float(reserved)
+
+
 def _job(row: sqlite3.Row) -> Job:
     data: dict[str, Any] = dict(row)
     for k in _BOOLS:
@@ -631,13 +644,22 @@ class QueueDb:
                 (est.input_tokens, est.worst_call_vnd, est.cap_vnd, now + ttl_sec, job_id),
             )  # fmt: skip
 
-    def approve(self, job_id: int, now: float, max_vnd: float) -> None:
-        """Record an approval and queue the job's paid phase. The caller has already checked
-        the numbers (domain.jobs.validate_approval); only the state is re-checked here."""
+    def approve(self, job_id: int, now: float, max_vnd: float,
+                check: Callable[[Job, float, float], None] | None = None) -> None:  # fmt: skip
+        """Record an approval and queue the job's paid phase.
+
+        `check(job, spent_24h, reserved)` runs inside the same exclusive transaction that
+        writes the approval, on the rows as they are at that moment (it raises to refuse).
+        The daily budget has to be judged here: two approvals judged on numbers read before
+        either was written would both pass and together cross the limit.
+        """
         with self._write() as con:
-            row = con.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
             if row is None:
                 raise QueueDbError(f"Không có job {job_id}.")
+            if check is not None:
+                spent, reserved = _spend_summary(con, now, 86_400.0)
+                check(_job(row), spent, reserved)
             if row["status"] != "awaiting_approval":
                 raise QueueDbError(f"Job {job_id} đang '{row['status']}', không phải chờ duyệt.")
             con.execute(
@@ -664,15 +686,7 @@ class QueueDb:
         in the window, by the bill measured from ai_log — or, when nobody could measure it
         (a crash), the whole approval. Reserved: approvals of jobs that may still spend."""
         with self._conn() as con:
-            spent = con.execute(
-                "SELECT COALESCE(SUM(COALESCE(spent_vnd, approved_vnd, 0)), 0) FROM jobs "
-                "WHERE kind = 'draft' AND phase = 'paid' AND finished_at IS NOT NULL "
-                "AND finished_at >= ?", (now - window_sec,)).fetchone()[0]  # fmt: skip
-            reserved = con.execute(
-                "SELECT COALESCE(SUM(approved_vnd), 0) FROM jobs WHERE kind = 'draft' "
-                "AND phase = 'paid' AND status IN ('queued', 'processing') "
-                "AND approved_vnd IS NOT NULL").fetchone()[0]  # fmt: skip
-        return float(spent), float(reserved)
+            return _spend_summary(con, now, window_sec)
 
     # ─────────────── events ───────────────
 

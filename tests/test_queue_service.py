@@ -568,6 +568,43 @@ def test_spending_older_than_a_day_no_longer_counts(db: QueueDb, root: Path) -> 
     approve(db, waiting_job(db, root, "new"), 20_000.0, rules=BUDGET)
 
 
+def test_two_approvals_that_interleave_cannot_both_pass_the_daily_budget(
+    db: QueueDb, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audit A4: the budget was read in one transaction and the approval written in another.
+
+    Another request that approves in that gap went unseen, so two approvals that were each fine
+    alone (80.000đ + 15.000đ) were both accepted and together crossed 100.000đ.
+    """
+    for n in range(4):
+        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0)  # 80.000đ spent today
+    first, second = waiting_job(db, root, "a"), waiting_job(db, root, "b")
+    real_approve = db.approve
+    raced = {"done": False}
+
+    def approve_with_a_rival_in_the_gap(*args: Any, **kwargs: Any) -> None:
+        if not raced["done"]:
+            raced["done"] = True
+            approve(db, second, 15_000.0)  # the other request lands first, completely
+        real_approve(*args, **kwargs)
+
+    monkeypatch.setattr(db, "approve", approve_with_a_rival_in_the_gap)
+    with pytest.raises(ApprovalRefused, match="hạn mức ngày"):
+        approve(db, first, 15_000.0)  # 80 + 15 reserved by the rival + 15 > 100
+    assert db.get(first).status == "awaiting_approval"  # type: ignore[union-attr]
+    assert db.get(second).status == "queued"  # type: ignore[union-attr]
+
+
+def test_a_refused_budget_check_leaves_the_job_untouched(db: QueueDb, root: Path) -> None:
+    for n in range(4):
+        paid_and_done(db, root, f"p{n}", 20_000.0, 20_000.0)
+    jid = waiting_job(db, root, "x")
+    with pytest.raises(ApprovalRefused):
+        approve(db, jid, 25_000.0)  # 80 + 25 > 100
+    j = db.get(jid)
+    assert j is not None and j.status == "awaiting_approval" and j.approved_vnd is None
+
+
 # ─────────────── 6c-2: the API key and the music library (settings) ───────────────
 
 
