@@ -6,6 +6,8 @@ import copy
 import json
 from typing import Any
 
+import pytest
+
 from gani_dung_video.domain.pick import BlockCandidates, Candidate, PickFile
 from gani_dung_video.domain.plan import Plan, PlanBlock
 from gani_dung_video.domain.speech import SpokenWord
@@ -164,6 +166,65 @@ def test_s2_duration_within_tolerance_passes() -> None:
     p = plan(duration=12)  # 14s actual vs 12s target: +16.7%, inside ±20%
     _, issues = run(good(), ctx(p))
     assert codes(issues, "ai") == []
+
+
+# ─────────────── audit 2: S2 measures the cut that is rendered, not the words ───────────────
+
+
+def padded(pid: str, words_sec: float, pad: float = 0.2) -> Phrase:
+    """A phrase whose words last `words_sec`; the cut window holds `pad` more (0.1 s each side)."""
+    w = SpokenWord(text="x", start=0.1, end=0.1 + words_sec, prob=0.9)
+    return Phrase(id=pid, clip="a.mp4", start=0.1, end=0.1 + words_sec, cut_in=0.0,
+                  cut_out=words_sec + pad, text=pid, words=[w])  # fmt: skip
+
+
+def padded_ctx(words: list[float]) -> tuple[VerifyContext, dict[str, Any]]:
+    ids = ["hook", "m1", "m2", "cta"]
+    phrases = PhrasesFile(
+        rules_version="2.0",
+        style="ban_hang_co_loi",
+        excluded=[],
+        phrases=[padded(i, s) for i, s in zip(ids, words, strict=True)],
+    )
+    c = VerifyContext(plan=plan(drafts=1, duration=14), phrases=phrases, pick=PICK, rules=RULES)
+    raw = {"drafts": [{"draft": "A", "label": "x", "missing_shots": [], "warnings": [],
+                       "segments": [seg("hook", "hook"), seg("m1", "main", "br0"),
+                                    seg("m2", "main"), seg("cta", "cta")]}]}  # fmt: skip
+    return c, raw
+
+
+def test_s2_counts_the_padding_of_every_cut() -> None:
+    """Words 4.2 + 4.2 + 4.2 + 4.1 = 16.7 s is inside 14 s +20 % (16.8 s), but the four cuts
+    are 0.2 s longer each: 17.5 s, which E1-DUR would meet at delivery."""
+    c, raw = padded_ctx([4.2, 4.2, 4.2, 4.1])
+    _, issues = run(raw, c)
+    assert codes(issues, "ai") == ["S2"]
+    assert "17.5" in issues[0].msg  # the message quotes the length that is judged
+
+
+def test_s2_passes_when_the_cuts_themselves_fit() -> None:
+    c, raw = padded_ctx([4.0, 4.0, 4.0, 3.9])  # words 15.9 s, cuts 16.7 s: inside 16.8 s
+    _, issues = run(raw, c)
+    assert codes(issues, "ai") == []
+
+
+def test_s2_measures_the_same_length_the_timeline_cuts() -> None:
+    from gani_dung_video.domain.speech_edit import aroll_timeline, cut_length
+
+    ps = [padded("hook", 3.07), padded("m1", 4.13), padded("m2", 3.91)]
+    fps = int(RULES["render"]["fps"])
+    on_timeline = aroll_timeline(ps, fps)[-1].t_end
+    assert sum(cut_length(p, fps) for p in ps) == pytest.approx(on_timeline, abs=1e-9)
+
+
+@pytest.mark.parametrize("target", [15, 30, 45, 60])
+def test_a_draft_s2_accepts_never_exceeds_the_voice_limit_of_e1(target: int) -> None:
+    """The two tolerances must keep their order: S2 holds the CUT length to ±20 %, E1-DUR
+    refuses a voice video beyond max(25 %, 7 s). Anything S2 lets through is deliverable."""
+    pct = float(RULES["speech_edit"]["duration_tolerance_pct"])
+    v = RULES["qc"]["duration_tolerance_voice_sec"][str(target)]
+    limit = max(float(v["pct"]) * target, float(v["sec"]))
+    assert pct * target <= limit
 
 
 # ─────────────── S3: reuse, clip limits, spacing, near-duplicates ───────────────

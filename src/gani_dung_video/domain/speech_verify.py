@@ -23,7 +23,7 @@ from gani_dung_video.domain.pick import Candidate, PickFile
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.speech_ai import AiSpeechDraft, AiSpeechResponse
-from gani_dung_video.domain.speech_edit import Phrase, PhrasesFile
+from gani_dung_video.domain.speech_edit import Phrase, PhrasesFile, cut_length
 
 LETTERS = "ABC"
 
@@ -108,15 +108,22 @@ def _check_edges(d: AiSpeechDraft) -> list[Issue]:
 
 
 def _check_duration(d: AiSpeechDraft, ctx: VerifyContext) -> list[Issue]:
-    """S2: total phrase duration stays inside the tolerance of the requested length."""
-    total = sum(ctx.phrase_by_id[s.phrase_id].duration for s in d.segments
+    """S2: the total length of the cuts stays inside the tolerance of the requested length.
+
+    Judged on the padded, frame-accurate cut windows that are rendered, not on the spoken
+    words: with 0.2 s of padding per phrase the two differ by seconds over a whole video, and
+    E1-DUR measures the cuts."""
+    fps = int(ctx.rules["render"]["fps"])
+    total = sum(cut_length(ctx.phrase_by_id[s.phrase_id], fps) for s in d.segments
                if s.phrase_id in ctx.phrase_by_id)  # fmt: skip
     target = float(ctx.plan.options["duration"])
     tol = float(ctx.rules["speech_edit"]["duration_tolerance_pct"])
     lo, hi = target * (1 - tol), target * (1 + tol)
     if not (lo - 1e-6 <= total <= hi + 1e-6):
-        msg = f"Tổng các câu {total:.1f}s, phải trong khoảng {lo:.1f}–{hi:.1f}s (mục tiêu " \
-              f"{target:g}s ±{tol:.0%})."  # fmt: skip
+        msg = (
+            f"Tổng độ dài các câu đã chọn {total:.1f}s, phải trong khoảng {lo:.1f}–{hi:.1f}s "
+            f"(mục tiêu {target:g}s ±{tol:.0%})."
+        )
         return [Issue("S2", "ai", msg, d.draft)]
     return []
 
