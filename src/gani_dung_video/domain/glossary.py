@@ -11,6 +11,11 @@ Claims are compared on a folded form (audit C3): NFKC, invisible characters drop
 marks and case ignored, "_" and no-break spaces are spaces, digits are split from letters
 ("số1" = "số 1") and a space before "%" is ignored. A text token may also be several syllables
 of the phrase written together ("đặctrị"), but never a part of a syllable or of a longer word.
+
+Spellings folded since 14/10/2026 (VAN-HANH 9c "biến thể chưa bắt"): Cyrillic/Greek letters
+that look Latin ("so 1" typed with a Cyrillic o), a letter typed twice ("trămm"), digits spaced out
+before a percent ("1 0 0 %"), "pt" after a number ("100pt" = "100 phần trăm") and "trăm phần
+trăm" / "một trăm phần trăm" without a number before it (= "100 phần trăm").
 """
 
 from __future__ import annotations
@@ -35,6 +40,18 @@ _WORD_BEFORE: frozenset[tuple[str, str]] = frozenset({
 })  # fmt: skip
 _SPACE_BEFORE_PERCENT = re.compile(r"(?<=\d)\s+%")
 _FOLD_LETTERS = str.maketrans({"đ": "d", "ð": "d"})  # ð (U+00F0) is not a Vietnamese letter
+# Lower-case Cyrillic and Greek letters that read as a Latin one (their capitals too, once
+# lowered: Cyrillic EN becomes "h"). NFKC leaves them alone, so "so 1" written with a Cyrillic
+# o would slip past. Escapes keep the look-alikes out of the source text.
+_LOOKALIKE = str.maketrans(
+    "\u0430\u0432\u0435\u0451\u043a\u043c\u043d\u043e\u0440\u0441\u0442\u0443\u0445\u0456"
+    "\u0457\u0458\u0455\u0501\u04bb\u051b\u051d\u03b1\u03b2\u03b5\u03b7\u03b9\u03ba\u03bd"
+    "\u03bf\u03c1\u03c4\u03c5\u03c7\u03c9",
+    "abeekmhopctyxiijsdhqwabenikvoptuxw",
+)
+_TWICE = re.compile(r"([a-z])\1+")
+# Number words that make "trăm phần trăm" something other than 100 ("hai trăm" = 200).
+_HUNDREDS = frozenset({"hai", "ba", "bon", "nam", "sau", "bay", "tam", "chin", "may", "vai"})
 
 
 @dataclass(frozen=True)
@@ -77,13 +94,67 @@ def fold_tokens(text: str) -> list[str]:
     """
     clean = unicodedata.normalize("NFKC", text)
     clean = "".join(c for c in clean if unicodedata.category(c) != "Cf").lower()
+    # Decomposed first: a look-alike carrying a tone mark (Greek alpha + acute) is one
+    # precomposed letter after NFKC and would not be in the table.
+    clean = unicodedata.normalize("NFC", unicodedata.normalize("NFD", clean).translate(_LOOKALIKE))
     clean = _SPACE_BEFORE_PERCENT.sub("%", clean)
-    return [
+    folded = [
         "".join(
             c for c in unicodedata.normalize("NFD", piece) if not unicodedata.combining(c)
         ).translate(_FOLD_LETTERS)
         for piece in _CLAIM_PIECE.findall(clean)
     ]
+    return _spelled_numbers(_spaced_digits(folded))
+
+
+def _once(toks: Sequence[str]) -> list[str]:
+    """Each letter typed twice or more kept once ("trămm" → "tram"). Only a second reading:
+    two syllables written together can meet on the same letter ("ngonnhất")."""
+    return [_TWICE.sub(r"\1", t) for t in toks]
+
+
+def _is_number(piece: str) -> bool:
+    return piece[:1].isdigit()
+
+
+def _spaced_digits(toks: list[str]) -> list[str]:
+    """Single digits typed apart ("1 0 0 %" / "1 0 0 phần trăm" → "100%" / "100 phan tram")
+    are one number only right before a percent, so "bước 1 2 3" keeps its digits."""
+    out: list[str] = []
+    i = 0
+    while i < len(toks):
+        j = i
+        while j < len(toks) and len(toks[j].rstrip("%")) == 1 and toks[j][0].isdigit():
+            j += 1
+            if toks[j - 1].endswith("%"):
+                break
+        run = toks[i:j]
+        percent = bool(run) and (run[-1].endswith("%") or toks[j : j + 2] == ["phan", "tram"])
+        if len(run) >= 2 and percent:
+            out.append("".join(run))
+            i = j
+        else:
+            out.append(toks[i])
+            i += 1
+    return out
+
+
+def _spelled_numbers(toks: list[str]) -> list[str]:
+    """Numbers in words: "100pt" → "100 phan tram"; "(một) trăm phần trăm" → "100 phan
+    tram" unless another number word comes first ("hai trăm phần trăm" is 200)."""
+    out: list[str] = []
+    for tok in toks:
+        if tok == "pt" and out and _is_number(out[-1]):
+            out += ["phan", "tram"]
+            continue
+        out.append(tok)
+        if out[-3:] == ["tram", "phan", "tram"] and not (len(out) > 3 and _is_number(out[-4])):
+            before = out[-4] if len(out) > 3 else ""
+            if before == "mot":
+                out[-4:] = ["100", "phan", "tram"]
+            elif before not in _HUNDREDS:
+                out[-3:] = ["100", "phan", "tram"]
+    return out
 
 
 def _match_at(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
@@ -161,11 +232,12 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
         ['đặc trị']
     """
     toks = fold_tokens(text)
+    readings = [toks, _spelled_numbers(_once(toks))]  # as typed; letters typed twice kept once
     found: list[str] = []
     for phrase in banned:
         pat = fold_tokens(phrase)
-        if any(_match_glued(toks, i, pat) and not _inside_word(toks, i, pat)
-               for i in range(len(toks))):  # fmt: skip
+        if any(_match_glued(r, i, pat) and not _inside_word(r, i, pat)
+               for r in readings for i in range(len(r))):  # fmt: skip
             found.append(phrase)
     return found
 

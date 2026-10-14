@@ -390,14 +390,14 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
   `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
   như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
   báo vào manifest. Cờ CLI `--san-pham` / `--chien-dich` vẫn ghi đè được khi gõ `render` tay.
+- Biến thể đã bắt thêm (14/10/2026): `trăm phần trăm` / `một trăm phần trăm` viết thay "100"
+  (trừ khi có số khác đứng trước, "hai trăm phần trăm" là 200), `100pt`, chữ gõ lặp
+  (`trămm`, `nhấtt`), chữ Cyrillic hoặc Hy Lạp trông giống chữ Latin (`sо 1` với "о" Cyrillic),
+  chữ số gõ cách nhau ngay trước dấu % hoặc "phần trăm" (`1 0 0 %`).
 - Biến thể chưa bắt (theo dõi, bổ sung nếu gặp thực tế):
-  · `trăm phần trăm tự nhiên` (viết "trăm" thay "100")
-  · `100 phần trăm nguyên chất` (claim tương đương)
-  · `100pt tự nhiên` (viết tắt)
-  · `100 phần trămm tự nhiên` (chèn ký tự lạ vào "trăm")
+  · `100 phần trăm nguyên chất` và các tuyên bố tương đương khác: cần NVH thêm cụm vào
+    `banned_claims` (danh sách đã chốt, app không tự thêm)
   · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
-  · chữ trông giống chữ Việt nhưng là chữ Cyrillic (`sо 1` với "о" Cyrillic), chữ số cách nhau
-    (`1 0 0 %`)
 - Không coi là cụm cấm (14/10/2026): cụm bắt đầu ở âm tiết thứ hai của một từ có sẵn trong
   danh sách `_WORD_BEFORE` (`domain/glossary.py`: giá trị, quản trị, chính trị, cai trị, thống
   trị, văn phòng, sửa chữa), nên "giá trị bệnh nhân" không bị bắt là "trị bệnh"; số có dấu thập
