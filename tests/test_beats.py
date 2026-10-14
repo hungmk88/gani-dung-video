@@ -60,6 +60,54 @@ def test_beats_that_fit_a_segment() -> None:
     assert beats_that_fit(0.4, 0.5, [1, 2]) == []
 
 
+# ─────────────── audit 1: a window that "fits" survives the snap's frame rounding ───────────────
+
+
+def _snaps_with_a_long_scene_first(window: float, beat: float, n: int, start_boundary: int) -> None:
+    """Lay one n-beat cut that must live in a `window`-second scene on boundary `start_boundary`."""
+    grid = beat_grid(beat, start_boundary + n)
+    long_scene = ref(0.0, 20.0, 10.0)
+    ids = ["long"] * start_boundary + ["s"]
+    segs = [DraftSegment(block="b", scene_id=ids[k], beats=1 if k < start_boundary else n)
+            for k in range(start_boundary + 1)]  # fmt: skip
+    snap_to_beats(segs, grid, {"s": ref(0.0, window, window * 0.4), "long": long_scene}, FPS)
+
+
+def test_a_window_one_frame_too_short_for_the_rounded_cut_is_not_offered() -> None:
+    """112 BPM, a 1.0724 s window: 2 beats are 1.0714 s, but the cut that starts on boundary 6
+    is rounded to 1.1 s. The fit test used to say yes and the snap said "quá ngắn"."""
+    beat = 60 / 112
+    assert beats_that_fit(1.0724, beat, [2, 3, 4]) == []
+    with pytest.raises(SnapError, match="quá ngắn"):
+        _snaps_with_a_long_scene_first(1.0724, beat, 2, 6)  # why the filter must refuse it
+
+
+def test_a_window_with_a_frame_to_spare_still_fits() -> None:
+    beat = 60 / 112
+    window = 2 * beat + 1 / FPS + 1e-6
+    assert beats_that_fit(window, beat, [2, 3, 4]) == [2]
+    for boundary in range(0, 30):
+        _snaps_with_a_long_scene_first(window, beat, 2, boundary)
+
+
+@pytest.mark.parametrize("bpm", range(55, 181, 3))
+def test_no_window_that_fits_can_be_refused_by_the_snap_at_any_position(bpm: int) -> None:
+    beat = 60.0 / bpm
+    for n in (2, 3, 4, 6):
+        for extra in (
+            0.0,
+            0.2,
+            0.5,
+            0.8,
+            0.999,
+        ):  # the window sits this far above n beats, in frames
+            window = n * beat + extra / FPS
+            if n not in beats_that_fit(window, beat, [n]):
+                continue
+            for boundary in range(0, 12):
+                _snaps_with_a_long_scene_first(window, beat, n, boundary)
+
+
 def test_loop_info_only_when_track_is_shorter_than_video() -> None:
     assert loop_info(40.0, 0.5, 92.0, 30, 4) is None
     got = loop_info(20.0, 0.5, 92.0, 30, 4)
