@@ -11,6 +11,7 @@ import {
   preflightBody,
   toMusicList,
   toPreflightResult,
+  toPipelineCard,
   toQaReport,
   toRenderJob,
 } from './mappers.ts';
@@ -231,4 +232,26 @@ test('toMusicList keeps the file name as identity and builds the preview URL fro
   assert.equal(list.tracks[0].audio_url, '/media/music/Nh%E1%BA%A1c%20n%E1%BB%81n%2001.mp3');
   assert.equal(list.tracks[1].bpm, null);
   assert.equal(list.tracks[1].bpm_source, 'pending');
+});
+
+test('a final render with a review gives the card and the pipeline row their badge data', () => {
+  const review = {
+    status: 'changes_requested' as const, requested_at: '2026-10-15T08:00:00Z', decided_at: null,
+    decided_by: 'NVH', reason: 'chữ cuối bị che', reminded_at: null, overdue: false, failed_checks: [],
+  };
+  const final = job({ id: 9, size: 'final', review });
+  const card = toRenderJob(final, [job({ id: 8, size: 'preview' }), final]);
+  assert.equal(card.review?.status, 'changes_requested');
+  assert.equal(card.review?.reason, 'chữ cuối bị che');
+  const chain = toPipelineCard({
+    id: 3, project_id: '0/x', project_name: 'x', status: 'done', needs_approval: false,
+    jobs: [job({ id: 8, size: 'preview', pipeline_id: 3 }), { ...final, pipeline_id: 3 }],
+  });
+  assert.equal(chain.review?.status, 'changes_requested');
+  assert.equal(chain.jobs?.find((j) => j.id === '9')?.review?.status, 'changes_requested');
+  assert.equal(chain.jobs?.find((j) => j.id === '8')?.review ?? null, null);
+});
+
+test('a card without any review has none', () => {
+  assert.equal(toRenderJob(job(), []).review ?? null, null);
 });

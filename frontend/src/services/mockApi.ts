@@ -170,6 +170,8 @@ function advance(id: string): void {
     job.etaSec = 0;
     job.finalUrl = job.previewUrl; // demo: reuse the same real render as the "final" clip
     job.qa = buildQaReport();
+    // demo: a delivered final video waits for its reviewer (T-F); the real API sets this from the manifest
+    job.review = { status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
     job.logLines.push(log('info', 'Hoàn tất pipeline — soát kỹ thuật ĐẠT ở vòng 1/3.'));
     notify(id);
     return;

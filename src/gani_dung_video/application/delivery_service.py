@@ -3,8 +3,9 @@
 E1 (domain/delivery_checks.py) judges the finished file by numbers; a failed check stops
 delivery like any QC error. E2/E4 write edit/render/<draft>/manifest.json: how the video was
 made and what it cost. A video that passed is also copied under its E3 name into
-edit/delivery/<campaign>/drafts with the manifest in metadata; `final/` is left for the
-reviewer's approval (T-F) and `raw/` for the original footage: nothing is moved there here.
+edit/delivery/<campaign>/drafts with the manifest in metadata. A FINAL video waits there as
+`review: pending`; `application/review_service.py` moves it to `final/` when a person approves
+(T-F). `raw/` is for the original footage: nothing is moved there here.
 """
 
 from __future__ import annotations
@@ -35,6 +36,8 @@ from gani_dung_video.domain.manifest import CostFacts, Manifest, ai_cost, sha256
 from gani_dung_video.domain.plan import Plan, natural_sec, planned_sec
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import Finding
+from gani_dung_video.domain.review import ReviewBlock, pending_block, stamp
+from gani_dung_video.infrastructure.atomic_file import write_text_atomic
 from gani_dung_video.infrastructure.config_files import GlossaryFile
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.media_probe import FontMetrics, probe_duration
@@ -117,6 +120,16 @@ def _sources(e: Edl) -> list[str]:
     return sorted(files)
 
 
+def initial_review(
+    delivered_as: str | None, preview: bool, requested_at: str
+) -> ReviewBlock | None:
+    """A delivered final video starts `pending`. A preview (540p draft) is never reviewed, and a
+    blocked video was not delivered, so neither gets a block."""
+    if delivered_as is None or preview:
+        return None
+    return pending_block(requested_at)
+
+
 def build_manifest(
     *, e: Edl, plan: Plan, report: E1Report, folder: Path, rules: Rules, glossary: GlossaryFile,
     letter: str, label: str, model: str, preview: bool, video: Path, delivered_as: str | None,
@@ -127,8 +140,9 @@ def build_manifest(
     mode = "speech" if plan.driver == "speech" else "music"
     cost = CostFacts(**ai_cost(_ai_entries(folder), mode, letter), render_sec=round(render_sec, 1))
     listened = e.mode == "speech" and not preview  # T8 ran: Whisper was a model of this video
+    made = datetime.now(UTC)
     return Manifest(
-        created_at=datetime.now(UTC).isoformat(timespec="seconds"), video=video.name,
+        created_at=made.isoformat(timespec="seconds"), video=video.name,
         delivered_as=delivered_as, draft=letter, label=label, resolution=f"{e.width}x{e.height}",
         deviation_vs_chosen=report.deviation_vs_chosen, deviation_vs_plan=report.deviation_vs_plan,
         options=plan.options, plan_sha256=sha256_of(plan_bytes),
@@ -136,6 +150,7 @@ def build_manifest(
         glossary_sha256=_canonical_sha(glossary.model_dump(mode="json")),
         models={"ai": model, "asr": str(rules["qc"]["t8"]["model"]) if listened else None},
         source_files=_sources(e), e1=report, cost=cost, warnings=warnings,
+        review=initial_review(delivered_as, preview, stamp(made)),
     )  # fmt: skip
 
 
@@ -159,7 +174,9 @@ def export_name(
     opts = plan.options
     parts = NameParts(product=product, style=str(opts["style"]), purpose=str(opts["purpose"]),
                       duration_sec=int(opts["duration"]), day=_today(target))  # fmt: skip
-    taken = {p.name for p in (root / "drafts").glob("*.mp4")}
+    # `final/` counts too: an approved video leaves `drafts/`, and its version number must not
+    # be handed out again (the next video would overwrite it when it is approved).
+    taken = {p.name for sub_dir in ("drafts", "final") for p in (root / sub_dir).glob("*.mp4")}
     name, _ = next_version_name(parts, taken, rules)
     return root, name, [warning] if warning else []
 
@@ -167,10 +184,10 @@ def export_name(
 def write_manifest(manifest: Manifest, out_dir: Path, delivered: tuple[Path, str] | None) -> None:
     """manifest.json beside the working video; a delivered video also gets it in metadata."""
     text = manifest.model_dump_json(indent=1)
-    (out_dir / MANIFEST).write_text(text, encoding="utf-8")
+    write_text_atomic(out_dir / MANIFEST, text)
     if delivered is not None:
         root, name = delivered
-        (root / "metadata" / f"{Path(name).stem}.manifest.json").write_text(text, encoding="utf-8")
+        write_text_atomic(root / "metadata" / f"{Path(name).stem}.manifest.json", text)
 
 
 def copy_to_drafts(video: Path, root: Path, name: str) -> None:

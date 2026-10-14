@@ -523,6 +523,39 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
 - `GET /api/health` có thêm `ai_key_configured` và `budget`: `limit_vnd` (`null` = không giới hạn
   ngày), `spent_24h_vnd`, `reserved_vnd` (đã duyệt nhưng chưa tiêu).
 
+### 4c. Duyệt video cuối (T-F)
+
+`JobView.review` (chỉ job dựng **bản cuối** đã giao, ngược lại `null`):
+
+```json
+{"status": "pending", "requested_at": "2026-10-15T08:00:00Z", "decided_at": null,
+ "decided_by": null, "reason": null, "reminded_at": null, "overdue": false,
+ "failed_checks": []}
+```
+
+`status` là `pending | approved | changes_requested`; `failed_checks` liệt kê "MÃ: chi tiết" của
+mọi mục kiểm tra chưa đạt (rỗng khi duyệt được); `overdue` là chờ quá `review.ttl_sec` mà chưa quyết.
+
+| Route | Việc |
+|---|---|
+| `GET /api/reviews?status=pending&from=2026-10-01` | `{"items": [{job_id, project_id, project_name, title, video, review}]}`. `status` và `from` (YYYY-MM-DD, UTC) tùy chọn; sai dạng thì `400` |
+| `POST /api/jobs/{id}/review/approve` | thân `{"reviewer": "Tên", "reason": "ghi chú tùy chọn"}`: tệp chuyển sang `final/` |
+| `POST /api/jobs/{id}/review/reject` | thân `{"reviewer": "Tên", "reason": "bắt buộc"}`: tệp ở lại `drafts/` |
+
+Cả hai `POST` trả `200` + một phần tử như trong `items`. Lỗi (thân `{"error": {"code", "message", ...}}`):
+
+| Mã | HTTP | Khi nào |
+|---|---|---|
+| `bad_request` | 400 | thiếu `reviewer`, trường thừa, kiểu sai |
+| `reason_required` / `reviewer_required` | 422 | lý do hoặc người duyệt rỗng |
+| `not_found` | 404 | không có job, hoặc job ngoài thư mục được phép |
+| `already_decided` | 409 | đã duyệt/yêu cầu sửa rồi; thân có `current_status` |
+| `checks_failed` | 409 | còn mục kiểm tra chưa đạt; thân có `problems` (mảng chuỗi) |
+| `preview_not_reviewable`, `not_a_render_job`, `not_delivered`, `file_missing`, `copy_failed`, `lock_busy` | 409 | không duyệt được video này lúc này |
+
+Chưa có xác thực (máy chủ chỉ nghe `127.0.0.1`, Host/Origin vẫn được kiểm). Mọi route đi qua một
+hàm `authorize_reviewer` để bot Telegram siết sau này mà không phải sửa từng route.
+
 ## 5. Ánh xạ sang `RenderJob` của frontend
 
 ### Trạng thái (`frontend_status` đã tính sẵn)
