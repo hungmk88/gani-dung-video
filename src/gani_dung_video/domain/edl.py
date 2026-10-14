@@ -331,4 +331,4 @@ def _cta(cuts: Sequence[SpeechCut], end: float, cta: str | None) -> list[Caption
 
 
 def _karaoke_groups(words: Sequence[SpokenWord], se: Mapping[str, Any]) -> list[list[SpokenWord]]:
-    return group_words(words, se["karaoke"])
+    return group_words(words, se["karaoke"], str(se["sentence_end"]))
