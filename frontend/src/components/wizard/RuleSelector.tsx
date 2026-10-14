@@ -1,5 +1,5 @@
 import { Copy, Gauge, Music, Radio } from 'lucide-react';
-import { PACING_LABELS, RULES } from '../../data/rules';
+import { RULES } from '../../data/rules';
 import { countWords } from '../../lib/format';
 import { derivePacing } from '../../lib/preflight';
 import { draftsFor } from '../../lib/structure';
@@ -12,11 +12,46 @@ import {
   type VideoOptions,
 } from '../../types/rules';
 
-const COMPAT_DOT: Record<CompatLevel, string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  bad: 'bg-rose-500',
+// A symbol as well as a colour (colour alone fails colour-blind users), and Vietnamese words
+// instead of the rule values ok/warn/bad.
+const COMPAT: Record<CompatLevel, { mark: string; word: string; cls: string }> = {
+  ok: { mark: '✓', word: 'hợp', cls: 'text-emerald-400' },
+  warn: { mark: '!', word: 'tạm được', cls: 'text-amber-400' },
+  bad: { mark: '✕', word: 'không nên', cls: 'text-rose-400' },
 };
+
+const PACING_WORDS = {
+  loi: 'theo lời nói',
+  nhac: 'theo phách nhạc',
+  luoi_ao: 'lưới nhịp ảo (không nhạc)',
+  tu_dong: 'tự động',
+} as const;
+
+function CompatMark({ level, against }: { level: CompatLevel; against: string }) {
+  const c = COMPAT[level];
+  return (
+    <span className={`font-bold ${c.cls}`} title={`${c.word} với ${against} đã chọn`}>
+      <span aria-hidden="true">{c.mark}</span>
+      <span className="sr-only">{`${c.word} với ${against} đã chọn`}</span>
+    </span>
+  );
+}
+
+function CompatLegend({ against }: { against: string }) {
+  return (
+    <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+      {(Object.keys(COMPAT) as CompatLevel[]).map((k) => (
+        <span key={k}>
+          <span className={`font-bold ${COMPAT[k].cls}`} aria-hidden="true">
+            {COMPAT[k].mark}
+          </span>{' '}
+          {COMPAT[k].word}
+        </span>
+      ))}
+      <span>— so với {against} đã chọn</span>
+    </p>
+  );
+}
 
 function SectionTitle({ icon: Icon, children }: { icon: typeof Music; children: React.ReactNode }) {
   return (
@@ -43,8 +78,8 @@ export function RuleSelector({
   return (
     <div className="space-y-6">
       {/* Phong cách */}
-      <div>
-        <SectionTitle icon={Radio}>Phong cách (6)</SectionTitle>
+      <div id="chon-phong-cach" className="scroll-mt-20">
+        <SectionTitle icon={Radio}>Phong cách</SectionTitle>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {STYLE_IDS.map((id) => {
             const s = RULES.styles[id];
@@ -55,6 +90,7 @@ export function RuleSelector({
               <button
                 key={id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => onChange({ phong_cach: id })}
                 className={`relative rounded-lg border px-3 py-2.5 text-left transition ${
                   selected
@@ -63,22 +99,27 @@ export function RuleSelector({
                 }`}
               >
                 {compat && (
-                  <span
-                    className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${COMPAT_DOT[compat]}`}
-                    title={`Hợp với mục đích đã chọn: ${compat}`}
-                  />
+                  <span className="absolute right-2 top-1.5 text-sm">
+                    <CompatMark level={compat} against="mục đích" />
+                  </span>
                 )}
-                <div className="text-sm font-medium">{s.name}</div>
-                <div className="mt-0.5 text-[11px] text-slate-500">
-                  {s.bpm_range ? `${s.bpm_range[0]}–${s.bpm_range[1]} BPM` : 'không theo BPM'} · driver: {s.driver}
+                <div className="pr-4 text-sm font-medium">{s.name}</div>
+                <div className="mt-0.5 text-xs text-slate-400">
+                  {s.driver === 'speech'
+                    ? 'dẫn bằng lời nói'
+                    : s.bpm_range
+                      ? `nhạc ${s.bpm_range[0]}–${s.bpm_range[1]} BPM`
+                      : 'theo mô tả của bạn'}
                 </div>
               </button>
             );
           })}
         </div>
+        {options.muc_dich && <CompatLegend against="mục đích" />}
         {options.phong_cach === 'theo_mo_ta' && (
           <div className="mt-3">
             <textarea
+              aria-label="Mô tả phong cách mong muốn"
               value={options.ghi_chu}
               onChange={(e) => onChange({ ghi_chu: e.target.value })}
               rows={3}
@@ -92,15 +133,15 @@ export function RuleSelector({
                   : 'text-emerald-400'
               }`}
             >
-              {noteWords} / {RULES.styles.theo_mo_ta.note_min_words} từ (X4)
+              {noteWords} / tối thiểu {RULES.styles.theo_mo_ta.note_min_words} từ
             </div>
           </div>
         )}
       </div>
 
       {/* Mục đích */}
-      <div>
-        <SectionTitle icon={Gauge}>Mục đích (4)</SectionTitle>
+      <div id="chon-muc-dich" className="scroll-mt-20">
+        <SectionTitle icon={Gauge}>Mục đích</SectionTitle>
         <div className="grid grid-cols-2 gap-2">
           {PURPOSE_IDS.map((id) => {
             const p = RULES.purposes[id];
@@ -109,6 +150,7 @@ export function RuleSelector({
               <button
                 key={id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => onChange({ muc_dich: id })}
                 className={`rounded-lg border px-3 py-2.5 text-left transition ${
                   selected
@@ -117,7 +159,7 @@ export function RuleSelector({
                 }`}
               >
                 <div className="text-sm font-medium">{p.name}</div>
-                <div className="mt-0.5 text-[11px] text-slate-500">CTA: {p.cta}</div>
+                <div className="mt-0.5 text-xs text-slate-400">Lời kêu gọi: {p.cta}</div>
               </button>
             );
           })}
@@ -164,8 +206,8 @@ export function RuleSelector({
 
       {/* Thời lượng + số bản nháp */}
       <div className="grid grid-cols-2 gap-6">
-        <div>
-          <SectionTitle icon={Gauge}>Thời lượng (5)</SectionTitle>
+        <div id="chon-thoi-luong" className="scroll-mt-20">
+          <SectionTitle icon={Gauge}>Thời lượng</SectionTitle>
           <div className="flex flex-wrap gap-2">
             {DURATION_IDS.map((d) => {
               const selected = options.do_dai_giay === d;
@@ -176,6 +218,7 @@ export function RuleSelector({
                   key={d}
                   type="button"
                   disabled={locked}
+                  aria-pressed={selected}
                   title={locked ? 'Video 3 phút chưa mở: đang chờ nghiệm thu bằng footage thật.' : undefined}
                   onClick={() =>
                     onChange({ do_dai_giay: d, so_ban_nhap: draftsFor(d, options.so_ban_nhap) })
@@ -188,14 +231,15 @@ export function RuleSelector({
                         : 'border-slate-800 bg-slate-900/40 text-slate-300 hover:border-slate-600'
                   }`}
                 >
-                  {compat && <span className={`h-1.5 w-1.5 rounded-full ${COMPAT_DOT[compat]}`} />}
+                  {compat && <CompatMark level={compat} against="phong cách" />}
                   {d >= 60 ? `${d / 60} phút` : `${d}s`}
                 </button>
               );
             })}
           </div>
+          {options.phong_cach && <CompatLegend against="phong cách" />}
           {longVideo === false && (
-            <p className="mt-2 text-[11px] text-slate-500">
+            <p className="mt-2 text-xs text-slate-400">
               Video 3 phút chưa mở trên máy chủ này (chờ nghiệm thu bằng footage thật).
             </p>
           )}
@@ -208,6 +252,7 @@ export function RuleSelector({
               <button
                 key={n}
                 type="button"
+                aria-pressed={options.so_ban_nhap === n}
                 onClick={() => onChange({ so_ban_nhap: n })}
                 title={
                   options.do_dai_giay === 180 && n === 3
@@ -227,18 +272,15 @@ export function RuleSelector({
         </div>
       </div>
 
-      {/* Pacing — read-only, suy ra từ driver của phong cách (không phải field backend) */}
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Dẫn nhịp (suy ra từ phong cách)
-          </span>
-          <span className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-amber-300">
-            {pacing.mode === 'tu_dong' ? 'TỰ ĐỘNG' : PACING_LABELS[pacing.mode].label}
-          </span>
-        </div>
-        {pacing.note && <p className="mt-1.5 text-xs text-amber-300/90">{pacing.note}</p>}
-      </div>
+      {/* Pacing: read-only, implied by the style's driver (not a field the backend takes). */}
+      <p className="text-xs text-slate-400">
+        Nhịp dựng:{' '}
+        <span className="font-semibold text-amber-300">
+          {PACING_WORDS[pacing.mode]}
+        </span>{' '}
+        (tự suy ra từ phong cách)
+        {pacing.note && <span className="mt-1 block text-amber-300/90">{pacing.note}</span>}
+      </p>
     </div>
   );
 }

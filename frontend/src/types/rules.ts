@@ -321,10 +321,12 @@ export interface RenderJob {
   outputs?: DraftOutput[];
   /** Newest delivered final render of this card: its review state (T-F). */
   review?: ReviewInfo | null;
-  /** Real API only: the project/draft/size this job renders (needed to re-render). */
+  /** Real API only: the project/draft/size/ASR switch this job renders (needed to re-render).
+   *  A pipeline card: 'all' unless it renders one letter, 'final' if any render is final. */
   projectId?: string;
   draft?: string;
   size?: 'preview' | 'final';
+  noAsr?: boolean;
   title: string;
   options: VideoOptions;
   status: JobStatus;
@@ -338,6 +340,8 @@ export interface RenderJob {
 }
 
 export interface ConsoleLine {
+  /** Stable row id (the server's event id, unique per queue.db; a counter in the mock). */
+  id?: number;
   ts: string;
   level: 'info' | 'warn' | 'error';
   text: string;

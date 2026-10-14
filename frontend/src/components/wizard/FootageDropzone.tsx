@@ -76,9 +76,9 @@ export function FootageDropzone({
             : 'border-slate-700 bg-slate-900/40 hover:border-slate-600'
         }`}
       >
-        <UploadCloud className={`mb-3 h-8 w-8 ${dragOver ? 'text-amber-400' : 'text-slate-500'}`} />
+        <UploadCloud className={`mb-3 h-8 w-8 ${dragOver ? 'text-amber-400' : 'text-slate-400'}`} />
         <p className="text-sm font-medium text-slate-200">Kéo thả file MP4 hoặc cả thư mục footage vào đây</p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-slate-400">
           Hỗ trợ {VIDEO_EXTENSIONS.join(', ')} — hoặc bấm để chọn file
         </p>
         <input
@@ -107,13 +107,13 @@ export function FootageDropzone({
               className="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs text-slate-300 hover:bg-slate-800/60"
             >
               <span className="truncate">{f.name}</span>
-              <span className="flex shrink-0 items-center gap-2 text-slate-500">
+              <span className="flex shrink-0 items-center gap-2 text-slate-400">
                 <span>{formatBytes(f.size_bytes)}</span>
                 <span>{formatDuration(f.duration_sec)}</span>
                 <button
                   type="button"
                   onClick={() => onChange(files.filter((x) => x.id !== f.id))}
-                  className="rounded p-0.5 text-slate-500 hover:bg-slate-700 hover:text-rose-400"
+                  className="rounded p-0.5 text-slate-400 hover:bg-slate-700 hover:text-rose-400"
                   aria-label={`Bỏ ${f.name}`}
                 >
                   <X className="h-3 w-3" />
@@ -130,7 +130,7 @@ export function FootageDropzone({
 function StatCard({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2">
-      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+      <div className="flex items-center gap-1.5 text-xs text-slate-400">
         <Icon className="h-3 w-3" />
         {label}
       </div>

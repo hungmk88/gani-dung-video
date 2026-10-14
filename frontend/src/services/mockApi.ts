@@ -28,13 +28,13 @@ import type {
 import type { StudioApi } from './api';
 
 const STEP_LABELS: Record<PipelineStepId, string> = {
-  inventory: 'Inventory (kiểm kê footage)',
-  nhan_dang: 'Nhận dạng (Whisper + CLIP + OpenCV)',
-  plan_compile: 'Biên dịch plan (khối / phách)',
-  pick: 'Chọn ứng viên cảnh',
-  ai_draft: 'AI viết kịch bản (Claude)',
-  render_preview: 'Dựng bản xem trước (540p)',
-  qc_verify: 'Soát kỹ thuật (T1–T7)',
+  inventory: 'Kiểm kê footage',
+  nhan_dang: 'Nghe lời & nhận diện hình',
+  plan_compile: 'Lập kế hoạch nhịp',
+  pick: 'Chọn cảnh ứng viên',
+  ai_draft: 'AI viết kịch bản',
+  render_preview: 'Dựng bản xem nhanh (540p)',
+  qc_verify: 'Soát kỹ thuật',
   final_export: 'Xuất bản cuối (1080×1920)',
 };
 
@@ -52,8 +52,11 @@ function newSteps(): PipelineStep[] {
   }));
 }
 
+let lastLogId = 0;
+
 function log(level: ConsoleLine['level'], text: string): ConsoleLine {
-  return { ts: nowIso(), level, text };
+  lastLogId += 1;
+  return { id: lastLogId, ts: nowIso(), level, text };
 }
 
 function stepDetail(id: PipelineStepId, options: VideoOptions, footage: FootageFile[]): string {

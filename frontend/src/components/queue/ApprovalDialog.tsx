@@ -27,7 +27,8 @@ export function ApprovalDialog({
   onApproved: (next: RenderJob) => void;
 }) {
   const ap = job.approval;
-  const [maxText, setMaxText] = useState(() => (ap ? String(suggestMaxVnd(ap.worstCallVnd, ap.capVnd)) : ''));
+  const suggested = ap ? suggestMaxVnd(ap.worstCallVnd, ap.capVnd) : 0;
+  const [maxText, setMaxText] = useState(() => (ap ? String(suggested) : ''));
   const [confirmedFor, setConfirmedFor] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,12 +105,12 @@ export function ApprovalDialog({
               <Coins className="h-4 w-4 text-amber-400" />
               Duyệt chi phí gọi Claude
             </h3>
-            <p className="mt-0.5 text-[11px] text-slate-500">{job.title}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{job.title}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+            className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
             aria-label="Đóng"
           >
             <X className="h-4 w-4" />
@@ -129,17 +130,17 @@ export function ApprovalDialog({
           {job.structure && <ChapterTimeline structure={job.structure} />}
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-            <dt className="text-slate-500">Một lần gọi, tệ nhất</dt>
+            <dt className="text-slate-400">Một lần gọi, tệ nhất</dt>
             <dd className="text-right font-semibold text-slate-100">{formatVnd(estimateVnd(ap.worstCallVnd))}</dd>
-            <dt className="text-slate-500">Token vào (ước tính)</dt>
+            <dt className="text-slate-400">Token vào (ước tính)</dt>
             <dd className="text-right">{ap.inputTokens.toLocaleString('vi-VN')}</dd>
-            <dt className="text-slate-500">Trần cho video này</dt>
+            <dt className="text-slate-400">Trần cho video này</dt>
             <dd className="text-right">{formatVnd(ap.capVnd)}</dd>
-            <dt className="flex items-center gap-1 text-slate-500">
+            <dt className="flex items-center gap-1 text-slate-400">
               <Clock3 className="h-3 w-3" /> Hạn duyệt còn
             </dt>
             <dd className="font-mono-studio text-right">{formatRemaining(ap.expiresAt, nowMs)}</dd>
-            <dt className="text-slate-500">Hạn mức ngày</dt>
+            <dt className="text-slate-400">Hạn mức ngày</dt>
             <dd className="text-right">
               {b === undefined
                 ? '…'
@@ -149,13 +150,17 @@ export function ApprovalDialog({
             </dd>
           </dl>
 
-          <p className="text-slate-500">
-            Job có thể gọi Claude tối đa vài vòng để sửa lỗi, nhưng tổng không bao giờ vượt số bạn
-            duyệt dưới đây. Ước tính đổi thì job quay lại chờ duyệt, không tốn đồng nào.
+          <p className="text-slate-400">
+            Claude có thể được gọi vài vòng để sửa lỗi, nhưng tổng không bao giờ vượt số bạn duyệt
+            dưới đây. Ước tính đổi thì video quay lại chờ duyệt, không tốn đồng nào.
           </p>
 
           <label className="block">
-            <span className="text-slate-400">Số tiền tối đa cho job này (đồng)</span>
+            <span className="text-slate-300">Số tiền tối đa cho video này (đồng)</span>
+            <span className="mt-0.5 block text-slate-400">
+              Gợi ý {formatVnd(suggested)} ≈ 1,5 lần "một lần gọi, tệ nhất" (đủ cho một vòng sửa
+              ngắn), làm tròn lên 500đ, không vượt trần {formatVnd(ap.capVnd)}.
+            </span>
             <input
               type="number"
               inputMode="numeric"
@@ -188,19 +193,21 @@ export function ApprovalDialog({
           </label>
 
           {error && (
-            <p className="flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-rose-300">
+            <p aria-live="polite" className="flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {error}
             </p>
           )}
 
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] text-slate-500">{check.ok ? '' : check.reason}</span>
+            <span aria-live="polite" className="text-xs text-slate-400">
+              {check.ok ? '' : check.reason}
+            </span>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:border-slate-500"
+                className="whitespace-nowrap rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:border-slate-500"
               >
                 Để sau
               </button>
@@ -208,10 +215,10 @@ export function ApprovalDialog({
                 type="button"
                 disabled={!check.ok}
                 onClick={() => void confirm()}
-                className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition ${
                   check.ok
                     ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 hover:brightness-110'
-                    : 'cursor-not-allowed bg-slate-800 text-slate-600'
+                    : 'cursor-not-allowed bg-slate-800 text-slate-500'
                 }`}
               >
                 {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

@@ -10,6 +10,7 @@ import {
   pipelineBody,
   pipelineCardId,
   pipelineStatus,
+  rerenderBody,
   toHealthInfo,
   toPipelineCard,
 } from './mappers.ts';
@@ -276,4 +277,11 @@ test('toHealthInfo carries the API key flag and the daily budget', () => {
   });
   assert.equal(h.aiKeyConfigured, false);
   assert.deepEqual(h.budget, { limitVnd: 50000, spent24hVnd: 1000, reservedVnd: 500 });
+});
+
+test('toPipelineCard keeps what the chain renders so "Render lại" asks the same again', () => {
+  const one = toPipelineCard(chain([ANALYZE, { ...RENDER_A, no_asr: true }, { ...RENDER_A, id: 5, size: 'final', no_asr: true }]));
+  assert.deepEqual(rerenderBody(one), { project_id: '0/Xuong GANI', draft: 'A', final: true, no_asr: true });
+  const two = toPipelineCard(chain([ANALYZE, DRAFT, RENDER_A, RENDER_B]));
+  assert.deepEqual(rerenderBody(two), { project_id: '0/Xuong GANI', draft: 'all', final: false, no_asr: false });
 });

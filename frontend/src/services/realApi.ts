@@ -23,6 +23,7 @@ import {
   parsePipelineCardId,
   pipelineBody,
   preflightBody,
+  rerenderBody,
   toMusicList,
   toHealthInfo,
   toPipelineCard,
@@ -185,12 +186,7 @@ export const realApi: StudioApi = {
       await post(`/api/jobs/${enc(job.id)}/retry`);
       return detail(job.id);
     }
-    if (!job.projectId) throw new Error('Job này không thuộc dự án nào nên không dựng lại được.');
-    const jobs = await post<ApiJob[]>('/api/jobs', {
-      project_id: job.projectId,
-      draft: job.draft ?? 'all',
-      final: job.size === 'final',
-    });
+    const jobs = await post<ApiJob[]>('/api/jobs', rerenderBody(job));
     return toRenderJob(jobs[0], jobs);
   },
 };

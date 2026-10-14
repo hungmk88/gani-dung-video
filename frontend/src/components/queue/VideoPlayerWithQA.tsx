@@ -13,8 +13,8 @@ function CheckRow({ c }: { c: QaCheck }) {
         <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
       )}
       <span className="text-slate-300">
-        <span className="font-mono-studio text-slate-500">{c.code}</span> {c.label}
-        <span className="block text-[11px] text-slate-500">{c.detail}</span>
+        {c.label} <span className="font-mono-studio text-xs text-slate-400">({c.code})</span>
+        <span className="block text-xs text-slate-400">{c.detail}</span>
       </span>
     </li>
   );
@@ -28,7 +28,7 @@ function QaGroup({ group }: { group: QaGroupData }) {
       <div className="mb-1 flex items-start justify-between gap-2">
         <h4 className="text-xs font-semibold text-slate-300">{group.title}</h4>
         <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
             empty
               ? 'bg-slate-700/40 text-slate-400'
               : allPass
@@ -40,7 +40,7 @@ function QaGroup({ group }: { group: QaGroupData }) {
         </span>
       </div>
       {empty ? (
-        <p className="py-1.5 text-[11px] text-slate-500">{group.emptyNote ?? 'Chưa có dữ liệu.'}</p>
+        <p className="py-1.5 text-xs text-slate-400">{group.emptyNote ?? 'Chưa có dữ liệu.'}</p>
       ) : (
         <ul className="divide-y divide-slate-800/60">
           {group.checks.map((c, i) => (
@@ -49,7 +49,7 @@ function QaGroup({ group }: { group: QaGroupData }) {
         </ul>
       )}
       {group.note && (
-        <p className="mt-1.5 flex items-start gap-1.5 border-t border-slate-800/60 pt-1.5 text-[11px] text-slate-500">
+        <p className="mt-1.5 flex items-start gap-1.5 border-t border-slate-800/60 pt-1.5 text-xs text-slate-400">
           <Info className="mt-0.5 h-3 w-3 shrink-0" />
           {group.note}
         </p>
@@ -63,12 +63,12 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-200">Soát chất lượng</h3>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-xs text-slate-400">
           vòng {qa.rounds_used}/{qa.max_rounds}
         </span>
       </div>
       {qa.fixes.length > 0 && (
-        <ul className="space-y-1 rounded-lg border border-sky-800/50 bg-sky-950/20 px-3 py-2 text-[11px] text-sky-200">
+        <ul className="space-y-1 rounded-lg border border-sky-800/50 bg-sky-950/20 px-3 py-2 text-xs text-sky-200">
           {qa.fixes.map((f, i) => (
             <li key={i} className="flex items-start gap-1.5">
               <Wrench className="mt-0.5 h-3 w-3 shrink-0 text-sky-400" />
@@ -79,7 +79,7 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
           ))}
         </ul>
       )}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
         {qa.groups.map((g) => (
           <QaGroup key={g.title} group={g} />
         ))}
@@ -91,10 +91,13 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
 export function VideoPlayerWithQA({
   job,
   onRerender,
+  rerenderBlocked = false,
   onShowPlan,
 }: {
   job: RenderJob;
   onRerender: () => void;
+  /** The card (or a job of its chain) is still queued / running / waiting for approval. */
+  rerenderBlocked?: boolean;
   /** Omitted when there is nothing truthful to show (the real API has no plan.json route). */
   onShowPlan?: () => void;
 }) {
@@ -122,6 +125,7 @@ export function VideoPlayerWithQA({
             <button
               key={o.draft}
               type="button"
+              aria-pressed={o.draft === (output?.draft ?? '')}
               onClick={() => setChosenDraft(o.draft)}
               className={`rounded-md border px-3 py-1 ${
                 o.draft === (output?.draft ?? '')
@@ -134,62 +138,80 @@ export function VideoPlayerWithQA({
           ))}
         </div>
       )}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 rounded-lg border border-slate-800 bg-slate-950/40 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setTab('preview')}
-            className={`rounded-md px-3 py-1 ${tab === 'preview' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}
-          >
-            preview.mp4 (540p)
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('final')}
-            disabled={!finalUrl}
-            className={`rounded-md px-3 py-1 disabled:opacity-40 ${
-              tab === 'final' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'
-            }`}
-          >
-            final.mp4 (1080×1920)
-          </button>
-        </div>
-        <span className="font-mono-studio text-[11px] text-slate-500">{res}</span>
-      </div>
-
-      <div className="flex justify-center rounded-lg bg-black">
-        {src ? (
-          <video ref={videoRef} key={src} src={src} controls className="max-h-[520px] rounded-lg" />
-        ) : (
-          <div className="flex h-64 w-full items-center justify-center text-xs text-slate-600">
-            Chưa có file — chờ bước "Dựng bản xem trước" hoàn tất.
+      {/* The video is 9:16: a portrait frame beside the details, not a wide black strip. */}
+      <div className="grid gap-4 md:grid-cols-[minmax(0,300px)_1fr]">
+        <div className="mx-auto w-full max-w-[300px] space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex gap-1 rounded-lg border border-slate-800 bg-slate-950/40 p-0.5 text-xs">
+              <button
+                type="button"
+                aria-pressed={tab === 'preview'}
+                onClick={() => setTab('preview')}
+                className={`rounded-md px-3 py-1 ${tab === 'preview' ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}
+              >
+                Bản xem nhanh
+              </button>
+              <button
+                type="button"
+                aria-pressed={tab === 'final'}
+                onClick={() => setTab('final')}
+                disabled={!finalUrl}
+                className={`rounded-md px-3 py-1 disabled:opacity-40 ${
+                  tab === 'final' ? 'bg-amber-500 text-slate-950' : 'text-slate-300'
+                }`}
+              >
+                Bản cuối
+              </button>
+            </div>
+            <span className="font-mono-studio text-xs text-slate-400">{res}</span>
           </div>
-        )}
+          <div className="aspect-[9/16] w-full overflow-hidden rounded-lg border border-slate-800 bg-black">
+            {src ? (
+              <video ref={videoRef} key={src} src={src} controls className="h-full w-full object-contain" />
+            ) : (
+              <div className="flex h-full items-center justify-center px-6 text-center text-xs text-slate-400">
+                Chưa có video — đợi bước "Dựng bản xem nhanh" xong.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <ActionButton icon={Download} label="Tải bản cuối" disabled={!finalUrl} href={finalUrl ?? undefined} />
+            {onShowPlan && <ActionButton icon={FileJson} label="Xem kế hoạch (mẫu)" onClick={onShowPlan} />}
+            <ActionButton
+              icon={RefreshCw}
+              label="Dựng lại"
+              onClick={onRerender}
+              disabled={rerenderBlocked}
+              title={rerenderBlocked ? 'Video còn đang chờ/đang dựng — đợi xong (hoặc hủy) rồi mới dựng lại.' : undefined}
+            />
+          </div>
+
+          {structure && (
+            <ChapterTimeline
+              structure={structure}
+              onSeek={
+                src
+                  ? (sec) => {
+                      const v = videoRef.current;
+                      if (!v) return;
+                      v.currentTime = seekTarget(sec, v.duration);
+                      void v.play().catch(() => undefined);
+                    }
+                  : undefined
+              }
+            />
+          )}
+
+          {qa ? (
+            <QaReportPanel qa={qa} />
+          ) : (
+            <p className="text-xs text-slate-400">Kết quả soát chất lượng hiện ở đây khi dựng xong.</p>
+          )}
+        </div>
       </div>
-
-      <div className="flex flex-wrap gap-2">
-        <ActionButton icon={Download} label="Tải video final" disabled={!finalUrl} href={finalUrl ?? undefined} />
-        {onShowPlan && <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />}
-        <ActionButton icon={RefreshCw} label="Render lại" onClick={onRerender} />
-      </div>
-
-      {structure && (
-        <ChapterTimeline
-          structure={structure}
-          onSeek={
-            src
-              ? (sec) => {
-                  const v = videoRef.current;
-                  if (!v) return;
-                  v.currentTime = seekTarget(sec, v.duration);
-                  void v.play().catch(() => undefined);
-                }
-              : undefined
-          }
-        />
-      )}
-
-      {qa && <QaReportPanel qa={qa} />}
     </div>
   );
 }
@@ -200,16 +222,18 @@ function ActionButton({
   disabled,
   onClick,
   href,
+  title,
 }: {
   icon: typeof Download;
   label: string;
   disabled?: boolean;
   onClick?: () => void;
   href?: string;
+  title?: string;
 }) {
   const cls = `flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
     disabled
-      ? 'cursor-not-allowed border-slate-800 text-slate-600'
+      ? 'cursor-not-allowed border-slate-800 text-slate-500'
       : 'border-slate-700 text-slate-300 hover:border-amber-500 hover:text-amber-300'
   }`;
   if (href && !disabled) {
@@ -221,7 +245,7 @@ function ActionButton({
     );
   }
   return (
-    <button type="button" disabled={disabled} onClick={onClick} className={cls}>
+    <button type="button" disabled={disabled} onClick={onClick} title={title} className={cls}>
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>

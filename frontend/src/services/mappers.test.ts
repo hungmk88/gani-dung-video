@@ -9,6 +9,7 @@ import {
   optionsFromApi,
   pipelineBody,
   preflightBody,
+  rerenderBody,
   toMusicList,
   toPreflightResult,
   toPipelineCard,
@@ -99,6 +100,8 @@ test('toRenderJob maps events of a detail to console lines and coerces odd level
     ],
   };
   assert.deepEqual(toRenderJob(detail, []).logLines.map((l) => l.level), ['info', 'info', 'warn']);
+  // The server's event id is the row key of the console (stable when old lines drop off).
+  assert.deepEqual(toRenderJob(detail, []).logLines.map((l) => l.id), [1, 2, 3]);
 });
 
 test('groupLatest yields one job per (project, draft), newest first', () => {
@@ -232,6 +235,14 @@ test('toMusicList keeps the file name as identity and builds the preview URL fro
   assert.equal(list.tracks[0].audio_url, '/media/music/Nh%E1%BA%A1c%20n%E1%BB%81n%2001.mp3');
   assert.equal(list.tracks[1].bpm, null);
   assert.equal(list.tracks[1].bpm_source, 'pending');
+});
+
+test('rerenderBody asks again for the same draft, size and ASR switch', () => {
+  const r = toRenderJob(job({ draft: 'B', size: 'final', no_asr: true }), []);
+  assert.deepEqual(rerenderBody(r), { project_id: '0/Xuong GANI', draft: 'B', final: true, no_asr: true });
+  // A lone analyze/draft job has no letter: render every draft rather than send a 400.
+  assert.equal(rerenderBody(toRenderJob(job({ kind: 'draft', draft: '' }), [])).draft, 'all');
+  assert.throws(() => rerenderBody(toRenderJob(job({ project_id: null }), [])), /không thuộc dự án/);
 });
 
 test('a final render with a review gives the card and the pipeline row their badge data', () => {

@@ -19,7 +19,7 @@ export function FootageWarning({ footage, compact = false }: { footage?: Footage
       <div>
         <strong className="text-yellow-300">{w.headline}.</strong> {w.body}
         {!compact && w.tightBlocks.length > 0 && (
-          <span className="mt-1 block text-[11px] text-yellow-300/80">
+          <span className="mt-1 block text-xs text-yellow-300/80">
             Khối thiếu dư nhất: {w.tightBlocks.join(', ')}.
           </span>
         )}

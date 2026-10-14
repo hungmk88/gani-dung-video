@@ -60,6 +60,7 @@ export function MusicPicker({
             <button
               key={id}
               type="button"
+              aria-pressed={selected}
               onClick={() => onChange({ nhac: id, nhac_quyen_su_dung: id === 'tai_len' ? false : null })}
               className={`rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${
                 selected
@@ -83,12 +84,12 @@ export function MusicPicker({
       )}
 
       {showList && list !== null && error !== null && (
-        <p role="alert" className="text-[11px] text-amber-400">
+        <p role="alert" className="text-xs text-amber-400">
           Không làm mới được danh sách nhạc ({error}); đang hiện bản cũ, sẽ thử lại.
         </p>
       )}
       {showList && view === 'loading' && (
-        <p className="rounded-lg border border-slate-800 bg-slate-900/30 px-4 py-3 text-xs text-slate-500">
+        <p className="rounded-lg border border-slate-800 bg-slate-900/30 px-4 py-3 text-xs text-slate-400">
           Đang lấy danh sách nhạc của máy dựng…
         </p>
       )}
@@ -114,7 +115,7 @@ export function MusicPicker({
       {showList && view === 'ready' && list !== null && (
         <>
           {list.pending > 0 && (
-            <p className="text-[11px] text-slate-500">
+            <p className="text-xs text-slate-400">
               Đang đo nhịp {list.pending} bài; kết quả hiện dần, không cần làm mới.
             </p>
           )}
@@ -148,7 +149,7 @@ export function MusicPicker({
                     className="flex-1 text-left"
                   >
                     <div className="text-sm text-slate-200">{track.title}</div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-400">
                       <span className={inStyleRange && level !== 'BLOCKING' ? 'text-emerald-400' : ''}>
                         {bpmLabel(track)}
                       </span>
@@ -186,7 +187,7 @@ export function MusicPicker({
                     </div>
                   </button>
                   {options.nhac_file === track.file && (
-                    <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                    <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-300">
                       Đã chọn
                     </span>
                   )}
