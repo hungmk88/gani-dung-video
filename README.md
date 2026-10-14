@@ -5,7 +5,7 @@ giây và 3 phút ở chế độ nhạc) có nhạc theo nhịp, chữ, phụ �
 chỉ chọn cảnh và viết chữ trong khuôn số phách do code tính sẵn; mọi phép kiểm và mọi khoản chi
 phí đều do người dùng duyệt trên giao diện.
 
-- Python 3.11+, ffmpeg, SQLite (hàng đợi), React/Vite (giao diện, chạy ở `127.0.0.1:8765`).
+- Python 3.11+, ffmpeg **7.0 trở lên** (bản cũ hơn không đọc được đồ thị dựng), SQLite (hàng đợi), React/Vite (giao diện, chạy ở `127.0.0.1:8765`).
 - Mọi số chỉnh được nằm ở `config/rules.json`, không sửa trong code.
 
 ## Chạy nhanh

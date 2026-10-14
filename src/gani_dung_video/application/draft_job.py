@@ -35,6 +35,7 @@ from gani_dung_video.domain.jobs import (
     remaining_stages,
     spent_in_log,
 )
+from gani_dung_video.infrastructure.ffmpeg_render import ffmpeg_problem
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 
 AI_LOG = "ai_log.jsonl"
@@ -209,6 +210,9 @@ def _run_paid(env: JobEnv, job: Job) -> None:
         return
     if not env.ai_key_present():
         _fail(env, job, "Chưa có ANTHROPIC_API_KEY trong .env của máy dựng; không gọi API (0đ).")
+        return
+    if (problem := ffmpeg_problem()) is not None:  # the render that follows would fail anyway
+        _fail(env, job, f"{problem} Không gọi API (0đ).")
         return
     tail: list[str] = []
     job_start = time.monotonic()

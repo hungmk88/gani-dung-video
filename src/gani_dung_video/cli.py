@@ -102,7 +102,7 @@ from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.infrastructure.claude_client import AiError
 from gani_dung_video.infrastructure.clip_model import SemanticError
 from gani_dung_video.infrastructure.config_files import ConfigError, load_rules
-from gani_dung_video.infrastructure.ffmpeg_render import RenderError
+from gani_dung_video.infrastructure.ffmpeg_render import RenderError, ffmpeg_problem
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.http_server import ApiServerError, make_server
@@ -380,6 +380,8 @@ def _run_daemon() -> int:
     for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
         if (sig := getattr(signal, name, None)) is not None:
             signal.signal(sig, on_signal)
+    if (problem := ffmpeg_problem()) is not None:
+        sys.stdout.write(f"Cảnh báo: {problem} Job kịch bản sẽ dừng ở 0đ.\n")
     sys.stdout.write("Daemon hàng đợi đang chạy. Ctrl+C: dừng sau khi job đang dựng xong.\n")
     daemon.run()
     sys.stdout.write("Daemon đã dừng.\n")
@@ -418,6 +420,8 @@ def _run_serve(port: int | None) -> int:
         if ui is not None and has_index(ui):
             sys.stdout.write(f"Giao diện: mở http://127.0.0.1:{real_port}/ (bản build trong "
                              f"{ui.parent.name}/{ui.name}).\n")  # fmt: skip
+        if (problem := ffmpeg_problem()) is not None:
+            sys.stdout.write(f"Cảnh báo: {problem}\n")
         if not ctx.roots:
             sys.stdout.write("Cảnh báo: chưa đặt GANI_DV_ALLOWED_ROOTS trong .env — chưa có dự án "
                              "nào được phép, mọi job sẽ bị từ chối.\n")  # fmt: skip
