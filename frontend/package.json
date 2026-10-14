@@ -10,7 +10,7 @@
     "build:real": "tsc -b && vite build --mode real",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test src/services/mappers.test.ts src/services/pipelines.test.ts src/services/qa.test.ts src/lib/approval.test.ts src/lib/verify.test.ts src/lib/structure.test.ts src/lib/bpmSafety.test.ts src/lib/music.test.ts src/data/rules.test.ts"
+    "test": "node --test src/services/mappers.test.ts src/services/pipelines.test.ts src/services/qa.test.ts src/lib/approval.test.ts src/lib/verify.test.ts src/lib/structure.test.ts src/lib/bpmSafety.test.ts src/lib/music.test.ts src/data/rules.test.ts src/lib/review.test.ts"
   },
   "dependencies": {
     "lucide-react": "^1.48.0",

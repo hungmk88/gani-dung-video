@@ -273,6 +273,17 @@ export interface ApprovalInfo {
   footage?: FootageInfo;
 }
 
+/** Where a delivered final video stands with its reviewer (T-F). */
+export interface ReviewInfo {
+  status: 'pending' | 'approved' | 'changes_requested';
+  reason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  /** Waiting longer than the review limit and still undecided. */
+  overdue: boolean;
+  failedChecks: string[];
+}
+
 /** One server job inside a pipeline card (analyze / draft / render). */
 export interface PipelineJobInfo {
   id: string;
@@ -283,6 +294,8 @@ export interface PipelineJobInfo {
   /** failed / cancelled / QC-failed: `POST /api/jobs/{id}/retry` accepts it. */
   retryable: boolean;
   spentVnd: number | null;
+  /** Final render that was delivered: its review state (T-F). */
+  review?: ReviewInfo | null;
 }
 
 /** Playable result of one draft (A/B/C) of a pipeline. */
@@ -306,6 +319,8 @@ export interface RenderJob {
   structure?: Structure;
   jobs?: PipelineJobInfo[];
   outputs?: DraftOutput[];
+  /** Newest delivered final render of this card: its review state (T-F). */
+  review?: ReviewInfo | null;
   /** Real API only: the project/draft/size this job renders (needed to re-render). */
   projectId?: string;
   draft?: string;

@@ -7,6 +7,7 @@ import { ConsoleLog } from './ConsoleLog';
 import { FootageWarning } from './FootageWarning';
 import { PipelineStepper } from './PipelineStepper';
 import { PlanModal } from './PlanModal';
+import { ReviewBadge } from './ReviewBadge';
 import { VerifyPanel } from './VerifyPanel';
 import { VideoPlayerWithQA } from './VideoPlayerWithQA';
 
@@ -99,8 +100,11 @@ export function JobQueue({
               <span className="truncate text-xs font-medium text-slate-200">{j.title}</span>
             </div>
             <div className="mt-1.5 flex items-center justify-between">
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
-                {STATUS_LABEL[j.status].label}
+              <span className="flex items-center gap-1.5">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
+                  {STATUS_LABEL[j.status].label}
+                </span>
+                <ReviewBadge review={j.review} />
               </span>
               <span className="flex items-center gap-1 text-[10px] text-slate-500">
                 <Clock3 className="h-3 w-3" />
@@ -214,6 +218,7 @@ function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jo
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_LABEL[j.status].cls}`}>
               {STATUS_LABEL[j.status].label}
             </span>
+            <ReviewBadge review={j.review} />
             {j.spentVnd !== null && (
               <span className="text-slate-500">đã chi {j.spentVnd.toLocaleString('vi-VN')}đ</span>
             )}

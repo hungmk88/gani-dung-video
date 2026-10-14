@@ -14,11 +14,13 @@ import contextlib
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationError
 
+from gani_dung_video.application import review_service
 from gani_dung_video.application.draft_service import DraftsFile
 from gani_dung_video.application.qc_service import QcReport
 from gani_dung_video.application.queue_service import (
@@ -37,6 +39,7 @@ from gani_dung_video.application.queue_service import (
     retry_job,
 )
 from gani_dung_video.application.render_limits import limits_of
+from gani_dung_video.application.review_service import ReviewRefused, ReviewRow
 from gani_dung_video.domain.api_models import (
     ApproveRequest,
     Artifacts,
@@ -57,6 +60,10 @@ from gani_dung_video.domain.api_models import (
     PreflightRequest,
     ProjectView,
     QaView,
+    ReviewItemView,
+    ReviewListView,
+    ReviewRequest,
+    ReviewView,
     RunInfo,
     StructureItemView,
     StructureView,
@@ -476,7 +483,87 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
         footage=_read_footage(folder, job, ctx.rules), verify=_read_verify(ctx, folder, job),
         structure=_read_structure(folder, job),
+        review=_review_view_of_job(ctx, job),
     )  # fmt: skip
+
+
+# ─────────────── review of delivered final videos (T-F) ───────────────
+
+_REVIEW_STATES = ("pending", "approved", "changes_requested")
+_REVIEW_STATUS = {"not_found": 404, "reason_required": 422, "reviewer_required": 422}
+
+
+def _review_view(row: ReviewRow) -> ReviewView:
+    b = row.block
+    return ReviewView(status=b.status, requested_at=b.requested_at, decided_at=b.decided_at,
+                      decided_by=b.decided_by, reason=b.reason, reminded_at=b.reminded_at,
+                      overdue=row.overdue, failed_checks=row.problems)  # fmt: skip
+
+
+def _review_view_of_job(ctx: ApiContext, job: Job) -> ReviewView | None:
+    if job.kind != "render" or not job.final or job.status != "completed":
+        return None
+    row = review_service.review_of_job(job, ctx.rules, ctx.clock())
+    return _review_view(row) if row is not None else None
+
+
+def _review_item(ctx: ApiContext, row: ReviewRow) -> ReviewItemView:
+    folder = Path(row.job.project_dir)
+    return ReviewItemView(job_id=row.job.id, project_id=_project_id_of(ctx, folder),
+                          project_name=folder.name,
+                          title=f"{folder.name} — bản {row.job.draft} (cuối)",
+                          video=row.video.name, review=_review_view(row))  # fmt: skip
+
+
+def authorize_reviewer(ctx: ApiContext, reviewer: str) -> str:
+    """The one place that decides who may press approve/reject.
+
+    T-F core runs on a machine whose server listens on 127.0.0.1 only: whoever can reach it is
+    trusted and `reviewer` is just the name to record. The Telegram bot will tighten THIS
+    function (an allow-list of ids, a shared key) instead of every route.
+    """
+    return reviewer
+
+
+def _inside_roots(ctx: ApiContext, job: Job) -> bool:
+    folder = Path(job.project_dir).resolve()
+    return any(_inside(folder, root.resolve()) for root in ctx.roots)
+
+
+def list_reviews(ctx: ApiContext, status: str | None = None,
+                 since: str | None = None) -> ReviewListView:  # fmt: skip
+    """Final videos delivered and waiting for (or already given) a decision."""
+    if status is not None and status not in _REVIEW_STATES:
+        raise ApiError(400, "bad_request", f"Trạng thái phải là: {', '.join(_REVIEW_STATES)}.")
+    day = None
+    if since is not None:
+        try:
+            day = date.fromisoformat(since)
+        except ValueError:
+            raise ApiError(400, "bad_request", "from phải có dạng YYYY-MM-DD.") from None
+    if not ctx.roots:
+        raise _no_roots()
+    rows = review_service.list_reviews(ctx.db, ctx.rules, status=status, since=day,
+                                       now=ctx.clock())  # fmt: skip
+    return ReviewListView(items=[_review_item(ctx, r) for r in rows if _inside_roots(ctx, r.job)])
+
+
+def review_decide(ctx: ApiContext, job_id: int, action: Literal["approve", "reject"],
+                  req: ReviewRequest) -> ReviewItemView:  # fmt: skip
+    """Approve (the file moves to final/) or ask for changes (reason required)."""
+    job = _need(ctx, job_id)
+    if not _inside_roots(ctx, job):
+        raise _not_found(f"job #{job_id}")
+    who = authorize_reviewer(ctx, req.reviewer)
+    try:
+        if action == "approve":
+            row = review_service.approve(ctx.db, ctx.rules, job_id, who, req.reason, ctx.clock())
+        else:
+            row = review_service.reject(ctx.db, ctx.rules, job_id, who, req.reason or "",
+                                        ctx.clock())  # fmt: skip
+    except ReviewRefused as e:
+        raise ApiError(_REVIEW_STATUS.get(e.code, 409), e.code, str(e), **e.extra) from e
+    return _review_item(ctx, row)
 
 
 def _need(ctx: ApiContext, job_id: int) -> Job:

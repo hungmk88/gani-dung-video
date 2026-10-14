@@ -31,6 +31,7 @@ from gani_dung_video.application.analyze_job import JobEnv, run_analyze
 from gani_dung_video.application.draft_job import run_draft
 from gani_dung_video.application.render_limits import limits_of
 from gani_dung_video.application.render_service import RENDER_DIR, _video_name
+from gani_dung_video.application.review_service import remind_overdue
 from gani_dung_video.domain.jobs import (
     Job,
     Verdict,
@@ -90,6 +91,9 @@ def render_argv(
     return argv
 
 
+REVIEW_CHECK_SEC = 60.0  # how often the overdue-review pass looks (it reads manifests)
+
+
 class Daemon:
     """Runs the queue; every outside dependency is injectable so tests need no process."""
 
@@ -112,6 +116,7 @@ class Daemon:
         self._local_stop: str | None = None  # "graceful" | "now", from a signal
         self._grace_until: float | None = None
         self._stop_event = threading.Event()
+        self._review_checked_at = float("-inf")  # when the overdue-review pass last ran
 
     # ─────────────── stop requests ───────────────
 
@@ -190,8 +195,24 @@ class Daemon:
                       whisper_model=self._whisper_model, music_dir=self._music_dir,
                       ai_key_present=self._ai_key_present)  # fmt: skip
 
+    def _remind_reviews(self) -> None:
+        """Once a minute: remind (once each) of final videos waiting for a decision too long.
+
+        Never allowed to stop the queue: a manifest that cannot be read is skipped inside, and any
+        other error is only logged."""
+        now = self._clock()
+        if now - self._review_checked_at < REVIEW_CHECK_SEC:
+            return
+        self._review_checked_at = now
+        try:
+            for jid in remind_overdue(self.db, self._rules, now):
+                logger.warning("Job %d: video cuối chờ duyệt quá hạn (đã nhắc một lần)", jid)
+        except Exception:  # the pass must never stop the queue (see the docstring)
+            logger.exception("Nhắc duyệt video cuối gặp lỗi (bỏ qua, hàng đợi vẫn chạy)")
+
     def process_next(self) -> bool:
         """Claim and run one job. False when nothing was runnable."""
+        self._remind_reviews()
         for jid in self.db.cascade_blocked(self._clock()):  # jobs whose dependency ended badly
             logger.warning("Job %d bị hủy vì job nó phụ thuộc không hoàn thành", jid)
         for jid in self.db.expire_approvals(self._clock()):  # nobody approved in time
