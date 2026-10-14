@@ -62,6 +62,9 @@ export function JobQueue({
   // Derived instead of reset via a second effect: avoids a stale job flashing while the
   // new subscription's first update is still in flight after switching selection.
   const displayedJob = activeJob && activeJob.id === selectedJobId ? activeJob : null;
+  const live =
+    displayedJob !== null &&
+    (LIVE.includes(displayedJob.status) || (displayedJob.jobs ?? []).some((j) => LIVE.includes(j.status)));
 
   async function run(action: () => Promise<unknown>) {
     setActionError(null);
@@ -156,7 +159,7 @@ export function JobQueue({
 
             {displayedJob.verify && <VerifyPanel report={displayedJob.verify} />}
 
-            {(LIVE.includes(displayedJob.status) || displayedJob.jobs?.some((j) => LIVE.includes(j.status))) && (
+            {live && (
               <button
                 type="button"
                 onClick={() => void run(() => api.cancelJob(displayedJob.id))}
@@ -169,6 +172,7 @@ export function JobQueue({
 
             <VideoPlayerWithQA
               job={displayedJob}
+              rerenderBlocked={live}
               // plan.json is only shown as a real sample in mock mode; the API has no route for it.
               onShowPlan={api.mode === 'mock' ? () => setShowPlan(true) : undefined}
               onRerender={() =>

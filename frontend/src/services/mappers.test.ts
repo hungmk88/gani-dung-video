@@ -9,6 +9,7 @@ import {
   optionsFromApi,
   pipelineBody,
   preflightBody,
+  rerenderBody,
   toMusicList,
   toPreflightResult,
   toQaReport,
@@ -231,4 +232,12 @@ test('toMusicList keeps the file name as identity and builds the preview URL fro
   assert.equal(list.tracks[0].audio_url, '/media/music/Nh%E1%BA%A1c%20n%E1%BB%81n%2001.mp3');
   assert.equal(list.tracks[1].bpm, null);
   assert.equal(list.tracks[1].bpm_source, 'pending');
+});
+
+test('rerenderBody asks again for the same draft, size and ASR switch', () => {
+  const r = toRenderJob(job({ draft: 'B', size: 'final', no_asr: true }), []);
+  assert.deepEqual(rerenderBody(r), { project_id: '0/Xuong GANI', draft: 'B', final: true, no_asr: true });
+  // A lone analyze/draft job has no letter: render every draft rather than send a 400.
+  assert.equal(rerenderBody(toRenderJob(job({ kind: 'draft', draft: '' }), [])).draft, 'all');
+  assert.throws(() => rerenderBody(toRenderJob(job({ project_id: null }), [])), /không thuộc dự án/);
 });

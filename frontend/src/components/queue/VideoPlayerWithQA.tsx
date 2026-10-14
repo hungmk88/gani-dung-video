@@ -91,10 +91,13 @@ function QaReportPanel({ qa }: { qa: QaReport }) {
 export function VideoPlayerWithQA({
   job,
   onRerender,
+  rerenderBlocked = false,
   onShowPlan,
 }: {
   job: RenderJob;
   onRerender: () => void;
+  /** The card (or a job of its chain) is still queued / running / waiting for approval. */
+  rerenderBlocked?: boolean;
   /** Omitted when there is nothing truthful to show (the real API has no plan.json route). */
   onShowPlan?: () => void;
 }) {
@@ -170,7 +173,13 @@ export function VideoPlayerWithQA({
       <div className="flex flex-wrap gap-2">
         <ActionButton icon={Download} label="Tải video final" disabled={!finalUrl} href={finalUrl ?? undefined} />
         {onShowPlan && <ActionButton icon={FileJson} label="Xem plan.json" onClick={onShowPlan} />}
-        <ActionButton icon={RefreshCw} label="Render lại" onClick={onRerender} />
+        <ActionButton
+          icon={RefreshCw}
+          label="Render lại"
+          onClick={onRerender}
+          disabled={rerenderBlocked}
+          title={rerenderBlocked ? 'Tác vụ còn đang chờ/chạy — đợi xong (hoặc hủy) rồi mới dựng lại.' : undefined}
+        />
       </div>
 
       {structure && (
@@ -200,12 +209,14 @@ function ActionButton({
   disabled,
   onClick,
   href,
+  title,
 }: {
   icon: typeof Download;
   label: string;
   disabled?: boolean;
   onClick?: () => void;
   href?: string;
+  title?: string;
 }) {
   const cls = `flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
     disabled
@@ -221,7 +232,7 @@ function ActionButton({
     );
   }
   return (
-    <button type="button" disabled={disabled} onClick={onClick} className={cls}>
+    <button type="button" disabled={disabled} onClick={onClick} title={title} className={cls}>
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>

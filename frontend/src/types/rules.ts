@@ -304,10 +304,12 @@ export interface RenderJob {
   structure?: Structure;
   jobs?: PipelineJobInfo[];
   outputs?: DraftOutput[];
-  /** Real API only: the project/draft/size this job renders (needed to re-render). */
+  /** Real API only: the project/draft/size/ASR switch this job renders (needed to re-render).
+   *  A pipeline card: 'all' unless it renders one letter, 'final' if any render is final. */
   projectId?: string;
   draft?: string;
   size?: 'preview' | 'final';
+  noAsr?: boolean;
   title: string;
   options: VideoOptions;
   status: JobStatus;

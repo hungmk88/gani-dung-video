@@ -295,6 +295,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     projectId: job.project_id ?? undefined,
     draft: job.draft,
     size: job.size,
+    noAsr: job.no_asr,
     title: job.title,
     options: optionsFromApi(job.options),
     status: toStatus(job.frontend_status),
@@ -464,10 +465,16 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
   const planned = jobs.find((j) => j.kind === 'draft' && j.structure != null)?.structure;
   const cardStructure =
     outputs.find((o) => o.structure)?.structure ?? (planned ? toStructure(planned) : undefined);
+  // What the chain renders, so "Render lại" asks the same letters / size / ASR switch again.
+  const renders = jobs.filter((j) => j.kind === 'render');
+  const letters = new Set(renders.map((j) => j.draft));
   return {
     id: pipelineCardId(p.id),
     pipelineId: p.id,
     projectId: p.project_id ?? undefined,
+    draft: letters.size === 1 ? [...letters][0] : 'all',
+    size: renders.some((j) => j.size === 'final') ? 'final' : 'preview',
+    noAsr: renders.some((j) => j.no_asr),
     title: `${p.project_name} — pipeline #${p.id}`,
     options: optionsFromApi(planJob?.options ?? {}),
     status: toStatus(p.status),
@@ -517,6 +524,17 @@ export function buildCards(jobs: ApiJob[]): RenderJob[] {
   cards.push(...groupLatest(lone.filter((j) => j.kind === 'render')));
   cards.push(...lone.filter((j) => j.kind !== 'render').map((j) => toRenderJob(j, [])));
   return cards.sort((a, b) => sortKey(b) - sortKey(a));
+}
+
+/** Body of POST /api/jobs that renders a card again with the same draft / size / ASR switch. */
+export function rerenderBody(job: RenderJob): { project_id: string; draft: string; final: boolean; no_asr: boolean } {
+  if (!job.projectId) throw new Error('Job này không thuộc dự án nào nên không dựng lại được.');
+  return {
+    project_id: job.projectId,
+    draft: job.draft || 'all',
+    final: job.size === 'final',
+    no_asr: job.noAsr ?? false,
+  };
 }
 
 /** Body of POST /api/pipelines: `options` share the preflight shape, plus the run switches. */
