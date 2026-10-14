@@ -105,7 +105,7 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
 - Nên khai báo nhịp trong `library.json` cùng thư mục, tránh đoán sai:
   `{"tracks": {"ten.mp3": {"bpm": 92, "first_beat_sec": 0.35}}}`. Bài không có trong `library.json`
   được đo nhịp tự động; nếu đo không chắc thì dựng bằng lưới nhịp ảo và có cảnh báo.
-- Bài ngắn hơn video được lặp theo ô nhịp (X13). Bài nhạc **tải lên phải tick "tôi có quyền sử
+- Bài ngắn hơn video được lặp theo ô nhịp (X13). "Ngắn hơn" tính **phần nghe được** (từ nhịp đầu tiên của bài) so với độ dài video **cộng 2 giây khung kết**: bài đúng 15 giây cho video 15 giây vẫn được lặp, nếu không nhạc hết trước khung kết. Bài nhạc **tải lên phải tick "tôi có quyền sử
   dụng"** (X14), nếu không bị chặn.
 - **Cảnh báo BPM:** mỗi bài nhạc làm kế hoạch dài ra vì khối nào cũng cần ít nhất một cảnh. Bài
   chậm có thể khiến video 15 giây lập kế hoạch dài 21,6s và bị `E1-DUR-GAP` chặn khi giao. Nên

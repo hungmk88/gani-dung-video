@@ -159,6 +159,39 @@ def test_short_track_gets_loop_info() -> None:
     assert p.music is not None and p.music.repeats == 2 and p.music.loop_sec is not None
 
 
+# ─────────────── audit 4: the music must cover the end card too ───────────────
+
+
+def test_a_track_as_long_as_the_chosen_length_still_loops_for_the_end_card() -> None:
+    """15 s of music for a 15 s video: the render is 15 s + the 2 s end card long, and the music
+    is cut at the end of the video, so it used to end 2 s early with no fade."""
+    p = compile_plan(opts(do_dai_giay=15), RULES, music=music(dur=15.0, first=0.0),
+                     available_tags=ALL_TAGS)  # fmt: skip
+    assert p.music is not None and p.music.loop_sec is not None and p.music.repeats is not None
+    assert p.music.loop_sec * p.music.repeats >= 15 + RULES["render"]["end_card_sec"] - 0.01
+
+
+def test_the_first_beat_is_not_music_that_can_be_heard() -> None:
+    # 17.5 s track, music starts at 1.0 s: 16.5 s heard, the video needs 15 + 2 = 17 s
+    p = compile_plan(opts(do_dai_giay=15), RULES, music=music(dur=17.5, first=1.0),
+                     available_tags=ALL_TAGS)  # fmt: skip
+    assert p.music is not None and p.music.loop_sec is not None
+
+
+def test_a_track_that_covers_video_and_end_card_does_not_loop() -> None:
+    p = compile_plan(opts(do_dai_giay=15), RULES, music=music(dur=19.0, first=1.0),
+                     available_tags=ALL_TAGS)  # fmt: skip
+    assert p.music is not None and p.music.loop_sec is None and p.music.repeats is None
+
+
+def test_the_loop_is_sized_for_the_length_actually_rendered() -> None:
+    """Long enough for the chosen length plus end card but not for a plan that runs longer
+    (here the natural plan is trimmed back to the chosen length, so it still holds)."""
+    p = compile_plan(opts(do_dai_giay=30), RULES, music=music(bpm=92.0, dur=200.0),
+                     available_tags=ALL_TAGS)  # fmt: skip
+    assert p.music is not None and p.music.loop_sec is None
+
+
 def test_promo_cta_text_gets_the_deadline() -> None:
     o = opts(phong_cach="review_mon_an", muc_dich="khuyen_mai", do_dai_giay=30,
              khuyen_mai=KhuyenMai(uu_dai="Giảm 20%", thoi_han="30/10"))  # fmt: skip

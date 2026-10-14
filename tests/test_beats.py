@@ -70,6 +70,13 @@ def test_loop_info_only_when_track_is_shorter_than_video() -> None:
     assert repeats == 2
 
 
+def test_loop_info_judges_what_can_be_heard_from_the_first_beat() -> None:
+    """Audit 4: the track was compared whole, but the music starts at its first beat."""
+    assert loop_info(16.0, 0.8, 100.0, 15.2, 4) is None  # exactly enough: 16.0 - 0.8 = 15.2
+    got = loop_info(16.0, 0.8, 100.0, 15.3, 4)  # a tenth short: it must loop
+    assert got is not None and got[1] == 2
+
+
 def test_loop_info_track_shorter_than_one_bar_cannot_loop() -> None:
     assert loop_info(1.0, 0.5, 92.0, 30, 4) is None
 

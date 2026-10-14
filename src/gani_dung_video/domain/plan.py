@@ -275,14 +275,21 @@ def _music_setup(
     rng = style.get("bpm_range")
     eff, fold = fold_bpm(music.bpm, (float(rng[0]), float(rng[1])) if rng else None,
                          float(rules["music"]["bpm_max_deviation"]))  # fmt: skip
-    loop = loop_info(music.duration_sec, music.first_beat_sec, music.bpm, o.do_dai_giay,
-                     int(rules["music"]["loop_unit_beats"]))  # fmt: skip
+    # loop_sec / repeats are set by compile_plan once the rendered length is known.
     pm = PlanMusic(track=music.track, bpm=music.bpm, effective_bpm=eff, fold=fold,
                    first_beat_sec=music.first_beat_sec, audio_in_sec=music.first_beat_sec,
-                   duration_sec=music.duration_sec, source=music.source,
-                   loop_sec=loop[0] if loop else None,
-                   repeats=loop[1] if loop else None)  # fmt: skip
+                   duration_sec=music.duration_sec, source=music.source)  # fmt: skip
     return "music", 60.0 / eff, pm, []
+
+
+def _with_loop(pm: PlanMusic, rules: Rules, content_sec: float) -> PlanMusic:
+    """The track's loop for a video whose content lasts `content_sec`: the music has to reach
+    the end of the end card too (X13), counted from the first beat."""
+    need = content_sec + float(rules["render"]["end_card_sec"])
+    loop = loop_info(pm.duration_sec, pm.first_beat_sec, pm.bpm, need,
+                     int(rules["music"]["loop_unit_beats"]))  # fmt: skip
+    return pm.model_copy(update={"loop_sec": loop[0] if loop else None,
+                                 "repeats": loop[1] if loop else None})  # fmt: skip
 
 
 def _chapter_blocks(
@@ -474,6 +481,8 @@ def compile_plan(
     if missing:
         warnings.append("X8: " + rules["conflicts"]["X8"]["msg"].format(tags=", ".join(missing)))
     natural = sum(b.beats for b in blocks) * beat_sec
+    if pm is not None:  # what is rendered: the chosen length when trimmed, else the plan itself
+        pm = _with_loop(pm, rules, fit.trim_to_sec if fit.trim_to_sec is not None else natural)
     pct = float(rules["qc"]["duration_plan_gap_pct"])
     if driver == "music" and natural > o.do_dai_giay * (1 + pct) + _EPS:
         warnings.append("W_DUR_GAP: " + rules["compat_msgs"]["W_DUR_GAP"].format(

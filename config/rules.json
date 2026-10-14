@@ -509,7 +509,7 @@
   "X10": {"level": "warn",  "stage": "preflight", "desc": "Sang trọng hoặc Kể chuyện nghề × 15s", "when": {"styles": ["sang_trong", "ke_chuyen_nghe"], "duration": 15}, "msg": "Với '{style}', 15 giây chỉ đủ khoảng 4–5 cảnh. Vẫn dựng."},
   "X11": {"level": "warn",  "stage": "preflight", "desc": "Không nhạc × phong cách dẫn bằng nhạc có driver_fallback = grid (TVC)", "msg": "'{style}' mà không có nhạc sẽ mất lực đẩy. Sẽ dùng lưới nhịp ảo {grid}s."},
   "X12": {"level": "auto",  "stage": "preflight", "desc": "BPM bài nhạc ngoài dải phong cách", "msg": "BPM {bpm} ngoài dải {lo}–{hi} của phong cách. Tự tính theo {eff} BPM ({how}).", "msg_warn": "BPM {bpm} lệch nhiều so với dải {lo}–{hi} của phong cách, kể cả khi nhân/chia đôi. Nên chọn bài khác."},
-  "X13": {"level": "auto",  "stage": "preflight", "desc": "Bài nhạc ngắn hơn video", "msg": "Bài nhạc dài {music}s, ngắn hơn video {video}s. Sẽ lặp theo ô nhịp và chuyển giao mượt."},
+  "X13": {"level": "auto",  "stage": "preflight", "desc": "Bài nhạc ngắn hơn video", "msg": "Bài nhạc dài {music}s, ngắn hơn video {video}s (đã gồm {end_card}s khung kết). Sẽ lặp theo ô nhịp và chuyển giao mượt."},
   "X14": {"level": "block", "stage": "preflight", "desc": "Nhạc tải lên chưa tick quyền sử dụng", "msg": "Nhạc tải lên phải tick 'Tôi có quyền sử dụng bài này' trước khi dựng."},
   "X15": {"level": "warn",  "stage": "preflight", "desc": "3 bản × 3 phút", "when": {"drafts": 3, "duration": 180}, "msg": "3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3, và câu trả lời của Claude dễ bị cắt vì quá dài. Nên chọn 2 bản; kiểm tra ước tính trước khi chạy."},
   "X16": {"level": "warn",  "stage": "ai",        "desc": "Ghi chú mâu thuẫn với mục đích", "msg": "Ghi chú có vẻ hợp mục đích khác. Đổi mục đích?"},

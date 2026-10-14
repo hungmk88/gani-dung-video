@@ -93,12 +93,16 @@ def beats_that_fit(segment_sec: float, beat_sec: float, allowed: Sequence[int]) 
 def loop_info(
     track_sec: float, first_beat_sec: float, bpm: float, need_sec: float, unit_beats: int
 ) -> tuple[float, int] | None:
-    """X13: (loop_sec, repeats) when the track is shorter than the video, else None.
+    """X13: (loop_sec, repeats) when the music that can be heard is shorter than `need_sec`.
+
+    `need_sec` is everything the music must cover: the content plus the end card, since the
+    music runs to the end of the file. What can be heard starts at the first beat
+    (`-ss first_beat`), so `first_beat_sec` is not available track.
 
     The loop is a whole number of bars (unit_beats source beats) counted from the first beat,
     so the beat grid stays unbroken across the join. None also when not even one bar fits.
     """
-    if track_sec >= need_sec:
+    if track_sec - first_beat_sec >= need_sec - _EPS:
         return None
     bar = unit_beats * 60.0 / bpm
     bars = math.floor((track_sec - first_beat_sec) / bar)
