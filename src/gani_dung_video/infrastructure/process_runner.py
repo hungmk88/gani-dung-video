@@ -29,6 +29,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _STILL_ACTIVE = 259
+_SIGKILL = getattr(signal, "SIGKILL", signal.SIGTERM)  # none on Windows (unused there)
 _SCAN_EVERY_SEC = 1.0
 
 
@@ -76,14 +77,27 @@ def kill_tree(pid: int, grace_sec: float = 5.0) -> None:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
                            timeout=30, check=False)  # fmt: skip
         return
+    _kill_posix(pid, grace_sec)
+
+
+def _kill_posix(pid: int, grace_sec: float) -> None:
+    """SIGTERM, then SIGKILL after `grace_sec`; the group only if `pid` leads it.
+
+    `run_child` starts every job in its own session, so a job's pid is its group leader and
+    the group holds ffmpeg too. A pid that does NOT lead its group (a stale pid read back from
+    the DB that the OS has since reused, or a child that shares our group) must not take the
+    group down with it: that would signal a terminal, a shell, or the daemon itself.
+    """
+    if sys.platform == "win32":  # POSIX only: Windows goes through taskkill /T
+        return
     try:
-        group = os.getpgid(pid)
-        os.killpg(group, signal.SIGTERM)
+        send = os.killpg if os.getpgid(pid) == pid else os.kill
+        send(pid, signal.SIGTERM)
         deadline = time.monotonic() + grace_sec
         while time.monotonic() < deadline and pid_alive(pid):
             time.sleep(0.1)
         if pid_alive(pid):
-            os.killpg(group, signal.SIGKILL)
+            send(pid, _SIGKILL)
     except (ProcessLookupError, PermissionError):
         pass
 
@@ -130,8 +144,11 @@ def run_child(
 ) -> RunResult:  # fmt: skip
     """Run `argv` and supervise it until it ends or must be stopped."""
     child_env = {**os.environ, **(env or {}), "PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1"}
-    flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if sys.platform == "win32" \
-        else {"start_new_session": True}  # fmt: skip
+    flags: dict[str, Any]
+    if sys.platform == "win32":
+        flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    else:
+        flags = {"start_new_session": True}
     try:
         proc = subprocess.Popen(
             list(argv), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

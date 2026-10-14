@@ -7,6 +7,7 @@ groups and killing a whole process tree on Windows and POSIX alike.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from gani_dung_video.infrastructure import process_runner
 from gani_dung_video.infrastructure.process_runner import (
     RunResult,
     kill_tree,
@@ -187,3 +189,76 @@ def test_kill_tree_on_a_dead_pid_is_harmless() -> None:
     p = subprocess.Popen([PY, "-c", "pass"])
     p.wait(timeout=30)
     kill_tree(p.pid)  # already gone: must not raise
+
+
+# ─────────────── POSIX group kill (faked: no real group signals are sent) ───────────────
+
+SIGTERM, SIGKILL = int(signal.SIGTERM), 9
+
+
+class _Signals:
+    """Records what the POSIX branch of kill_tree sends, and to whom."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, pgid: int, dies_on: int | None) -> None:
+        self.mp = monkeypatch
+        self.calls: list[tuple[str, int, int]] = []
+        self.dies_on = dies_on  # the signal after which the process is gone (None: never)
+        self.gone = False
+        monkeypatch.setattr(os, "getpgid", lambda pid: pgid, raising=False)
+        monkeypatch.setattr(os, "killpg", lambda g, sig: self._send("killpg", g, sig),
+                            raising=False)  # fmt: skip
+        monkeypatch.setattr(os, "kill", lambda pid, sig: self._send("kill", pid, sig))
+        monkeypatch.setattr(process_runner, "pid_alive", lambda pid: not self.gone)
+        monkeypatch.setattr(process_runner, "_SIGKILL", SIGKILL)
+
+    def _send(self, how: str, target: int, sig: int) -> None:
+        self.calls.append((how, target, int(sig)))
+        if sig == self.dies_on:
+            self.gone = True
+
+    def kill(self, pid: int, grace_sec: float) -> None:
+        with self.mp.context() as m:  # only for the call: pytest itself reads sys.platform
+            m.setattr(sys, "platform", "linux")
+            process_runner._kill_posix(pid, grace_sec)
+
+
+def test_kill_posix_signals_the_group_when_the_pid_leads_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _Signals(monkeypatch, pgid=4321, dies_on=SIGTERM)
+    sent.kill(4321, grace_sec=1.0)
+    assert sent.calls == [("killpg", 4321, SIGTERM)]
+
+
+def test_kill_posix_never_signals_a_group_the_pid_does_not_lead(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A pid read from the DB after a crash may now be an unrelated process (or our own child)
+    # that shares a group with a terminal, a shell or pytest: killing the group would kill them.
+    sent = _Signals(monkeypatch, pgid=1, dies_on=SIGTERM)
+    sent.kill(4321, grace_sec=1.0)
+    assert sent.calls == [("kill", 4321, SIGTERM)]
+
+
+def test_kill_posix_escalates_to_sigkill_after_the_grace(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent = _Signals(monkeypatch, pgid=4321, dies_on=SIGKILL)
+    sent.kill(4321, grace_sec=0.0)
+    assert sent.calls == [("killpg", 4321, SIGTERM), ("killpg", 4321, SIGKILL)]
+
+
+def test_kill_posix_escalates_a_non_leader_with_kill_not_killpg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _Signals(monkeypatch, pgid=1, dies_on=SIGKILL)
+    sent.kill(4321, grace_sec=0.0)
+    assert sent.calls == [("kill", 4321, SIGTERM), ("kill", 4321, SIGKILL)]
+
+
+def test_kill_posix_ignores_a_process_that_vanished(monkeypatch: pytest.MonkeyPatch) -> None:
+    def gone(pid: int) -> int:
+        raise ProcessLookupError
+
+    sent = _Signals(monkeypatch, pgid=4321, dies_on=None)
+    monkeypatch.setattr(os, "getpgid", gone, raising=False)
+    sent.kill(4321, grace_sec=0.0)  # must not raise
+    assert sent.calls == []
