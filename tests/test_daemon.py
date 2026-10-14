@@ -468,11 +468,28 @@ def test_start_up_recovers_jobs_a_dead_daemon_left_running(db: QueueDb, folder: 
     stop = threading.Event()
     stop.set()  # start, recover, and leave at once
     d = Daemon(db, RULES, runner=FakeRunner(passes), clock=clock, pid=9999,
-               alive=lambda p: p == 66666, killer=killed.append)  # fmt: skip
+               alive=lambda p: p == 66666, killer=killed.append, owns=lambda p: True)  # fmt: skip
     d.run(stop)
     j = job(db, jid)
     assert j.status == "queued" and j.attempts == 1
     assert killed == [66666]  # the orphaned ffmpeg tree is stopped so it cannot race the retry
+
+
+def test_start_up_never_kills_a_pid_that_another_program_now_uses(
+    db: QueueDb, folder: Path, clock: Clock
+) -> None:
+    # After a crash the stored child pid may have been reused (a shell, an editor): leave it.
+    jid = add(db, folder)
+    db.claim(time.time(), 55555)
+    db.set_child(jid, 66666)
+    killed: list[int] = []
+    stop = threading.Event()
+    stop.set()
+    d = Daemon(db, RULES, runner=FakeRunner(passes), clock=clock, pid=9999,
+               alive=lambda p: p == 66666, killer=killed.append, owns=lambda p: False)  # fmt: skip
+    d.run(stop)
+    assert job(db, jid).status == "queued"  # still recovered for a retry
+    assert killed == []
 
 
 def test_start_up_makes_a_backup_of_the_queue(db: QueueDb, clock: Clock) -> None:

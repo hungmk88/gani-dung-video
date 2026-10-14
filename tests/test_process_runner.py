@@ -18,8 +18,10 @@ import pytest
 from gani_dung_video.infrastructure import process_runner
 from gani_dung_video.infrastructure.process_runner import (
     RunResult,
+    is_our_child,
     kill_tree,
     pid_alive,
+    pid_command,
     run_child,
 )
 
@@ -262,3 +264,41 @@ def test_kill_posix_ignores_a_process_that_vanished(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(os, "getpgid", gone, raising=False)
     sent.kill(4321, grace_sec=0.0)  # must not raise
     assert sent.calls == []
+
+
+# ─────────────── whose pid is it (crash recovery) ───────────────
+
+
+def test_pid_command_reads_a_live_child_and_is_our_child_knows_ours() -> None:
+    p = subprocess.Popen([PY, "-c", "import time; time.sleep(30)", "gani_dung_video"])
+    q = subprocess.Popen([PY, "-c", "import time; time.sleep(30)"])
+    try:
+        # right after Popen the child may not have exec'd yet and still shows our command line
+        deadline = time.monotonic() + 10
+        while True:
+            cmd, other = pid_command(p.pid), pid_command(q.pid)
+            if (
+                cmd is not None
+                and other is not None
+                and "sleep(30)" in cmd
+                and "sleep(30)" in other
+            ):
+                break
+            if time.monotonic() > deadline:
+                if cmd is None or other is None:
+                    pytest.skip("this OS does not expose command lines")
+                break
+            time.sleep(0.05)
+        assert "gani_dung_video" in cmd and is_our_child(p.pid)
+        assert not is_our_child(q.pid)  # a live process running something else
+    finally:
+        for c in (p, q):
+            c.kill()
+            c.wait(timeout=30)
+
+
+def test_pid_command_of_a_dead_or_impossible_pid_is_unknown() -> None:
+    p = subprocess.Popen([PY, "-c", "pass"])
+    p.wait(timeout=30)
+    assert pid_command(p.pid) is None and pid_command(0) is None and pid_command(-3) is None
+    assert is_our_child(p.pid)  # unknown keeps the old behaviour: the caller may kill

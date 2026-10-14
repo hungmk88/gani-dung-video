@@ -22,6 +22,7 @@ from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.beats import beats_that_fit
+from gani_dung_video.domain.footage import clip_stems
 from gani_dung_video.domain.glossary import tokens
 from gani_dung_video.domain.plan import PlanBlock
 from gani_dung_video.domain.scenes import Scene, SimilarPair
@@ -74,8 +75,9 @@ def eligible_candidates(
 ) -> list[Candidate]:
     """Step 1: every usable segment of the style, in snap-id order."""
     out: list[Candidate] = []
+    stems = clip_stems(sc.clip for sc in scenes)  # same ids as beats.segment_refs
     for sc in scenes:
-        stem = sc.clip.rsplit(".", 1)[0]
+        stem = stems[sc.clip]
         for k, g in enumerate(sc.segments.get(style, [])):
             fits = beats_that_fit(g.end - g.start, beat_sec, allowed)
             if sc.blurry or g.excluded or not fits:

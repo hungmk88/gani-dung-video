@@ -238,3 +238,34 @@ def test_100_phan_tram_is_a_claim_only_next_to_tu_nhien_or_thien_nhien(
     text: str, caught: bool
 ) -> None:
     assert bool(find_banned_claims(text, BANNED)) is caught
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Giá trị bệnh nhân nhận được",  # "giá trị" + "bệnh nhân", not "trị bệnh"
+        "giá trịbệnh viện",
+        "Quản trị bệnh viện",
+        "Văn phòng bệnh viện",
+        "Sửa chữa bệnh viện",
+        "Số 1,5 kg thịt",  # a decimal is one number, not "số 1"
+        "Số 1.000 khách hàng",
+        "Hàm lượng 100,5%",
+    ],
+)
+def test_a_word_or_a_number_that_only_holds_the_syllables_is_not_a_claim(text: str) -> None:
+    assert find_banned_claims(text, BANNED) == []
+
+
+@pytest.mark.parametrize(
+    ("text", "found"),
+    [
+        ("Trị bệnh nhân tận tâm", ["trị bệnh"]),  # no listed word before it
+        ("Điều trị bệnh", ["điều trị", "trị bệnh"]),  # "điều trị" is a claim itself
+        ("Phòng bệnh hơn chữa bệnh", ["chữa bệnh", "phòng bệnh"]),
+        ("Top số 1, giá tốt", ["số 1"]),  # a comma then a space ends the number
+        ("Sạch 100%, tự nhiên", ["100%"]),
+    ],
+)
+def test_the_exceptions_never_hide_a_real_claim(text: str, found: list[str]) -> None:
+    assert find_banned_claims(text, BANNED) == found

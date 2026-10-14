@@ -26,6 +26,10 @@ python -m gani_dung_video phrases <yeu-cau.md|options.json> <thu_muc_footage>
     exit 0 = đã ghi edit/phrases.json, 2 = phong cách không dẫn nhịp theo lời / chưa transcribe
 python -m gani_dung_video queue add <yeu-cau.md|options.json> <thu_muc_footage> \
     [--ban A|all] [--final] [--no-asr]
+python -m gani_dung_video review list [--trang-thai pending|approved|changes_requested|tat-ca]
+python -m gani_dung_video review approve ID [--nguoi-duyet TÊN]
+python -m gani_dung_video review reject ID --ly-do "..." [--nguoi-duyet TÊN]
+    duyệt video cuối đã giao (T-F); exit 0 = xong, 2 = bị từ chối (in lý do, danh sách check hỏng)
 python -m gani_dung_video queue list | show ID | cancel ID | retry ID | stop [--now]
     hàng đợi dựng (GĐ6a); exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
     sách cho phép, hoặc không có job đó
@@ -43,6 +47,7 @@ python -m gani_dung_video daemon
 from __future__ import annotations
 
 import argparse
+import getpass
 import io
 import json
 import logging
@@ -51,6 +56,7 @@ import signal
 import sys
 import time
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -85,6 +91,12 @@ from gani_dung_video.application.queue_service import (
     retry_job,
 )
 from gani_dung_video.application.render_service import build_render, recheck
+from gani_dung_video.application.review_service import (
+    ReviewRow,
+    approve_review,
+    list_reviews,
+    reject_review,
+)
 from gani_dung_video.application.scenes_service import build_scenes
 from gani_dung_video.application.semantics_service import build_semantics
 from gani_dung_video.application.speech_draft_service import (
@@ -220,6 +232,25 @@ def _build_parser() -> argparse.ArgumentParser:
         qs.add_argument("id", type=int)
     qst = qsub.add_parser("stop", help="Yêu cầu daemon dừng")
     qst.add_argument("--now", action="store_true", help="Dừng ngay, trả job đang chạy về hàng đợi")
+    rv = sub.add_parser("review", help="Duyệt video cuối đã giao (T-F): xem, duyệt, yêu cầu sửa")
+    rsub = rv.add_subparsers(dest="rcmd", required=True)
+    rl = rsub.add_parser("list", help="Video cuối đã giao và trạng thái duyệt")
+    rl.add_argument(
+        "--trang-thai", default="pending",
+        choices=("pending", "approved", "changes_requested", "tat-ca"),
+        help="Chỉ hiện trạng thái này (mặc định pending = chờ duyệt)",
+    )  # fmt: skip
+    rl.add_argument("--tu-ngay", help="Chỉ video bắt đầu chờ từ ngày YYYY-MM-DD (UTC) trở đi")
+    rl.add_argument("--limit", type=int, default=50)
+    for name, text in (("approve", "Duyệt: chuyển tệp sang final/"),
+                       ("reject", "Yêu cầu sửa (bắt buộc --ly-do)")):  # fmt: skip
+        ra = rsub.add_parser(name, help=text)
+        ra.add_argument("id", type=int, help="Số job dựng bản cuối (xem `review list`)")
+        ra.add_argument("--nguoi-duyet", help="Tên người duyệt (mặc định: người dùng hệ điều hành)")
+        if name == "reject":
+            ra.add_argument("--ly-do", default="", help="Một dòng lý do (bắt buộc)")
+        else:
+            ra.add_argument("--ghi-chu", default=None, help="Ghi chú kèm khi duyệt (tùy chọn)")
     sub.add_parser("daemon", help="Chạy nền: lấy job từ hàng đợi và dựng lần lượt")
     mc = sub.add_parser("music-check", help="Kiểm thư mục nhạc: BPM và bài nào dựng được (chỉ đọc)")
     mc.add_argument(
@@ -291,6 +322,53 @@ def _daemon_line(db: QueueDb, rules: Rules) -> str:
         "Daemon: KHÔNG chạy — job sẽ nằm chờ. Mở cửa sổ khác và chạy: "
         "python -m gani_dung_video daemon"
     )
+
+
+def _review_line(r: ReviewRow) -> str:
+    b = r.block
+    label = {"pending": "chờ duyệt", "approved": "đã duyệt",
+             "changes_requested": "cần sửa"}[b.status]  # fmt: skip
+    late = " — QUÁ HẠN" if r.overdue else ""
+    return (
+        f"#{r.job.id} {label}{late}  {r.video.name}  "
+        f"({Path(r.job.project_dir).name}, bản {r.job.draft}, từ {b.requested_at})"
+    )
+
+
+def _run_review(args: argparse.Namespace) -> int:
+    rules = load_rules()
+    db = open_queue()
+    who = getattr(args, "nguoi_duyet", None) or _os_user()
+    if args.rcmd == "list":
+        status = None if args.trang_thai == "tat-ca" else args.trang_thai
+        since = None
+        if args.tu_ngay:
+            try:
+                since = date.fromisoformat(args.tu_ngay)
+            except ValueError:
+                raise ConfigError("--tu-ngay phải có dạng YYYY-MM-DD.") from None
+        rows = list_reviews(db, rules, status=status, since=since, limit=args.limit)
+        lines = [_review_line(r) for r in rows] or ["Không có video nào."]
+        for r in rows:
+            lines += [f"    chưa đạt: {p}" for p in r.problems]
+            if r.block.reason:
+                lines.append(f"    lý do: {r.block.reason}")
+    elif args.rcmd == "approve":
+        r = approve_review(db, rules, args.id, who, args.ghi_chu)
+        lines = [f"Đã duyệt #{r.job.id}: {r.video.name} → final/ (người duyệt: {who})."]
+    else:
+        r = reject_review(db, rules, args.id, who, args.ly_do)
+        lines = [f"Đã yêu cầu sửa #{r.job.id}: {r.video.name} ở lại drafts/.",
+                 f"Lý do: {r.block.reason}"]  # fmt: skip
+    sys.stdout.write(("\n").join(lines) + "\n")
+    return 0
+
+
+def _os_user() -> str:
+    try:
+        return getpass.getuser() or "cli"
+    except Exception:  # no login name available (service account, odd container)
+        return "cli"
 
 
 def _run_queue(args: argparse.Namespace) -> int:
@@ -689,6 +767,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "queue":
             return _run_queue(args)
+        if args.cmd == "review":
+            return _run_review(args)
         if args.cmd == "daemon":
             return _run_daemon()
         if args.cmd == "serve":

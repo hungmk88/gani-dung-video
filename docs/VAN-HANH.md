@@ -304,8 +304,9 @@ chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi đ�
 
 **Giao hàng:** video đạt cả bộ kiểm tra được chép sang `edit/delivery/<chiến-dịch>/drafts/` với tên
 `GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_v{n}_{YYYYMMDD}.mp4` (chữ thường, gạch
-ngang, không dấu; `v{n}` tăng theo số bản cùng ngày), manifest sang `metadata/`. `final/` chỉ nhận
-video đã được người duyệt (bước T-F, chưa làm) và `raw/` dành cho footage gốc (không chép vào đây).
+ngang, không dấu; `v{n}` tăng theo số bản cùng ngày, tính cả `drafts/` lẫn `final/`), manifest sang
+`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9c) và `raw/` dành cho footage gốc
+(không chép vào đây).
 Đặt sản phẩm và chiến dịch bằng cờ của lệnh dựng: `render <thư mục> --san-pham "Giò lụa"
 --chien-dich "Ra mắt tháng 10"`; không đặt thì sản phẩm là `chung` và chiến dịch là tên thư mục
 footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn được nhưng manifest có cảnh báo.
@@ -313,6 +314,39 @@ footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn đượ
 **Chi phí mỗi video** (manifest → `cost`): token và đồng thật đọc từ `ai_log.jsonl` của lượt viết
 kịch bản gần nhất (phần của bản nháp này = chi phí mỗi vòng chia đều cho các bản nó viết), cộng thời
 gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do thay vì số 0.
+
+## 9c. Duyệt video cuối (T-F)
+
+Một **bản cuối 1080×1920** đã qua mọi kiểm tra nằm ở `edit/delivery/<chiến-dịch>/drafts/` với
+`review.status = pending` trong manifest. Bản **nháp 540p không bao giờ được duyệt**. Người duyệt
+quyết định bằng dòng lệnh (hoặc API, mục 9c-API); giao diện chỉ hiện huy hiệu trạng thái.
+
+| Việc | Lệnh | Kết quả |
+|---|---|---|
+| Xem danh sách chờ | `python -m gani_dung_video review list` (thêm `--trang-thai approved\|changes_requested\|tat-ca`, `--tu-ngay 2026-10-01`) | một dòng mỗi video: số job, trạng thái, tên tệp, "QUÁ HẠN" nếu chờ lâu |
+| Duyệt | `review approve ID --nguoi-duyet "Tên"` | tệp **chuyển** sang `final/`, manifest ghi người và giờ |
+| Yêu cầu sửa | `review reject ID --ly-do "chữ cuối bị che"` | tệp ở lại `drafts/`, lý do ghi vào manifest; **bắt buộc có lý do** |
+
+- `ID` là số job dựng bản cuối (cột `#` của `review list`). Không đặt `--nguoi-duyet` thì dùng tên
+  người dùng của hệ điều hành.
+- **Duyệt cần MỌI mục kiểm tra E1 trong manifest đạt.** Mục nào hỏng thì bị từ chối và liệt kê
+  từng mã ("E1-SAFE: …"); `review reject` thì vẫn bấm được. Chỉ mục **hỏng** mới chặn: cảnh báo
+  (`warn`, ví dụ lệch độ dài trong biên chế độ lời) và `manifest.warnings` không chặn duyệt.
+- Một video đã quyết định (duyệt hay yêu cầu sửa) **không đổi được nữa**; bấm lần hai bị từ chối,
+  không ghi gì. Muốn làm lại thì dựng lại: video mới có phiên bản `v{n}` mới và chờ duyệt riêng.
+- **Quá hạn:** video chờ lâu hơn `review.ttl_sec` (172800 giây = 48 giờ, trong `config/rules.json`)
+  được **nhắc một lần**: sự kiện cảnh báo trên job, `reminded_at` trong manifest. Không tự từ chối;
+  vẫn duyệt được sau đó. Việc nhắc do `daemon` làm (mỗi 60 giây): daemon tắt thì không nhắc.
+- Video giao **trước** T-F (manifest không có khối `review`) được coi là chờ duyệt: danh sách có thể
+  dài. Lọc bằng `--tu-ngay`.
+- Manifest có thẩm quyền là `metadata/<tên>.manifest.json`; manifest ở `edit/render/<bản>/` bị
+  ghi đè mỗi lần dựng lại bản đó nên chỉ được cập nhật khi vẫn là cùng video.
+- Hai người bấm cùng lúc (hai cửa sổ, hoặc dòng lệnh và API) vẫn an toàn: tệp khóa
+  `<tên>.manifest.json.review.lock` cho từng người một; người sau thấy trạng thái đã quyết.
+
+**API** (xem `docs/api-jobs.md` mục 4c): `GET /api/reviews`, `POST /api/jobs/{id}/review/approve`,
+`POST /api/jobs/{id}/review/reject`. Chưa có xác thực: máy chủ chỉ nghe `127.0.0.1` và vẫn kiểm
+Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`.
 
 ## 9b. Hạn chế đã biết
 
@@ -341,6 +375,14 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
   · `100pt tự nhiên` (viết tắt)
   · `100 phần trămm tự nhiên` (chèn ký tự lạ vào "trăm")
   · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
+  · chữ trông giống chữ Việt nhưng là chữ Cyrillic (`sо 1` với "о" Cyrillic), chữ số cách nhau
+    (`1 0 0 %`)
+- Không coi là cụm cấm (14/10/2026): cụm bắt đầu ở âm tiết thứ hai của một từ có sẵn trong
+  danh sách `_WORD_BEFORE` (`domain/glossary.py`: giá trị, quản trị, chính trị, cai trị, thống
+  trị, văn phòng, sửa chữa), nên "giá trị bệnh nhân" không bị bắt là "trị bệnh"; số có dấu thập
+  phân hoặc dấu nghìn là một số ("số 1,5 kg", "số 1.000 khách" không bị bắt là "số 1"). Vẫn
+  bị bắt: "trị bệnh nhân", "điều trị bệnh", "top số 1, giá tốt". Còn bắt nhầm: "bước số 1",
+  "phòng số 1" ("số 1" theo nghĩa thứ tự). Cần NVH xem lại danh sách từ.
 
 ## 10. Xử lý sự cố nhanh
 
@@ -356,5 +398,7 @@ gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do
 | Job dựng bị báo "treo" | không có dòng log trong khoảng `stall` (video 3 phút đã nới tự động); xem log job |
 | 409 `project_locked` | xem mục 8 |
 | Cổng 8765 bận | tìm và tắt tiến trình `serve` cũ (đổi cổng cần build lại giao diện, xem mục 2) |
+| `review approve` báo "đang được người khác duyệt" | tệp khóa `.review.lock` còn từ lần trước; quá 2 phút tự được bỏ qua. Xóa tay tệp đó nếu chắc không ai đang duyệt |
+| Duyệt nhầm / cần hoàn tác sau khi duyệt | không có lệnh hoàn tác. Làm tay 4 bước: (1) chuyển tệp từ `final/` về `drafts/`; (2) mở `metadata/<tên>.manifest.json`, sửa `review.status` về `pending` (xóa `decided_at`, `decided_by`, `reason`) hoặc xóa cả khối `review`; (3) làm y như vậy với `edit/render/<bản>/manifest.json` nếu `delivered_as` của nó cùng tên; (4) `review list` để kiểm lại. Manifest cũ (v1) vẫn đọc được nên không mất dữ liệu |
 | Video 3 phút không chọn được | máy chủ chưa mở (`durations.180.enabled = false` trong `config/rules.json`, bật sau nghiệm thu thật) |
 | "ffmpeg … quá cũ" hoặc `Unrecognized option '/filter_complex'` | ffmpeg dưới 7.0 (Ubuntu 24.04 mặc định chỉ có 6.1) → cập nhật ffmpeg lên 7.0 trở lên, kiểm bằng `ffmpeg -version`; job kịch bản dừng ở 0đ nên không mất tiền |

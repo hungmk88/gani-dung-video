@@ -31,6 +31,7 @@ from gani_dung_video.application.analyze_job import JobEnv, run_analyze
 from gani_dung_video.application.draft_job import run_draft
 from gani_dung_video.application.render_limits import limits_of
 from gani_dung_video.application.render_service import RENDER_DIR, _video_name
+from gani_dung_video.application.review_service import remind_overdue
 from gani_dung_video.domain.jobs import (
     Job,
     Verdict,
@@ -49,7 +50,13 @@ from gani_dung_video.infrastructure.config_files import (
     read_options_file,
 )
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
-from gani_dung_video.infrastructure.process_runner import RunResult, kill_tree, pid_alive, run_child
+from gani_dung_video.infrastructure.process_runner import (
+    RunResult,
+    is_our_child,
+    kill_tree,
+    pid_alive,
+    run_child,
+)
 from gani_dung_video.infrastructure.queue_db import QueueDb
 
 logger = logging.getLogger(__name__)
@@ -90,19 +97,24 @@ def render_argv(
     return argv
 
 
+REVIEW_CHECK_SEC = 60.0  # how often the overdue-review pass looks (it reads manifests)
+
+
 class Daemon:
     """Runs the queue; every outside dependency is injectable so tests need no process."""
 
     def __init__(
         self, db: QueueDb, rules: Rules, *, runner: Callable[..., RunResult] = run_child,
         clock: Callable[[], float] = time.time, alive: Callable[[int], bool] = pid_alive,
-        killer: Callable[[int], None] = kill_tree, pid: int | None = None,
+        killer: Callable[[int], None] = kill_tree, owns: Callable[[int], bool] = is_our_child,
+        pid: int | None = None,
         argv_base: Sequence[str] | None = None, log_dir: Path | None = None,
         whisper_model: str | None = None, music_dir: str | None = None,
         ai_key_present: Callable[[], bool] | None = None,
     ) -> None:  # fmt: skip
         self.db, self._cfg, self._rules = db, rules["queue"], rules
         self._runner, self._clock, self._alive, self._killer = runner, clock, alive, killer
+        self._owns = owns
         self._pid = pid if pid is not None else os.getpid()
         self._argv_base = argv_base
         self._whisper_model = whisper_model
@@ -112,6 +124,7 @@ class Daemon:
         self._local_stop: str | None = None  # "graceful" | "now", from a signal
         self._grace_until: float | None = None
         self._stop_event = threading.Event()
+        self._review_checked_at = float("-inf")  # when the overdue-review pass last ran
 
     # ─────────────── stop requests ───────────────
 
@@ -175,6 +188,10 @@ class Daemon:
             logger.warning("Khôi phục job %d sau sập: %s", r.job_id, r.action)
             self.db.add_event(r.job_id, now, "warn", f"Khôi phục sau khi daemon sập: {r.action}.")
             if r.child_pid and r.heartbeat_age <= max_age and self._alive(r.child_pid):
+                if not self._owns(r.child_pid):  # the pid now belongs to another program
+                    logger.warning("Không kill pid %d: không còn là tiến trình của app.",
+                                   r.child_pid)  # fmt: skip
+                    continue
                 self._killer(r.child_pid)  # its ffmpeg would race the retry for the same file
 
     # ─────────────── one job ───────────────
@@ -190,8 +207,24 @@ class Daemon:
                       whisper_model=self._whisper_model, music_dir=self._music_dir,
                       ai_key_present=self._ai_key_present)  # fmt: skip
 
+    def _remind_reviews(self) -> None:
+        """Once a minute: remind (once each) of final videos waiting for a decision too long.
+
+        Never allowed to stop the queue: a manifest that cannot be read is skipped inside, and any
+        other error is only logged."""
+        now = self._clock()
+        if now - self._review_checked_at < REVIEW_CHECK_SEC:
+            return
+        self._review_checked_at = now
+        try:
+            for jid in remind_overdue(self.db, self._rules, now):
+                logger.warning("Job %d: video cuối chờ duyệt quá hạn (đã nhắc một lần)", jid)
+        except Exception:  # the pass must never stop the queue (see the docstring)
+            logger.exception("Nhắc duyệt video cuối gặp lỗi (bỏ qua, hàng đợi vẫn chạy)")
+
     def process_next(self) -> bool:
         """Claim and run one job. False when nothing was runnable."""
+        self._remind_reviews()
         for jid in self.db.cascade_blocked(self._clock()):  # jobs whose dependency ended badly
             logger.warning("Job %d bị hủy vì job nó phụ thuộc không hoàn thành", jid)
         for jid in self.db.expire_approvals(self._clock()):  # nobody approved in time

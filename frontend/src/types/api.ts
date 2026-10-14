@@ -143,6 +143,19 @@ export interface ApiStructure {
   items: ApiStructureItem[];
 }
 
+/** `review` of a job: GET /api/reviews, POST .../review/approve|reject answer with it too. */
+export interface ApiReview {
+  status: 'pending' | 'approved' | 'changes_requested';
+  requested_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  reason: string | null;
+  reminded_at: string | null;
+  overdue: boolean;
+  /** "CODE: detail" of every check that did not pass. */
+  failed_checks: string[];
+}
+
 export interface ApiJob {
   id: number;
   pipeline_id?: number | null;
@@ -182,6 +195,8 @@ export interface ApiJob {
   verify?: ApiVerify | null;
   /** Only a draft / render job of a chapter plan (phase 7g). */
   structure?: ApiStructure | null;
+  /** Only a finished FINAL render that was delivered: where it stands with its reviewer (T-F). */
+  review?: ApiReview | null;
 }
 
 export interface ApiJobDetail extends ApiJob {

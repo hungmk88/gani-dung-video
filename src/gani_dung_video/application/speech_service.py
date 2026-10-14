@@ -17,7 +17,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from gani_dung_video.application.transcribe_service import TRANSCRIPTS_DIR
-from gani_dung_video.domain.footage import Inventory
+from gani_dung_video.domain.footage import Inventory, clip_stems
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.speech import Transcript
 from gani_dung_video.domain.speech_edit import Phrase, PhrasesFile, classify_phrases, split_phrases
@@ -87,11 +87,12 @@ def build_phrases(
     se_cfg = rules["speech_edit"]
     phrases: list[Phrase] = []
     excluded = []
+    stems = clip_stems(c.file for c in inv.clips)
     for clip in inv.clips:
         t = _read_transcript(folder, clip.file)
         if t is None or t.no_speech or not t.words:
             continue
-        candidates = split_phrases(t.words, clip.file, se_cfg, style)
+        candidates = split_phrases(t.words, clip.file, se_cfg, style, stems[clip.file])
         ok, dropped = classify_phrases(candidates, glossary.banned_claims, se_cfg)
         phrases += ok
         excluded += dropped

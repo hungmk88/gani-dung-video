@@ -255,6 +255,42 @@ class StructureView(BaseModel):
     items: list[StructureItemView]
 
 
+class ReviewView(BaseModel):
+    """Where a delivered final video stands with its reviewer (T-F)."""
+
+    status: Literal["pending", "approved", "changes_requested"]
+    requested_at: str
+    decided_at: str | None = None
+    decided_by: str | None = None
+    reason: str | None = None  # why changes were asked for (or a note on an approval)
+    reminded_at: str | None = None  # the one reminder that went out
+    overdue: bool = False  # waiting longer than review.ttl_sec and still undecided
+    failed_checks: list[str] = []  # "CODE: detail" of every check that did not pass
+
+
+class ReviewItemView(BaseModel):
+    job_id: int
+    project_id: str | None
+    project_name: str
+    title: str
+    video: str  # the delivered file name (never a path)
+    review: ReviewView
+
+
+class ReviewListView(BaseModel):
+    items: list[ReviewItemView]
+
+
+class ReviewRequest(BaseModel):
+    """POST /api/jobs/{id}/review/approve|reject body. `reviewer` is whoever pressed (a name,
+    or later a Telegram id); `reason` is required to ask for changes."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    reviewer: str = Field(max_length=64)
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class JobView(BaseModel):
     id: int
     pipeline_id: int | None = None
@@ -290,6 +326,7 @@ class JobView(BaseModel):
     footage: FootageView | None = None  # only a draft job at the approval gate, music modes
     verify: VerifyView | None = None  # only a finished draft job (phase 6i)
     structure: StructureView | None = None  # only a draft / render job of a chapter plan (7g)
+    review: ReviewView | None = None  # only a finished FINAL render that was delivered (T-F)
 
 
 class JobDetail(JobView):
