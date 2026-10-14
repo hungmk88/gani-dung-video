@@ -416,6 +416,15 @@ def test_malformed_bodies_are_400_and_change_nothing(api: Api, raw: bytes) -> No
     assert api.ctx.db.list_jobs() == []
 
 
+@pytest.mark.parametrize("route", ["/api/jobs", "/api/pipelines", "/api/preflight"])
+def test_deeply_nested_json_is_a_400_not_a_crash(api: Api, route: str) -> None:
+    """Python's JSON parser gives up on deep nesting with a RecursionError (audit L3)."""
+    depth = RULES["api"]["max_body_bytes"] // 2 - 10
+    status, _h, body = api.call("POST", route, raw=b"[" * depth + b"]" * depth)
+    assert status == 400 and json.loads(body)["error"]["code"] == "bad_request"
+    assert api.ctx.db.list_jobs() == []
+
+
 def test_cancel_and_retry_accept_no_body_at_all_but_a_content_type_must_be_json(
     api: Api,
 ) -> None:
@@ -444,6 +453,53 @@ def test_a_slow_client_does_not_block_others(api: Api) -> None:
         assert api.call("GET", "/api/health")[0] == 200  # a thread per connection
     finally:
         slow.close()
+
+
+def test_connections_beyond_the_cap_get_a_503_and_the_server_recovers(tmp_path: Path) -> None:
+    """One thread per connection with no cap let a flood of stalled connections exhaust the
+    machine (audit L7): past `api.max_concurrent_requests` a connection is answered 503."""
+    root = tmp_path / "allowed"
+    root.mkdir()
+    rules = {**RULES, "api": {**RULES["api"], "frontend_dist": None, "max_concurrent_requests": 2}}
+    ctx = ApiContext(QueueDb(tmp_path / "queue.db"), rules,
+                     Settings(gani_dv_allowed_roots=str(root)))  # fmt: skip
+    server = make_server(ctx, port=0)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    port = int(server.server_address[1])
+    stalled = [socket.create_connection(("127.0.0.1", port), timeout=10) for _ in range(2)]
+    try:
+        for s in stalled:
+            s.sendall(b"GET /api/health HTTP/1.1\r\nHost: x\r\n")  # never finishes its headers
+        extra = socket.create_connection(("127.0.0.1", port), timeout=5)
+        with extra:
+            got = b""
+            while chunk := extra.recv(4096):  # answered at once, then closed
+                got += chunk
+        head, _, body = got.partition(b"\r\n\r\n")
+        assert head.startswith(b"HTTP/1.1 503 ") and b"Retry-After: 1" in head
+        assert json.loads(body)["error"]["code"] == "may_chu_ban"
+    finally:
+        for s in stalled:
+            s.close()
+    try:
+        deadline = time.monotonic() + 10
+        while True:  # the stalled connections are gone: their places free up
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            try:
+                conn.request("GET", "/api/health")
+                if conn.getresponse().status == 200:
+                    break
+            except OSError:
+                pass
+            finally:
+                conn.close()
+            assert time.monotonic() < deadline, "the server never recovered"
+            time.sleep(0.05)
+    finally:
+        server.shutdown()
+        server.server_close()
+        t.join(timeout=10)
 
 
 def test_keep_alive_connections_serve_several_requests(api: Api) -> None:

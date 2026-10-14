@@ -19,6 +19,25 @@ from gani_dung_video.domain.plan import Plan
 
 NOTE_TAG = "ghi_chu_nguoi_dung"
 DATA_TAG = "du_lieu"
+_TAGS = tuple(f"<{slash}{tag}>" for tag in (NOTE_TAG, DATA_TAG) for slash in ("/", ""))
+
+
+def data_block(data: Any) -> str:
+    """The data fenced in <du_lieu> as JSON. Transcripts and names inside it are user text: every
+    '<' is written as \\u003c (the same string to a JSON reader), so none can close the tag."""
+    body = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
+    return f"<{DATA_TAG}>{body}</{DATA_TAG}>"
+
+
+def note_block(note: str) -> str:
+    """The user's note fenced in <ghi_chu_nguoi_dung>, with every fence tag removed until none
+    is left: one pass would turn '</ghi_chu_</ghi_chu_nguoi_dung>nguoi_dung>' into the tag."""
+    safe = note
+    while any(t in safe for t in _TAGS):
+        for t in _TAGS:
+            safe = safe.replace(t, "")
+    return f"<{NOTE_TAG}>\n{safe.strip()}\n</{NOTE_TAG}>"
+
 
 # Spec Appendix B, plus two safety rules: user text is data, and ids come only from the list.
 SYSTEM_PROMPT = """Bạn là biên tập viên video ngắn cho GANI (xưởng giò chả TP.HCM, đạt HACCP \
@@ -170,10 +189,9 @@ def build_user_prompt(
     if plan.chapters:
         data["chapters"] = [{"id": c.id, "beats": c.beats, "title_beats": c.title_beats,
                              "blocks": c.blocks} for c in plan.chapters]  # fmt: skip
-    parts = [f"<{DATA_TAG}>{json.dumps(data, ensure_ascii=False)}</{DATA_TAG}>"]
+    parts = [data_block(data)]
     if note and note.strip():
-        safe = note.replace(f"</{NOTE_TAG}>", "").replace(f"<{NOTE_TAG}>", "")
-        parts.append(f"<{NOTE_TAG}>\n{safe.strip()}\n</{NOTE_TAG}>")
+        parts.append(note_block(note))
     if errors:
         prev = json.dumps(previous.model_dump(), ensure_ascii=False) if previous else "{}"
         parts.append("Bản trả lời trước bị kiểm tra phát hiện lỗi, hãy sửa và trả lại đủ các "

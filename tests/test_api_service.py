@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +41,7 @@ from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.domain.verify_report import Finding, RoundRecord, VerifyReportFile
-from gani_dung_video.infrastructure.config_files import load_rules
+from gani_dung_video.infrastructure.config_files import CONFIG_DIR, load_rules
 from gani_dung_video.infrastructure.project_lock import acquire
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
 from gani_dung_video.infrastructure.settings import Settings
@@ -180,6 +182,39 @@ def test_a_link_pointing_outside_the_root_is_not_a_project(ctx: ApiContext, root
             pytest.skip("cannot create links here")
     with pytest.raises(ApiError) as e:
         resolve_project(ctx, "0/sneaky")
+    assert e.value.status == 404
+
+
+def test_a_project_id_in_another_letter_case_names_the_same_folder(
+    ctx: ApiContext, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On macOS (and Windows) '0/gani' opens the folder 'Gani' too; kept in the client's case,
+    its jobs were filed under another path and slipped past the one-pipeline guard (M4).
+    Here a case-insensitive file system is played by is_dir; listing the folder is real."""
+    (root / "Gani").mkdir()
+    real = Path.is_dir
+
+    def insensitive(self: Path) -> bool:
+        if real(self):
+            return True
+        with contextlib.suppress(OSError):
+            return any(p.name.casefold() == self.name.casefold() and real(p)
+                       for p in self.parent.iterdir())  # fmt: skip
+        return False
+
+    monkeypatch.setattr(Path, "is_dir", insensitive)
+    want = (root / "Gani").resolve()
+    assert resolve_project(ctx, "0/gani") == want and resolve_project(ctx, "0/GANI") == want
+    assert resolve_project(ctx, "0/Gani") == want
+
+
+def test_letter_case_still_matters_where_the_file_system_says_so(ctx: ApiContext,
+                                                                 root: Path) -> None:  # fmt: skip
+    (root / "Gani").mkdir()
+    if (root / "gani").exists():
+        pytest.skip("case-insensitive file system")
+    with pytest.raises(ApiError) as e:
+        resolve_project(ctx, "0/gani")
     assert e.value.status == 404
 
 
@@ -397,7 +432,10 @@ def test_media_stops_at_once_when_the_folder_leaves_the_allow_list(
     narrowed = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(other)))
     with pytest.raises(ApiError) as e:
         resolve_media(narrowed, jid, "video")
-    assert e.value.status == 404 and get_job(narrowed, jid).video_url is None
+    assert e.value.status == 404
+    with pytest.raises(ApiError) as e:
+        get_job(narrowed, jid)  # the whole job is out of sight now (audit L2)
+    assert e.value.status == 404
 
 
 def test_a_forged_row_cannot_point_media_elsewhere(ctx: ApiContext, root: Path,
@@ -414,6 +452,72 @@ def test_a_forged_row_cannot_point_media_elsewhere(ctx: ApiContext, root: Path,
     with pytest.raises(ApiError) as e:
         resolve_media(ctx, jid, "video")  # the real render folder has no video
     assert e.value.status == 404
+
+
+def link_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create links here")
+
+
+@pytest.mark.parametrize("linked", ["edit", "edit/render", "edit/render/A"])
+def test_a_render_folder_linked_outside_the_roots_is_not_served(
+    ctx: ApiContext, root: Path, tmp_path: Path, linked: str
+) -> None:
+    """Only the project folder used to be checked: edit/, render/ or render/A could be a link
+    to anywhere, and the video behind it was served (audit L1)."""
+    jid = queue_one(ctx, root)
+    finish_job(ctx, jid)
+    inside = root / "footage" / linked
+    outside = tmp_path / "outside" / "x"
+    outside.parent.mkdir()
+    inside.rename(outside)
+    link_or_skip(inside, outside)
+    assert (root / "footage" / "edit" / "render" / "A" / "nhap_A_540p.mp4").is_file()
+    assert get_job(ctx, jid).video_url is None
+    for kind in ("video", "cover", "srt"):
+        with pytest.raises(ApiError) as e:
+            resolve_media(ctx, jid, kind)
+        assert e.value.status == 404
+
+
+def test_a_job_outside_the_allowed_roots_is_invisible_and_untouchable(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """Every job route re-checks the allow-list, not only the pipeline one (audit L2)."""
+    jid = queue_one(ctx, root)
+    ctx.db.add_event(jid, time.time(), "info", "dòng")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    other = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(elsewhere)))
+    calls: dict[str, Callable[[], object]] = {
+        "get": lambda: get_job(other, jid), "events": lambda: job_events(other, jid, 0),
+        "cancel": lambda: cancel(other, jid), "retry": lambda: retry(other, jid),
+        "approve": lambda: approve(other, jid, ApproveRequest(max_vnd=1.0, estimate_vnd=1.0)),
+        "media": lambda: resolve_media(other, jid, "video"),
+    }  # fmt: skip
+    for name, call in calls.items():
+        with pytest.raises(ApiError) as e:
+            call()
+        assert e.value.status == 404, name
+    assert list_jobs(other) == [] and list_jobs(ctx)[0].id == jid
+    assert ctx.db.get(jid) is not None and get_job(ctx, jid).status == "queued"  # untouched
+
+
+def test_the_list_fills_its_page_past_jobs_outside_the_allowed_roots(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """Jobs outside the roots are dropped before the page is cut, not after: a page of `limit`
+    is still full when newer jobs belong to a folder that left the allow-list."""
+    inside = [analysis_job(ctx, root) for _ in range(3)]
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    for _ in range(5):  # newer than the three above, so they come first in id order
+        ctx.db.enqueue(NewJob(kind="analyze", project_dir=str(gone), options_file="", draft=""),
+                       time.time())  # fmt: skip
+    assert [v.id for v in list_jobs(ctx, limit=2)] == inside[::-1][:2]
+    assert [v.id for v in list_jobs(ctx, limit=50)] == inside[::-1]
 
 
 # ─────────────── no absolute paths leave the server (console lines, errors) ───────────────
@@ -437,6 +541,39 @@ def test_console_lines_and_errors_never_carry_absolute_paths(ctx: ApiContext, ro
     for leak in (folder, slash, str(root), str(root).replace("\\", "/"), "allowed"):
         assert leak not in text, leak
     assert "QC: ĐẠT" in text and "footage" in text  # the useful part stays
+
+
+def test_the_home_music_and_program_folders_are_scrubbed_too(
+    ctx: ApiContext, root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whisper caches, the music library and the program's own files sit outside the job's
+    folder and the roots, but are just as private (audit L4)."""
+    home = tmp_path  # the allowed root lives inside it: the longest path is replaced first
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    music = tmp_path / "nhac"
+    music.mkdir()
+    c = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(root),
+                                           gani_dv_music_dir=str(music)))  # fmt: skip
+    jid = queue_one(c, root)
+    program = CONFIG_DIR.parent
+    lines = [
+        f"tải {home / '.cache' / 'whisper' / 'small.pt'}",
+        f"đọc {music / 'bai.mp3'}",
+        f"lỗi ở {program / 'src' / 'x.py'}",
+        f"dự án {root / 'footage' / 'a.mp4'}",
+    ]
+    for line in lines:
+        c.db.add_event(jid, time.time(), "info", line)
+    c.db.claim(time.time(), 1)
+    c.db.finish(jid, time.time(), "failed", None, 2, f"Không mở được {music / 'bai.mp3'}", None)
+    text = json.dumps([e.model_dump() for e in job_events(c, jid, 0)]
+                      + [get_job(c, jid).model_dump(mode="json")], ensure_ascii=False)  # fmt: skip
+    for leak in (str(home), str(music), str(program)):
+        assert leak not in text and leak.replace("\\", "/") not in text, leak
+    events = [e.text for e in job_events(c, jid, 0)]
+    assert events[0].startswith("tải ~") and events[1].startswith("đọc <nhạc>")
+    assert "<gốc>" not in events[3] and "<footage>" in events[3]  # not "~/allowed/footage"
 
 
 # ─────────────── phase 6c-1: analysis jobs are not part of the render API yet ───────────────
@@ -544,6 +681,19 @@ def test_a_second_pipeline_on_a_busy_project_is_a_conflict_that_names_the_first(
         start(ctx, root)
     err = caught.value
     assert err.status == 409 and err.code == "pipeline_active"
+    assert err.extra == {"pipeline_id": first.id, "job_id": first.jobs[0].id}
+    assert len(ctx.db.list_jobs()) == 4
+
+
+def test_a_plain_render_while_a_pipeline_runs_is_a_409_pipeline_active(
+    ctx: ApiContext, root: Path
+) -> None:
+    make_project(root)
+    first = start(ctx, root)
+    with pytest.raises(ApiError) as caught:
+        create_jobs(ctx, JobCreate(project_id="0/footage", draft="all", final=True))
+    err = caught.value
+    assert (err.status, err.code) == (409, "pipeline_active")
     assert err.extra == {"pipeline_id": first.id, "job_id": first.jobs[0].id}
     assert len(ctx.db.list_jobs()) == 4
 
@@ -769,6 +919,21 @@ def test_a_plain_render_on_a_folder_another_queue_holds_is_also_a_409(
     with pytest.raises(ApiError) as caught:
         create_jobs(ctx, JobCreate(project_id="0/footage", draft="A"))
     assert (caught.value.status, caught.value.code) == (409, "project_locked")
+
+
+def test_retrying_a_job_whose_folder_another_queue_took_meanwhile_is_a_409(
+    ctx: ApiContext, root: Path, tmp_path: Path
+) -> None:
+    """A retry puts a job back in the queue: it needs the folder as much as a new job (L2)."""
+    jid = queue_one(ctx, root)
+    cancel(ctx, jid)  # nothing active here any more: another queue may take the folder
+    (root / "footage" / "edit" / ".project.lock").unlink()  # (without waiting out the grace)
+    held_elsewhere(ctx, root, tmp_path)
+    with pytest.raises(ApiError) as caught:
+        retry(ctx, jid)
+    assert (caught.value.status, caught.value.code) == (409, "project_locked")
+    assert str(root) not in caught.value.message
+    assert get_job(ctx, jid).status == "cancelled"
 
 
 # ─────────────── 6f: T8 in the job's QA ───────────────

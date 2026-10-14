@@ -51,7 +51,8 @@ class ApprovalRefused(ConfigError):
 
 
 class PipelineBusyError(ConfigError):
-    """The project already has an active job, so a new pipeline would collide with it (409)."""
+    """The project already has an active job, so a new pipeline would collide with it, or a
+    pipeline is active there, so a plain render would collide with it (409)."""
 
     def __init__(self, message: str, job_id: int, pipeline_id: int | None) -> None:
         super().__init__(message)
@@ -145,6 +146,13 @@ def _folder(db: QueueDb, project: Path, rules: Rules, stamp: float) -> Iterator[
         raise
 
 
+def _pipeline_busy(e: FolderBusyError, project: Path, msgs: Mapping[str, Any]) -> PipelineBusyError:
+    suffix = f" (pipeline #{e.pipeline_id})" if e.pipeline_id is not None else ""
+    return PipelineBusyError(
+        msgs["PIPELINE_BUSY"].format(folder=project.name, job=e.job_id, pipeline=suffix),
+        e.job_id, e.pipeline_id)  # fmt: skip
+
+
 def _need_dependency(db: QueueDb, after: int | None, msgs: Mapping[str, Any]) -> None:
     if after is not None and db.get(after) is None:
         raise ConfigError(msgs["QUEUE_NO_DEPENDENCY"].format(job=after))
@@ -211,9 +219,43 @@ def cancel_job(db: QueueDb, job_id: int, now: float | None = None) -> str:
     return db.request_cancel(job_id, now if now is not None else time.time())
 
 
-def retry_job(db: QueueDb, job_id: int) -> bool:
-    """Queue a failed, cancelled or QC-failed job again."""
-    return db.retry_manual(job_id)
+def retry_job(db: QueueDb, job_id: int, *, rules: Rules | None = None,
+              settings: Settings | None = None, now: float | None = None) -> bool:  # fmt: skip
+    """Queue a failed, cancelled or QC-failed job again. False: no such job, or not one of those.
+
+    A retried job is a job entering the queue: its folder must still be inside the allow-list
+    and is taken for this queue, as when it was first queued (another queue may have taken it
+    since).
+
+    Raises:
+        ConfigError: no allow-list, or the job's folder is outside it or missing.
+        ProjectLockedError: another queue owns the folder (nothing changed).
+    """
+    job = db.get(job_id)
+    if job is None:
+        return False
+    rules = rules if rules is not None else load_rules()
+    settings = settings if settings is not None else load_settings()
+    msgs = rules["input_msgs"]
+    roots = allowed_roots(settings)
+    if not roots:
+        raise ConfigError(msgs["QUEUE_NO_ROOTS"])
+    project = Path(job.project_dir).resolve()
+    if not _inside(project, roots):
+        raise ConfigError(msgs["QUEUE_OUTSIDE_ROOTS"].format(folder=project))
+    if not project.is_dir():
+        raise ConfigError(msgs["QUEUE_NO_FOLDER"].format(folder=project))
+    stamp = now if now is not None else time.time()
+    took = _take_folder(db, project, rules, stamp)
+    try:
+        ok = db.retry_manual(job_id)
+    except BaseException:
+        if took:
+            _give_back(db, project)
+        raise
+    if took and not ok:  # nothing went back in: a lock taken just now is not ours to keep
+        _give_back(db, project)
+    return ok
 
 
 def enqueue_project_render(
@@ -263,17 +305,22 @@ def enqueue_project_render(
     _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
-    with _folder(db, folder, rules, stamp):
-        for letter in chosen:
-            existing = db.find_active("render", str(folder), letter, final)
-            if existing is not None:
-                out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
-                continue
-            jid = db.enqueue(
-                NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
-                       draft=letter, final=final, no_asr=no_asr, depends_on=after,
-                       max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
-            out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+    try:
+        with _folder(db, folder, rules, stamp):
+            db.check_no_pipeline(str(folder))  # not even a duplicate of one of its renders
+            for letter in chosen:
+                existing = db.find_active("render", str(folder), letter, final)
+                if existing is not None:
+                    out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
+                    continue
+                jid = db.enqueue(
+                    NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
+                           draft=letter, final=final, no_asr=no_asr, depends_on=after,
+                           max_attempts=int(rules["queue"]["max_attempts"])), stamp,
+                    guard_pipeline=True)  # fmt: skip
+                out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+    except FolderBusyError as e:
+        raise _pipeline_busy(e, folder, msgs) from e
     return out
 
 
@@ -441,10 +488,7 @@ def enqueue_pipeline(
     try:
         pipeline, ids = db.enqueue_chain(steps, stamp, guard_folder=where, before_insert=prepare)
     except FolderBusyError as e:
-        suffix = f" (pipeline #{e.pipeline_id})" if e.pipeline_id is not None else ""
-        raise PipelineBusyError(
-            msgs["PIPELINE_BUSY"].format(folder=project.name, job=e.job_id, pipeline=suffix),
-            e.job_id, e.pipeline_id) from e  # fmt: skip
+        raise _pipeline_busy(e, project, msgs) from e
     except BaseException:
         if took:  # nothing was queued: give the folder back
             release(project, db.path)

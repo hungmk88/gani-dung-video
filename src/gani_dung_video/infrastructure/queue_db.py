@@ -354,9 +354,27 @@ class QueueDb:
         )  # fmt: skip
         return int(cur.lastrowid or 0)
 
-    def enqueue(self, job: NewJob, now: float) -> int:
+    @staticmethod
+    def _refuse_if_pipeline(con: sqlite3.Connection, project_dir: str) -> None:
+        busy = con.execute(
+            "SELECT id, pipeline_id FROM jobs WHERE project_dir = ? AND pipeline_id IS NOT NULL "
+            "AND status IN ('queued', 'processing', 'awaiting_approval') ORDER BY id LIMIT 1",
+            (project_dir,)).fetchone()  # fmt: skip
+        if busy is not None:
+            raise FolderBusyError(int(busy["id"]), busy["pipeline_id"])
+
+    def enqueue(self, job: NewJob, now: float, *, guard_pipeline: bool = False) -> int:
+        """Insert one job. With `guard_pipeline`, refused (FolderBusyError) while a pipeline has
+        an active job in the same folder, checked in the same transaction as the insert."""
         with self._write() as con:
+            if guard_pipeline:
+                self._refuse_if_pipeline(con, job.project_dir)
             return self._insert(con, job, now)
+
+    def check_no_pipeline(self, project_dir: str) -> None:
+        """Raise FolderBusyError if a pipeline has an active job in the folder."""
+        with self._conn() as con:
+            self._refuse_if_pipeline(con, project_dir)
 
     def enqueue_chain(
         self, steps: Sequence[tuple[NewJob, int | None]], now: float, *,
@@ -431,7 +449,7 @@ class QueueDb:
 
     def list_jobs(
         self, status: str | None = None, limit: int = 100, project_dir: str | None = None,
-        kind: str | None = None,
+        kind: str | None = None, offset: int = 0,
     ) -> list[Job]:  # fmt: skip
         where, args = [], []
         if status:
@@ -445,7 +463,8 @@ class QueueDb:
             args.append(kind)
         sql = "SELECT * FROM jobs" + (" WHERE " + " AND ".join(where) if where else "")
         with self._conn() as con:
-            rows = con.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+            rows = con.execute(sql + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                               (*args, limit, offset)).fetchall()  # fmt: skip
         return [_job(r) for r in rows]
 
     def counts(self) -> dict[str, int]:

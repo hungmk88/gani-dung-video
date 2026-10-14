@@ -87,7 +87,7 @@ from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, planned_sec
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
-from gani_dung_video.infrastructure.config_files import ConfigError
+from gani_dung_video.infrastructure.config_files import CONFIG_DIR, ConfigError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.music_index import get_index
@@ -217,7 +217,27 @@ def resolve_project(ctx: ApiContext, project_id: str) -> Path:
     folder = (root if name == "." else root / name).resolve()
     if not _inside(folder, root) or not folder.is_dir():  # also stops links leading outside
         raise _not_found("dự án")
-    return folder
+    return _true_case(root, folder)
+
+
+def _true_case(root: Path, folder: Path) -> Path:
+    """`folder` spelled as its directory entries are. A case-insensitive file system (macOS)
+    opens 'gani' for 'Gani' and resolve() keeps the client's spelling, but the queue compares
+    folders as text: one folder must have one name. A name the folder lists as it is stays as
+    it is, so on a case-sensitive file system (Linux) nothing ever changes."""
+    out = root
+    for part in folder.relative_to(root).parts:
+        try:
+            names = [p.name for p in out.iterdir()]
+        except OSError:
+            return folder
+        if part not in names:
+            same = [n for n in names if n.casefold() == part.casefold()]
+            if len(same) != 1:  # none, or two that differ only in case: do not guess
+                return folder
+            part = same[0]
+        out = out / part
+    return out
 
 
 def _project_id_of(ctx: ApiContext, folder: Path) -> str | None:
@@ -233,15 +253,37 @@ def _project_id_of(ctx: ApiContext, folder: Path) -> str | None:
 # ─────────────── jobs ───────────────
 
 
+def _private_dirs(ctx: ApiContext) -> list[tuple[str, str]]:
+    """Folders outside the projects that console lines still quote: the user's home (Whisper
+    and CLIP caches), the music library and the program's own folder."""
+    out: list[tuple[str, str]] = []
+    with contextlib.suppress(RuntimeError, OSError):  # no home directory can be determined
+        home = Path.home()
+        out += [(str(home), "~"), (str(home.resolve()), "~")]
+    music = music_dir(ctx.settings)
+    if music is not None:
+        folder = Path(music).expanduser()
+        out += [(str(folder), "<nhạc>"), (str(folder.resolve()), "<nhạc>")]
+    return [*out, (str(CONFIG_DIR.parent), "<chương trình>")]
+
+
 def _scrub(ctx: ApiContext, job_dir: str, text: str | None) -> str | None:
     """Console lines and errors come from other processes and may quote absolute paths: the
-    job's folder becomes <its name>, an allowed root becomes <gốc>."""
+    job's folder becomes <its name>, an allowed root <gốc>, the music library <nhạc>, the
+    program's folder <chương trình> and the home folder ~. The longest path goes first, so a
+    root inside the home folder is still <gốc>."""
     if not text:
         return text
-    swaps = [(job_dir, f"<{Path(job_dir).name}>"), *((str(r), "<gốc>") for r in ctx.roots)]
+    swaps = [(job_dir, f"<{Path(job_dir).name}>"), *((str(r), "<gốc>") for r in ctx.roots),
+             *_private_dirs(ctx)]  # fmt: skip
+    table: dict[str, str] = {}
     for base, repl in swaps:
-        for variant in {base, base.replace("\\", "/")}:
-            text = text.replace(variant, repl)
+        if len(Path(base).parts) < 2:  # "/" or "C:\\" would eat every path separator
+            continue
+        for variant in (base, base.replace("\\", "/")):
+            table.setdefault(variant, repl)
+    for variant in sorted(table, key=len, reverse=True):
+        text = text.replace(variant, table[variant])
     return text
 
 
@@ -401,19 +443,23 @@ def _qa_view(report: QcReport, job: Job, folder: Path) -> QaView:
 
 
 def _media_path(ctx: ApiContext, job: Job, kind: str) -> Path | None:
-    """Where a media file of a finished job lives, or None. Rebuilt, never trusted."""
+    """Where a media file of a finished job lives, or None. Rebuilt, never trusted.
+
+    Every folder on the way (edit/, render/, the draft's) may be a link: the file itself, once
+    every link is followed, must still be inside an allowed root."""
     if job.status != "completed":
         return None
     try:
         name = media_file_name(kind, job.draft, job.final)
     except ValueError:
         return None
+    roots = ctx.roots
     folder = Path(job.project_dir).resolve()
-    if not any(_inside(folder, r) for r in ctx.roots):
+    if not any(_inside(folder, r) for r in roots):
         return None
     out = (folder / EDIT_DIR / "render" / job.draft).resolve()
     path = (out / name).resolve()
-    if path.parent != out or not path.is_file():
+    if path.parent != out or not any(_inside(path, r) for r in roots) or not path.is_file():
         return None
     return path
 
@@ -485,6 +531,13 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         structure=_read_structure(folder, job),
         review=_review_view_of_job(ctx, job),
     )  # fmt: skip
+
+
+def _visible(ctx: ApiContext, job: Job) -> bool:
+    """The job's folder is (still) inside the allow-list: the API neither shows nor touches
+    any other job, whatever queue.db holds."""
+    folder = Path(job.project_dir).resolve()
+    return any(_inside(folder, r) for r in ctx.roots)
 
 
 # ─────────────── review of delivered final videos (T-F) ───────────────
@@ -567,9 +620,9 @@ def review_decide(ctx: ApiContext, job_id: int, action: Literal["approve", "reje
 
 
 def _need(ctx: ApiContext, job_id: int) -> Job:
-    """A job (of any kind) by id, or a 404."""
+    """A job (of any kind) by id, or a 404 (also for a job outside the allow-list)."""
     job = ctx.db.get(job_id)
-    if job is None:
+    if job is None or not _visible(ctx, job):
         raise _not_found(f"job #{job_id}")
     return job
 
@@ -579,8 +632,18 @@ def _locked(e: ProjectLockedError) -> ApiError:
     return ApiError(409, "project_locked", str(e), pipeline_id=e.pipeline_id, job_id=e.job_id)
 
 
+def _busy(e: PipelineBusyError) -> ApiError:
+    """The folder has an active pipeline (or job): 409 naming it."""
+    return ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id, job_id=e.job_id)
+
+
 def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
-    """Queue the render(s) a request asks for and return their views."""
+    """Queue the render(s) a request asks for and return their views.
+
+    Raises:
+        ApiError: 404 project, 409 not ready, a pipeline active in the folder, or the folder
+            held by another queue.
+    """
     folder = resolve_project(ctx, req.project_id)
     try:
         queued = enqueue_project_render(folder, ctx.db, draft=req.draft, final=req.final,
@@ -588,6 +651,8 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
                                         settings=ctx.settings, now=ctx.clock())  # fmt: skip
     except NotReadyError as e:
         raise ApiError(409, "not_ready", str(e)) from e
+    except PipelineBusyError as e:
+        raise _busy(e) from e
     except ProjectLockedError as e:
         raise _locked(e) from e
     except ConfigError as e:
@@ -602,8 +667,17 @@ def list_jobs(ctx: ApiContext, status: str | None = None, project_id: str | None
     if kind is not None and kind not in JOB_KINDS:
         raise ApiError(400, "bad_request", f"Loại job phải là một trong: {', '.join(JOB_KINDS)}.")
     folder = str(resolve_project(ctx, project_id)) if project_id else None
-    jobs = ctx.db.list_jobs(status, max(1, min(limit, 200)), project_dir=folder, kind=kind)
-    return [_view(ctx, j) for j in jobs]
+    want = max(1, min(limit, 200))
+    # Jobs outside the roots are dropped before the page is cut, so read on until it is full.
+    out: list[JobView] = []
+    offset = 0
+    while len(out) < want:
+        jobs = ctx.db.list_jobs(status, want, project_dir=folder, kind=kind, offset=offset)
+        out += [_view(ctx, j) for j in jobs if _visible(ctx, j)]
+        if len(jobs) < want:
+            break
+        offset += len(jobs)
+    return out[:want]
 
 
 def job_events(ctx: ApiContext, job_id: int, after: int) -> list[EventView]:
@@ -629,7 +703,14 @@ def cancel(ctx: ApiContext, job_id: int) -> JobView:
 
 def retry(ctx: ApiContext, job_id: int) -> JobView:
     job = _need(ctx, job_id)
-    if not retry_job(ctx.db, job_id):
+    try:
+        retried = retry_job(ctx.db, job_id, rules=ctx.rules, settings=ctx.settings,
+                            now=ctx.clock())  # fmt: skip
+    except ProjectLockedError as e:
+        raise _locked(e) from e
+    except ConfigError as e:  # the folder went away or left the allow-list meanwhile
+        raise ApiError(409, "conflict", _scrub(ctx, job.project_dir, str(e)) or "") from e
+    if not retried:
         raise ApiError(409, "conflict", f"Job #{job.id} đang '{job.status}': chỉ thử lại được job "
                                         "lỗi, đã hủy hoặc QC không đạt.")  # fmt: skip
     return _view(ctx, _need(ctx, job_id))
@@ -658,8 +739,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
             force_analyze=req.force_analyze, rules=ctx.rules, settings=ctx.settings,
             now=ctx.clock())  # fmt: skip
     except PipelineBusyError as e:
-        raise ApiError(409, "pipeline_active", str(e), pipeline_id=e.pipeline_id,
-                       job_id=e.job_id) from e  # fmt: skip
+        raise _busy(e) from e
     except ProjectLockedError as e:
         raise _locked(e) from e
     except ConfigError as e:
@@ -669,9 +749,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
 
 def get_pipeline(ctx: ApiContext, pipeline_id: int) -> PipelineView:
     jobs = ctx.db.jobs_of_pipeline(pipeline_id)
-    roots = ctx.roots
-    if not jobs or not all(any(_inside(Path(j.project_dir).resolve(), r) for r in roots)
-                           for j in jobs):  # fmt: skip
+    if not jobs or not all(_visible(ctx, j) for j in jobs):
         raise _not_found(f"pipeline #{pipeline_id}")
     return _pipeline_view(ctx, pipeline_id, jobs)
 

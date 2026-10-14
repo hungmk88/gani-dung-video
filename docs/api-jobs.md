@@ -49,7 +49,9 @@ python -m gani_dung_video serve       # in "Giao diện: mở http://127.0.0.1:8
 - Dữ liệu là JSON UTF-8. Thời gian là ISO 8601 UTC, đuôi `Z` (`2026-09-29T04:56:08Z`).
 - Mã dự án (`project_id`) là chuỗi **mờ** `"<chỉ số thư mục gốc>/<tên thư mục>"`, ví dụ
   `"0/Xuong GANI"` (`"0/."` nếu chính thư mục gốc là dự án). Server không bao giờ trả đường
-  dẫn tuyệt đối. Giao diện lấy mã từ `GET /api/projects`, không tự ghép.
+  dẫn tuyệt đối. Giao diện lấy mã từ `GET /api/projects`, không tự ghép. Trên ổ không phân biệt
+  hoa/thường (macOS), `"0/gani"` và `"0/Gani"` là **cùng một** dự án: server dùng đúng tên thư
+  mục trên đĩa, nên chốt "một dự án một pipeline" và khóa thư mục không bị lách bằng cách đổi chữ.
 - **Không có tải footage lên qua HTTP.** Footage nằm sẵn trên máy dựng, trong một thư mục
   thuộc `GANI_DV_ALLOWED_ROOTS`.
 - Mỗi job có `kind`: `render` (một bản nháp ở một kích thước, `preview` 540p hoặc `final`
@@ -63,13 +65,13 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
-| 400 | `bad_request` | Thân/tham số sai (`draft` không phải A/B/C/all, `limit` ngoài 1–200, `project_id` sai dạng, JSON hỏng, trường thừa) |
+| 400 | `bad_request` | Thân/tham số sai (`draft` không phải A/B/C/all, `limit` ngoài 1–200, `project_id` sai dạng, JSON hỏng hoặc lồng quá sâu, trường thừa) |
 | 403 | `host_khong_hop_le` / `origin_khong_hop_le` / `yeu_cau_cheo_trang` | Sai Host, Origin không nằm trong danh sách, yêu cầu chéo trang không có Origin/Referer tin cậy |
-| 404 | `not_found` | Không có dự án / job / tệp / đường dẫn |
+| 404 | `not_found` | Không có dự án / job / tệp / đường dẫn; job hoặc pipeline có thư mục nằm ngoài `GANI_DV_ALLOWED_ROOTS` cũng là 404 (mọi route `/api/jobs/{id}…`, `/media/{id}/…`; `GET /api/jobs` bỏ hẳn các job đó khỏi danh sách) |
 | 405 | `method_not_allowed` | Sai phương thức (kèm header `Allow`) |
 | 409 | `not_ready` | Dự án chưa có `plan.json` hoặc `drafts.json`/`speech_drafts.json` — chạy `plan`/`pick`/`draft` trước |
-| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt; duyệt chi phí một job không phải `draft` |
-| 409 | `pipeline_active` | Dự án đã có job đang chờ/chạy/chờ duyệt (kèm `pipeline_id`, `job_id`) |
+| 409 | `conflict` | Thử lại một job đang chờ/đang chạy/đã đạt, hoặc job có thư mục dự án không còn; duyệt chi phí một job không phải `draft` |
+| 409 | `pipeline_active` | `POST /api/pipelines`: dự án đã có job đang chờ/chạy/chờ duyệt; `POST /api/jobs`: dự án có pipeline đang hoạt động (kèm `pipeline_id`, `job_id`) |
 | 409 | `project_locked` | Thư mục dự án đang được **một hàng đợi khác** (`queue.db` khác) dùng (kèm `pipeline_id`, `job_id` của hàng đợi đó nếu biết) |
 | 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
 | 411 | `can_content_length` | Thân dùng `Transfer-Encoding` (không hỗ trợ) |
@@ -77,6 +79,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | 415 | `content_type_no` | `Content-Type` có mặt nhưng không phải `application/json`, hoặc có thân mà thiếu `Content-Type` |
 | 500 | `loi_may_chu` | Lỗi không lường trước (chi tiết chỉ nằm ở log của `serve`) |
 | 503 | `unavailable` | Máy dựng chưa đặt `GANI_DV_ALLOWED_ROOTS` |
+| 503 | `may_chu_ban` | Đã có `api.max_concurrent_requests` (32) kết nối cùng lúc; kèm `Retry-After: 1`, kết nối bị đóng ngay |
 
 ## 3. Endpoint
 
@@ -89,7 +92,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | `POST /api/pipelines` | Ghi `options.json` + tạo chuỗi `analyze → draft → render` (mục 4b) | `201` + `PipelineView` |
 | `GET /api/pipelines/{id}` | Các job của một pipeline và trạng thái chung | `PipelineView` |
 | `POST /api/jobs/{id}/approve` | Duyệt chi phí gọi Claude của job `draft` đang chờ | `JobView` |
-| `GET /api/jobs?status=&project_id=&kind=&limit=` | Danh sách mọi loại job, mới nhất trước (`limit` 1–200, mặc định 50; `kind` = `render`\|`draft`\|`analyze`, mặc định không lọc) | `JobView[]` |
+| `GET /api/jobs?status=&project_id=&kind=&limit=` | Danh sách mọi loại job, mới nhất trước (`limit` 1–200, mặc định 50; `kind` = `render`\|`draft`\|`analyze`, mặc định không lọc). Job ngoài `GANI_DV_ALLOWED_ROOTS` bị bỏ trước khi cắt trang, nên trang vẫn đủ `limit` khi còn job hợp lệ | `JobView[]` |
 | `GET /api/jobs/{id}` | Chi tiết kèm 200 dòng console cuối | `JobDetail` |
 | `GET /api/jobs/{id}/events?after=N` | Dòng console có `id > N` (con trỏ) | `EventView[]` |
 | `POST /api/jobs/{id}/cancel` | Chờ thì hủy ngay; đang chạy thì gửi cờ dừng | `JobView` |
@@ -140,7 +143,9 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 
 `draft`: `"A"`, `"B"`, `"C"` hoặc `"all"` (mặc định, mọi bản kế hoạch có). Hỏi lại đúng bản
 đang chờ hoặc đang chạy thì trả về job cũ, không xếp trùng. Tùy chọn (phong cách, độ dài…) lấy
-từ `plan.json` của dự án, không gửi lại.
+từ `plan.json` của dự án, không gửi lại. Dự án đang có **pipeline** hoạt động (job của nó đang
+chờ, chạy hoặc chờ duyệt) thì trả **409 `pipeline_active`** (kèm `pipeline_id`, `job_id`) và không
+xếp gì: bản dựng lẻ sẽ ghi đè tệp của pipeline. Job dựng lẻ và job phân tích lẻ thì vẫn đi cùng nhau.
 
 ## 4. Ví dụ (in từ mã nguồn)
 
@@ -334,7 +339,7 @@ duyệt (bất kể loại), server trả **409** và **không ghi gì** (kể c
 
 `pipeline_id` là `null` khi job đang chạy là một job dựng lẻ (`POST /api/jobs`).
 
-**Khóa cấp thư mục (giữa nhiều hàng đợi).** Chốt "một dự án một pipeline" ở trên chỉ nhìn thấy job trong cùng một `queue.db`. Nếu hai hàng đợi (hai `queue.db`, ví dụ hai lần chạy `serve`/`daemon` riêng) cùng làm việc trên một thư mục, chúng sẽ ghi đè `options.json`, `plan.json` và tệp dựng của nhau. Vì vậy mọi cách đưa job vào hàng đợi (`POST /api/pipelines`, `POST /api/jobs`, và các lệnh `queue add/analyze/draft`) còn lấy khóa `<dự án>/edit/.project.lock`, ghi tên `queue.db` đang giữ. Hàng đợi khác thấy khóa còn hiệu lực thì bị từ chối bằng **409 `project_locked`** (không ghi gì, kể cả `options.json`). Khóa còn hiệu lực khi hàng đợi giữ nó còn job chờ/đang chạy/chờ duyệt cho thư mục đó; hết job hoặc mất `queue.db` thì khóa cũ và hàng đợi khác chiếm được. Đọc không được `queue.db` của chủ khóa thì coi là còn hiệu lực. Các lệnh chạy tay (`plan`, `pick`, `draft`, `render`) không kiểm tra khóa. Gỡ khẩn cấp: xóa tệp `edit/.project.lock`; tắt hẳn bằng `queue.project_lock = false` trong `rules.json`. Muốn đổi cấu
+**Khóa cấp thư mục (giữa nhiều hàng đợi).** Chốt "một dự án một pipeline" ở trên chỉ nhìn thấy job trong cùng một `queue.db`. Nếu hai hàng đợi (hai `queue.db`, ví dụ hai lần chạy `serve`/`daemon` riêng) cùng làm việc trên một thư mục, chúng sẽ ghi đè `options.json`, `plan.json` và tệp dựng của nhau. Vì vậy mọi cách đưa job vào hàng đợi (`POST /api/pipelines`, `POST /api/jobs`, `POST /api/jobs/{id}/retry`, và các lệnh `queue add/analyze/draft/retry`) còn lấy khóa `<dự án>/edit/.project.lock`, ghi tên `queue.db` đang giữ. Hàng đợi khác thấy khóa còn hiệu lực thì bị từ chối bằng **409 `project_locked`** (không ghi gì, kể cả `options.json`). Khóa còn hiệu lực khi hàng đợi giữ nó còn job chờ/đang chạy/chờ duyệt cho thư mục đó; hết job hoặc mất `queue.db` thì khóa cũ và hàng đợi khác chiếm được. Đọc không được `queue.db` của chủ khóa thì coi là còn hiệu lực. Các lệnh chạy tay (`plan`, `pick`, `draft`, `render`) không kiểm tra khóa. Gỡ khẩn cấp: xóa tệp `edit/.project.lock`; tắt hẳn bằng `queue.project_lock = false` trong `rules.json`. Muốn đổi cấu
 hình: `POST /api/jobs/{id}/cancel` cho các job cũ (job đang chờ bị hủy ngay; job phụ thuộc vào
 nó bị hủy theo), rồi tạo lại.
 
@@ -512,7 +517,8 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
   lỗi thì các job sau nó bị hủy dây chuyền; thử lại job phân tích **không** tự khôi phục các job
   đã hủy — giao diện thử lại từng job theo thứ tự (`analyze`, `draft`, `render`). Thử lại job
   `draft` luôn quay về bước ước tính và **cần duyệt lại chi phí**; job `draft` không bao giờ tự
-  thử lại.
+  thử lại. Thử lại cũng lấy lại khóa thư mục như khi tạo job: nếu trong lúc đó một hàng đợi
+  khác đã nhận thư mục thì trả **409 `project_locked`** và job giữ nguyên trạng thái.
 - **Hủy**: job đang chờ hủy ngay và kéo theo các job chờ nó; job đang chạy nhận cờ dừng. Hủy job
   `draft` đang chờ duyệt không tốn đồng nào.
 - `GET /api/jobs` mặc định **không lọc** theo loại; `?kind=render|draft|analyze` để lọc. Thẻ
@@ -657,13 +663,18 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
   thì không.
 - **POST** phải là `application/json` (chặn `text/plain`, `multipart`, form chéo trang), thân ≤
   64KB, `Content-Length`, không nhận `Transfer-Encoding`.
+- **Số kết nối**: mỗi kết nối một luồng, tối đa `api.max_concurrent_requests` (mặc định 32, kể cả
+  kết nối giữ mở); kết nối vượt quá nhận ngay `503 may_chu_ban` rồi bị đóng.
 - **CORS** chỉ trả cho Origin được phép; `OPTIONS` (preflight) chỉ cho Origin được phép.
 - **Media**: client chỉ gửi `id` + loại tệp; server tự dựng đường dẫn từ thư mục dự án và bản
-  nháp của job, kiểm tra lại allow-list mỗi lần, chặn liên kết trỏ ra ngoài; kiểu tệp cố định
+  nháp của job, kiểm tra lại allow-list mỗi lần, chặn liên kết trỏ ra ngoài (tệp thật, sau khi
+  đi hết mọi liên kết ở `edit/`, `render/`, `render/<bản>`, phải còn nằm trong allow-list); kiểu tệp cố định
   (`video/mp4`, `image/jpeg`, `text/plain`), `X-Content-Type-Options: nosniff`.
 - **Đường dẫn**: dòng console (`events`) và `error_msg` do tiến trình khác sinh ra nên có thể
-  chứa đường dẫn tuyệt đối; server thay thư mục dự án bằng `<tên dự án>` và thư mục gốc bằng
-  `<gốc>` trước khi trả về.
+  chứa đường dẫn tuyệt đối; server thay thư mục dự án bằng `<tên dự án>`, thư mục gốc bằng
+  `<gốc>`, thư mục nhạc (`GANI_DV_MUSIC_DIR`) bằng `<nhạc>`, thư mục chương trình bằng
+  `<chương trình>` và thư mục nhà của người dùng bằng `~` (đường dẫn dài nhất được thay trước)
+  trước khi trả về.
 - **Lỗi** không lộ đường dẫn hay stack trace. Cổng bị chiếm được báo rõ (không chia sẻ cổng
   trên Windows).
 - **Giao diện tĩnh (6g)** đi qua đúng cổng kiểm Host / Origin / chéo trang ở trên. Thêm:

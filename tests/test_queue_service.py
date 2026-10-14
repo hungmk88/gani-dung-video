@@ -179,8 +179,9 @@ def test_the_same_render_is_not_queued_twice(db: QueueDb, opt: Path, root: Path)
 def test_cancel_and_retry_wrappers(db: QueueDb, opt: Path, root: Path) -> None:
     [r] = add(db, opt, root / "footage", root, ban="A")
     assert cancel_job(db, r.job_id) == "cancelled"
-    assert retry_job(db, r.job_id) is True
-    assert cancel_job(db, 999) == "missing" and retry_job(db, 999) is False
+    assert retry_job(db, r.job_id, rules=RULES, settings=cfg(root)) is True
+    assert cancel_job(db, 999) == "missing"
+    assert retry_job(db, 999, rules=RULES, settings=cfg(root)) is False
 
 
 # ─────────────── CLI ───────────────
@@ -794,6 +795,28 @@ def test_a_plain_render_job_in_the_folder_also_blocks_a_pipeline(db: QueueDb, ro
     assert caught.value.pipeline_id is None  # that render was not part of any pipeline
 
 
+@pytest.mark.parametrize("draft,final", [("all", False), ("A", False), ("A", True)])
+def test_a_plain_render_is_refused_while_a_pipeline_of_the_folder_is_active(
+    db: QueueDb, root: Path, draft: str, final: bool
+) -> None:
+    """The guard used to go one way only: a pipeline waited for plain renders, but a plain
+    render could join a running pipeline and overwrite its files (audit L6)."""
+    folder = ready_project(root)
+    first = pipe(db, root)
+    before = [j.id for j in db.list_jobs()]
+    with pytest.raises(PipelineBusyError) as caught:
+        by_project(db, folder, root, draft=draft, final=final)
+    assert (caught.value.job_id, caught.value.pipeline_id) == (first.analyze_id, first.pipeline_id)
+    assert "footage" in str(caught.value) and str(root) not in str(caught.value)
+    assert [j.id for j in db.list_jobs()] == before
+
+
+def test_plain_renders_and_analyses_outside_a_pipeline_still_mix(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root)
+    enqueue_analyze(folder, db, rules=RULES, settings=cfg(root))
+    assert len(by_project(db, folder, root)) == 2
+
+
 def test_once_everything_ended_a_new_pipeline_may_start(db: QueueDb, root: Path) -> None:
     first = pipe(db, root)
     for jid in [first.analyze_id, first.draft_id, *first.render_ids]:
@@ -944,3 +967,55 @@ def test_the_lock_can_be_switched_off_in_the_rules(db: QueueDb, root: Path, tmp_
     assert not lock_path(root).exists()
     other = QueueDb(tmp_path / "other" / "queue.db")
     enqueue_analyze(root / "footage", other, rules=off, settings=cfg(root))  # nothing stops it
+
+
+def test_a_retry_takes_the_folder_like_a_new_job(db: QueueDb, root: Path) -> None:
+    """Retry used to skip the folder lock and the allow-list (audit L2)."""
+    folder = ready_project(root)
+    [r] = by_project(db, folder, root, draft="A")
+    cancel_job(db, r.job_id)
+    lock_path(root).unlink()
+    assert retry_job(db, r.job_id, rules=RULES, settings=cfg(root)) is True
+    assert Path(json.loads(lock_path(root).read_text("utf-8"))["queue_db"]) == db.path.resolve()
+
+
+def test_a_retry_on_a_folder_another_queue_took_is_refused_and_changes_nothing(
+    db: QueueDb, root: Path, tmp_path: Path
+) -> None:
+    folder = ready_project(root)
+    [r] = by_project(db, folder, root, draft="A")
+    cancel_job(db, r.job_id)
+    lock_path(root).unlink()
+    foreign_queue(tmp_path, root)
+    with pytest.raises(ProjectLockedError) as caught:
+        retry_job(db, r.job_id, rules=RULES, settings=cfg(root))
+    assert caught.value.pipeline_id == 9
+    job = db.get(r.job_id)
+    assert job is not None and job.status == "cancelled"
+
+
+def test_a_retry_keeps_the_allow_list_rules(db: QueueDb, root: Path, tmp_path: Path) -> None:
+    folder = ready_project(root)
+    [r] = by_project(db, folder, root, draft="A")
+    cancel_job(db, r.job_id)
+    with pytest.raises(ConfigError, match="GANI_DV_ALLOWED_ROOTS"):
+        retry_job(db, r.job_id, rules=RULES, settings=cfg(None))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    with pytest.raises(ConfigError, match="không nằm trong"):
+        retry_job(db, r.job_id, rules=RULES, settings=cfg(elsewhere))
+    job = db.get(r.job_id)
+    assert job is not None and job.status == "cancelled"
+
+
+def test_a_retry_that_is_refused_gives_a_new_lock_back(db: QueueDb, root: Path) -> None:
+    folder = ready_project(root)
+    [r] = by_project(db, folder, root, draft="A")
+    lock_path(root).unlink()
+    assert retry_job(db, r.job_id, rules=RULES, settings=cfg(root)) is False  # still queued
+    assert lock_path(root).is_file()  # the queued job is ours: the lock stays
+    db.claim(time.time(), 1)
+    db.finish(r.job_id, time.time(), "completed", "passed", 0, None, None)
+    lock_path(root).unlink()
+    assert retry_job(db, r.job_id, rules=RULES, settings=cfg(root)) is False  # passed
+    assert not lock_path(root).exists()
