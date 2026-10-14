@@ -40,7 +40,7 @@ from gani_dung_video.domain.jobs import Estimate
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import compile_plan
 from gani_dung_video.domain.verify_report import Finding, RoundRecord, VerifyReportFile
-from gani_dung_video.infrastructure.config_files import load_rules
+from gani_dung_video.infrastructure.config_files import CONFIG_DIR, load_rules
 from gani_dung_video.infrastructure.project_lock import acquire
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
 from gani_dung_video.infrastructure.settings import Settings
@@ -492,6 +492,39 @@ def test_console_lines_and_errors_never_carry_absolute_paths(ctx: ApiContext, ro
     for leak in (folder, slash, str(root), str(root).replace("\\", "/"), "allowed"):
         assert leak not in text, leak
     assert "QC: ĐẠT" in text and "footage" in text  # the useful part stays
+
+
+def test_the_home_music_and_program_folders_are_scrubbed_too(
+    ctx: ApiContext, root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whisper caches, the music library and the program's own files sit outside the job's
+    folder and the roots, but are just as private (audit L4)."""
+    home = tmp_path  # the allowed root lives inside it: the longest path is replaced first
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    music = tmp_path / "nhac"
+    music.mkdir()
+    c = ApiContext(ctx.db, RULES, Settings(gani_dv_allowed_roots=str(root),
+                                           gani_dv_music_dir=str(music)))  # fmt: skip
+    jid = queue_one(c, root)
+    program = CONFIG_DIR.parent
+    lines = [
+        f"tải {home / '.cache' / 'whisper' / 'small.pt'}",
+        f"đọc {music / 'bai.mp3'}",
+        f"lỗi ở {program / 'src' / 'x.py'}",
+        f"dự án {root / 'footage' / 'a.mp4'}",
+    ]
+    for line in lines:
+        c.db.add_event(jid, time.time(), "info", line)
+    c.db.claim(time.time(), 1)
+    c.db.finish(jid, time.time(), "failed", None, 2, f"Không mở được {music / 'bai.mp3'}", None)
+    text = json.dumps([e.model_dump() for e in job_events(c, jid, 0)]
+                      + [get_job(c, jid).model_dump(mode="json")], ensure_ascii=False)  # fmt: skip
+    for leak in (str(home), str(music), str(program)):
+        assert leak not in text and leak.replace("\\", "/") not in text, leak
+    events = [e.text for e in job_events(c, jid, 0)]
+    assert events[0].startswith("tải ~") and events[1].startswith("đọc <nhạc>")
+    assert "<gốc>" not in events[3] and "<footage>" in events[3]  # not "~/allowed/footage"
 
 
 # ─────────────── phase 6c-1: analysis jobs are not part of the render API yet ───────────────

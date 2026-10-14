@@ -80,7 +80,7 @@ from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, planned_sec
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
-from gani_dung_video.infrastructure.config_files import ConfigError
+from gani_dung_video.infrastructure.config_files import CONFIG_DIR, ConfigError
 from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.music_index import get_index
@@ -226,15 +226,37 @@ def _project_id_of(ctx: ApiContext, folder: Path) -> str | None:
 # ─────────────── jobs ───────────────
 
 
+def _private_dirs(ctx: ApiContext) -> list[tuple[str, str]]:
+    """Folders outside the projects that console lines still quote: the user's home (Whisper
+    and CLIP caches), the music library and the program's own folder."""
+    out: list[tuple[str, str]] = []
+    with contextlib.suppress(RuntimeError, OSError):  # no home directory can be determined
+        home = Path.home()
+        out += [(str(home), "~"), (str(home.resolve()), "~")]
+    music = music_dir(ctx.settings)
+    if music is not None:
+        folder = Path(music).expanduser()
+        out += [(str(folder), "<nhạc>"), (str(folder.resolve()), "<nhạc>")]
+    return [*out, (str(CONFIG_DIR.parent), "<chương trình>")]
+
+
 def _scrub(ctx: ApiContext, job_dir: str, text: str | None) -> str | None:
     """Console lines and errors come from other processes and may quote absolute paths: the
-    job's folder becomes <its name>, an allowed root becomes <gốc>."""
+    job's folder becomes <its name>, an allowed root <gốc>, the music library <nhạc>, the
+    program's folder <chương trình> and the home folder ~. The longest path goes first, so a
+    root inside the home folder is still <gốc>."""
     if not text:
         return text
-    swaps = [(job_dir, f"<{Path(job_dir).name}>"), *((str(r), "<gốc>") for r in ctx.roots)]
+    swaps = [(job_dir, f"<{Path(job_dir).name}>"), *((str(r), "<gốc>") for r in ctx.roots),
+             *_private_dirs(ctx)]  # fmt: skip
+    table: dict[str, str] = {}
     for base, repl in swaps:
-        for variant in {base, base.replace("\\", "/")}:
-            text = text.replace(variant, repl)
+        if len(Path(base).parts) < 2:  # "/" or "C:\\" would eat every path separator
+            continue
+        for variant in (base, base.replace("\\", "/")):
+            table.setdefault(variant, repl)
+    for variant in sorted(table, key=len, reverse=True):
+        text = text.replace(variant, table[variant])
     return text
 
 
