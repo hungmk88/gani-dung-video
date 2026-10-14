@@ -214,3 +214,58 @@ def test_a_long_title_is_sized_with_the_title_size_and_can_be_shrunk() -> None:
     fitted = fit_font_px(e, RULES, narrow, lambda t, f, s: len(t) * s * 0.9)
     assert fitted is None or fitted["chapter_title"] < 88
     assert fitted is None or fitted["caption"] == 72  # only the title size moved
+
+
+# ─────────────── audit 5: two captions that start together are fitted separately ───────────────
+
+AT_THE_SAME_MOMENT = "Giò chả tươi mười ngày"  # too long at 88 px, fine a few steps lower
+
+
+def _same_start(first: Caption, second: Caption) -> Edl:
+    return Edl(style="ke_chuyen_nghe", width=540, height=960, fps=30, video_kbps=2500, shots=[],
+               content_end=3.0, end_card_sec=2.0, duration=5.0, music=None, ambient_db=None,
+               lufs=-14.0, true_peak_db=-2.0, font="f", captions=[first, second])  # fmt: skip
+
+
+def _measure(t: str, f: str, s: int) -> float:
+    return len(t) * s * 0.9
+
+
+def test_a_title_and_a_caption_that_start_together_shrink_only_the_title() -> None:
+    """A chapter title sits on the chapter's first cut, where the first caption starts too. The
+    fit keyed sizes by start time, so the caption's kind hid the title's and the video was
+    refused although the title alone fits a few pixels down."""
+    title = Caption(start=5.0, end=8.0, text=AT_THE_SAME_MOMENT, kind="title")
+    text = Caption(start=5.0, end=7.0, text="Giò lụa", kind="text")
+    narrow = {**PX, "chapter_title": 88}
+    alone = fit_font_px(_same_start(title, text.model_copy(update={"start": 6.0})), RULES,
+                        narrow, _measure)  # fmt: skip
+    assert alone is not None and alone["chapter_title"] < 88  # the title can be fitted
+    together = fit_font_px(_same_start(title, text), RULES, narrow, _measure)
+    assert together == alone  # the same answer when they start at the same moment
+    assert together is not None and together["caption"] == 72  # the caption size never moved
+
+
+def test_the_answer_does_not_depend_on_which_caption_is_listed_first() -> None:
+    title = Caption(start=5.0, end=8.0, text=AT_THE_SAME_MOMENT, kind="title")
+    text = Caption(start=5.0, end=7.0, text="Giò lụa", kind="text")
+    narrow = {**PX, "chapter_title": 88}
+    one = fit_font_px(_same_start(title, text), RULES, narrow, _measure)
+    two = fit_font_px(_same_start(text, title), RULES, narrow, _measure)
+    assert one == two and one is not None
+
+
+def test_a_cta_and_a_caption_that_start_together_shrink_only_the_cta() -> None:
+    cta = Caption(start=9.0, end=12.0, text="Nhắn tin nhận báo giá sỉ", kind="cta")
+    text = Caption(start=9.0, end=12.0, text="Giò lụa", kind="text")
+    sizes = {**PX, "cta": 96}
+    fitted = fit_font_px(_same_start(cta, text), RULES, sizes, _measure)
+    assert fitted is not None and fitted["cta"] < 96 and fitted["caption"] == 72
+
+
+def test_text_that_cannot_fit_even_at_the_floor_still_gives_up() -> None:
+    giant = "từ " * 60
+    title = Caption(start=5.0, end=8.0, text=giant, kind="title")
+    text = Caption(start=5.0, end=7.0, text="Giò lụa", kind="text")
+    assert fit_font_px(_same_start(title, text), RULES, {**PX, "chapter_title": 88},
+                       _measure) is None  # fmt: skip
