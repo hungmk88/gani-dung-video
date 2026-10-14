@@ -597,6 +597,9 @@ export function preflightBody(o: VideoOptions): { options: Record<string, unknow
       nhac_quyen_su_dung: o.nhac === 'tai_len' ? Boolean(o.nhac_quyen_su_dung) : null,
       khuyen_mai: o.muc_dich === 'khuyen_mai' ? (o.khuyen_mai ?? null) : null,
       ghi_chu: o.ghi_chu.trim() === '' ? null : o.ghi_chu,
+      // Delivery naming (Dev Package 03): the queue hands both to `render`; blank = defaults.
+      ...(o.san_pham ? { san_pham: o.san_pham } : {}),
+      ...(o.chien_dich?.trim() ? { chien_dich: o.chien_dich.trim() } : {}),
       // Only sent when known / chosen: the server warns about a track its BPM cannot build with.
       ...(typeof o.nhac_bpm === 'number' ? { nhac_bpm: o.nhac_bpm } : {}),
       ...(o.bpm_override === true ? { bpm_override: true } : {}),

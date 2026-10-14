@@ -244,6 +244,8 @@ nghiệm thu thật). Giao diện khóa nút 3 phút khi là `false`; máy chủ
 Từ 6c, API trả **mọi loại job** (`kind`): `analyze` (phân tích footage: kiểm kê, Whisper, cắt
 cảnh, CLIP), `draft` (kịch bản: `plan` → `pick` → ước tính chi phí → **chờ duyệt** → gọi Claude)
 và `render` (như cũ). Một lần bấm "Chạy" của Wizard tạo cả chuỗi bằng `POST /api/pipelines`.
+`options` nhận thêm `san_pham` (mã trong `delivery.naming.products`) và `chien_dich` (chữ tự do),
+cả hai tùy chọn: job `render` của chuỗi đọc chúng từ `options.json` và đặt tên file giao theo đó.
 
 ### Luồng Wizard
 

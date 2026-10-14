@@ -266,3 +266,12 @@ test('a final render with a review gives the card and the pipeline row their bad
 test('a card without any review has none', () => {
   assert.equal(toRenderJob(job(), []).review ?? null, null);
 });
+
+test('preflightBody sends product and campaign only when chosen (blank = server defaults)', () => {
+  const none = preflightBody({ ...OPTS, chien_dich: '   ' }).options;
+  assert.equal('san_pham' in none, false);
+  assert.equal('chien_dich' in none, false);
+  const set = preflightBody({ ...OPTS, san_pham: 'gio-lua', chien_dich: ' Tết 2027 ' }).options;
+  assert.equal(set.san_pham, 'gio-lua');
+  assert.equal(set.chien_dich, 'Tết 2027');
+});

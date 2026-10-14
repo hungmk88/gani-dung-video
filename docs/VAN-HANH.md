@@ -382,8 +382,10 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
   thư mục nhạc bị bỏ qua (test liên kết bị bỏ qua trên Windows khi không đủ quyền tạo).
 - Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
   bằng bảng, bước `plan` vẫn đo chính xác.
-- Giao diện (web) chưa truyền `--san-pham` và `--chien-dich`: job tạo từ giao diện mang tên
-  sản phẩm `chung` và chiến dịch là tên thư mục footage.
+- Giao diện (web) chọn được sản phẩm và chiến dịch ở bước "4. Tên file giao" (từ 14/10/2026):
+  hai trường đi cùng tùy chọn vào `edit/options.json` rồi tới lệnh `render`. Bỏ trống thì sản
+  phẩm là `chung` và chiến dịch là tên thư mục footage. Chế độ "Chỉ dựng lại" không gửi tùy
+  chọn nên luôn dùng mặc định.
 - Hàng đợi đã truyền `--san-pham` và `--chien-dich` (từ 06/10/2026): job đọc hai trường từ
   `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
   như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
