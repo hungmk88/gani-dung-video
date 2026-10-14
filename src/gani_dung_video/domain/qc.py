@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.edl import Edl
+from gani_dung_video.domain.edl import Caption, Edl
 from gani_dung_video.domain.preflight import Rules
 
 PLAY_W = 1080  # ASS layout width (subtitles are laid out at the final size)
@@ -196,7 +196,10 @@ def size_key(kind: str) -> str:
     return _SIZE_KEY.get(kind, "caption")
 
 
-def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
+def _overflowing(
+    e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn
+) -> list[tuple[Caption, int, int]]:
+    """(caption, lines it needs, px it was measured at) for every caption over the line limit."""
     max_lines, usable = int(rules["qc"]["max_lines"]), usable_width(rules)
     out = []
     for c in e.captions:
@@ -207,10 +210,15 @@ def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> li
 
         lines = wrap_lines(c.text, usable, measure_line)
         if len(lines) > max_lines:
-            out.append(Finding(code="T7", level="fix", fix="font", at_sec=c.start,
-                               msg=f"Chữ '{c.text}' cần {len(lines)} dòng ở {size}px, tối đa "
-                                   f"{max_lines}."))  # fmt: skip
+            out.append((c, len(lines), size))
     return out
+
+
+def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
+    max_lines = int(rules["qc"]["max_lines"])
+    return [Finding(code="T7", level="fix", fix="font", at_sec=c.start,
+                    msg=f"Chữ '{c.text}' cần {lines} dòng ở {size}px, tối đa {max_lines}.")
+            for c, lines, size in _overflowing(e, rules, px, width)]  # fmt: skip
 
 
 def check_captions(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
@@ -243,9 +251,10 @@ def fit_font_px(
     even the floor (64 px) does not fit — then the text itself must be shortened."""
     step, floor = int(rules["qc"]["font_step_px"]), int(rules["qc"]["font_min_px"])
     sizes = dict(px)
-    kind_of = {c.start: size_key(c.kind) for c in e.captions}
-    while found := _too_long(e, rules, sizes, width):
-        over = {kind_of[f.at_sec] for f in found if f.at_sec is not None}
+    # The size to step down comes from the caption itself: two captions may start together (a
+    # chapter title and the first caption of its chapter), so the start time is not a key.
+    while found := _overflowing(e, rules, sizes, width):
+        over = {size_key(c.kind) for c, _, _ in found}
         if all(sizes[k] <= floor for k in over):
             return None
         sizes = {k: max(floor, v - step) if k in over else v for k, v in sizes.items()}
