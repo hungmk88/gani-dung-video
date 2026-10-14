@@ -109,7 +109,12 @@ def test_dist_root_off_when_unset(tmp_path: Path, value: object) -> None:
     assert dist_root({}, tmp_path) is None
 
 
-@pytest.mark.parametrize("value", ["../elsewhere", "frontend/../../up", "/etc", "C:/Windows"])
+@pytest.mark.parametrize("value", [
+    "../elsewhere", "frontend/../../up", "/etc",
+    # A drive path is absolute only on Windows; on POSIX "C:/Windows" is a folder named "C:"
+    # inside the repo, so it is rightly served there (CI runs on Linux).
+    pytest.param("C:/Windows", marks=pytest.mark.skipif(os.name != "nt", reason="Windows path")),
+])  # fmt: skip
 def test_dist_root_outside_the_repo_is_refused(tmp_path: Path, value: str) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
