@@ -83,7 +83,7 @@ export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabI
             </div>
             <div className="leading-tight">
               <div className="text-sm font-semibold tracking-wide text-slate-100">
-                GANI FOODY <span className="text-amber-400">AI STUDIO</span>
+                GANI FOODS <span className="text-amber-400">AI STUDIO</span>
               </div>
               <div className="text-xs text-slate-400">Dựng video dọc tự động</div>
             </div>
