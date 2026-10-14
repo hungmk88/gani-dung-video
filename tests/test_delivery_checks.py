@@ -221,7 +221,7 @@ def test_the_layout_matches_the_real_ass_styles(mode: str) -> None:
 
 def test_vietnamese_marks_all_have_a_glyph_in_the_bundled_font() -> None:
     caps = [Caption(start=0, end=2, text="Giò lụa Đặc biệt – ngon ơi", kind="text")]
-    brand = [("GANI", FONT), ("GANI FOODY – Đạt chuẩn HACCP Codex 2022", FONT)]
+    brand = [("GANI", FONT), ("GANI FOODS – Đạt chuẩn HACCP Codex 2022", FONT)]
     item, stop = check_glyphs(edl(caps), brand, FontMetrics().has_glyph)
     assert item.passed and stop == [] and item.value == 0.0
     assert "chữ có dấu tiếng Việt" in item.detail and "đủ glyph" in item.detail

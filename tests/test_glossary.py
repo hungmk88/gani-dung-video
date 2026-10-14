@@ -18,18 +18,19 @@ def fix(text: str) -> str:
     return " ".join(w.text for w in apply_glossary(words, TERMS))
 
 
-def test_brand_target_is_gani_only() -> None:
+def test_brand_targets_are_gani_foods_and_gani() -> None:
+    # Decision 14/10/2026: the full name is GANI FOODS (no longer "GANI only", 29/09/2026).
     raw = (CONFIG_DIR / "glossary.json").read_text(encoding="utf-8")
-    assert "Gani Foods" not in raw and "FOODY" not in raw
-    assert [t.correct for t in TERMS if "gani" in t.correct.lower()] == ["GANI"]
+    assert "FOODY" not in raw
+    assert [t.correct for t in TERMS if "gani" in t.correct.lower()] == ["GANI FOODS", "GANI"]
 
 
 @pytest.mark.parametrize(
     ("heard", "expected"),
     [
-        ("sản phẩm của gani foods", "sản phẩm của GANI"),
-        ("Gani Food, chào cả nhà", "GANI, chào cả nhà"),
-        ("xưởng ga ni phu đi đạt chuẩn", "xưởng GANI đạt chuẩn"),
+        ("sản phẩm của gani foods", "sản phẩm của GANI FOODS"),
+        ("Gani Food, chào cả nhà", "GANI FOODS, chào cả nhà"),
+        ("xưởng ga ni phu đi đạt chuẩn", "xưởng GANI FOODS đạt chuẩn"),
         ("đạt chuẩn hát sép", "đạt chuẩn HACCP"),
         ("chứng nhận vê xê a.", "chứng nhận VCA."),
         ("nước lộc thuỷ", "nước Lộc Thủy"),
@@ -46,7 +47,7 @@ def test_names_are_corrected(heard: str, expected: str) -> None:
 def test_merged_word_keeps_timing_span() -> None:
     words = [Word("của", 0.0, 0.3), Word("gani", 0.4, 0.7), Word("foods", 0.8, 1.2)]
     out = apply_glossary(words, TERMS)
-    assert out[1] == Word("GANI", 0.4, 1.2) and len(out) == 2
+    assert out[1] == Word("GANI FOODS", 0.4, 1.2) and len(out) == 2
 
 
 def test_unrelated_words_untouched() -> None:

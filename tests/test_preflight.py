@@ -71,11 +71,13 @@ def test_purpose_block_ratios_sum_to_one() -> None:
 
 
 def test_brand_is_gani_everywhere() -> None:
-    # Decision 29/09/2026: the full company name appears only in the end-card footer line.
+    # Decision 29/09/2026: the full company name appears only in the end-card footer line;
+    # 14/10/2026: that name is GANI FOODS (was GANI FOODY), and the old one is gone everywhere.
+    assert "FOODY" not in str(RULES["render"]["brand"])
     rules = copy.deepcopy(RULES)
-    assert rules["render"]["brand"].pop("footer").startswith("GANI FOODY")
+    assert rules["render"]["brand"].pop("footer").startswith("GANI FOODS – ")
     rules.pop("_ghi_chu_render")
-    assert "FOODY" not in str(rules)
+    assert "FOODS" not in str(rules)
 
 
 # ─────────────── spec §5.3.A scene table ───────────────
