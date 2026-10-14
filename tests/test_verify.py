@@ -147,6 +147,60 @@ def test_v2_block_more_than_one_scene_off() -> None:
     assert codes(issues, "ai") == ["V2", "V2"]
 
 
+def _order_issues(
+    segments: list[dict[str, Any]], p: Plan | None = None, pick: PickFile | None = None
+) -> list[Any]:
+    r = good()
+    r["drafts"] = r["drafts"][:1]  # one draft: the order is the only thing under test
+    r["drafts"][0]["segments"] = segments
+    c = VerifyContext(plan=p or plan(drafts=1), pick=pick or PICK, rules=RULES, banned=BANNED)
+    _, issues = run(r, c)
+    return [i for i in issues if i.code == "V2" and i.draft == "A" and "thứ tự" in i.msg]
+
+
+def test_v2_blocks_must_follow_the_plan_order() -> None:
+    """Audit 3: counts per block were right, the order was not: captions then ran over each other
+    (T6) after the paid call. The draft goes main, cta, main, hook; the plan is hook, main, cta."""
+    found = _order_issues(
+        [seg("main", "a1"), seg("cta", "c0"), seg("main", "b0"), seg("hook", "a0")]
+    )
+    assert len(found) == 1 and found[0].level == "ai"
+    assert "hook" in found[0].msg and "main" in found[0].msg  # says what order is expected
+
+
+def test_v2_a_block_must_be_one_unbroken_run() -> None:
+    found = _order_issues([seg("hook", "a0"), seg("main", "a1"), seg("hook", "c0"),
+                           seg("cta", "b0")])  # fmt: skip
+    assert len(found) == 1
+
+
+def test_v2_the_plan_order_passes() -> None:
+    assert _order_issues([seg("hook", "a0"), seg("main", "a1"), seg("main", "b0"),
+                          seg("cta", "c0")]) == []  # fmt: skip
+
+
+def test_v2_a_missing_block_is_the_counts_business_not_the_orders() -> None:
+    # hook, cta only: the per-block counts already refuse it; the order of what is there is fine
+    assert _order_issues([seg("hook", "a0"), seg("hook", "a1"), seg("hook", "b0"),
+                          seg("cta", "c0")]) == []  # fmt: skip
+
+
+def test_v2_chapter_sub_blocks_keep_their_order_too() -> None:
+    p = plan(drafts=1)
+    blocks = [PlanBlock(role="hook", beats=4), PlanBlock(role="c1#1", beats=4, chapter="c1"),
+              PlanBlock(role="c1#2", beats=4, chapter="c1"),
+              PlanBlock(role="cta", beats=4, text="Nhắn tin nhận báo giá sỉ")]  # fmt: skip
+    p = p.model_copy(update={"blocks": blocks})
+    ok = [seg("hook", "a0"), seg("c1#1", "a1"), seg("c1#2", "b0"), seg("cta", "c0")]
+    swapped = [seg("hook", "a0"), seg("c1#2", "b0"), seg("c1#1", "a1"), seg("cta", "c0")]
+    roles = ("hook", "c1#1", "c1#2", "cta")
+    pick = PICK.model_copy(update={"blocks": [
+        BlockCandidates(role=r, beats=4, required_tags=[], missing_tags=[], candidates=CANDS)
+        for r in roles]})  # fmt: skip
+    assert _order_issues(ok, p, pick) == []
+    assert len(_order_issues(swapped, p, pick)) == 1
+
+
 def test_v2_block_off_by_one_scene_is_tolerated_but_total_is_strict() -> None:
     p = plan()
     hook = p.blocks[0].model_copy(update={"beats": 6})
