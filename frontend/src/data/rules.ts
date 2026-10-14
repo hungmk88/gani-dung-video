@@ -225,7 +225,7 @@ export const RULES: RulesBundle = {
       level: 'block',
       stage: 'preflight',
       desc: 'Theo mô tả × ghi chú < 20 từ',
-      msg: "Phong cách 'Theo mô tả của tôi' cần ghi chú ít nhất {min} từ (hiện có {count}).",
+      msg: "Phong cách 'Theo mô tả của tôi' cần ghi chú ít nhất {min} từ (hiện có {count}). Ví dụ: 'Mở bằng cảnh cắt lát giò, nhịp chậm, chữ trắng tối giản, kết bằng logo và số Zalo…'",
     },
     X5: {
       code: 'X5',
@@ -274,7 +274,7 @@ export const RULES: RulesBundle = {
       level: 'warn',
       stage: 'preflight',
       desc: '3 bản × 3 phút',
-      msg: '3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3. Kiểm tra ước tính trước khi chạy.',
+      msg: '3 bản nháp × 3 phút sẽ tốn thời gian và chi phí gấp 3, và câu trả lời của Claude dễ bị cắt vì quá dài. Nên chọn 2 bản; kiểm tra ước tính trước khi chạy.',
     },
     X11: {
       code: 'X11',
@@ -311,6 +311,17 @@ export const RULES: RulesBundle = {
     '100 phần trăm thiên nhiên',
     'tự nhiên 100 phần trăm',
     'thiên nhiên 100 phần trăm',
+  ],
+
+  // config/rules.json → delivery.naming.products (the products a delivered file may be named
+  // for). Same list, same order: src/data/rules.test.ts fails when this copy drifts.
+  deliveryProducts: [
+    'gio-lua',
+    'cha-lua',
+    'cha-bo',
+    'nem-chua',
+    'bo-vien',
+    'chung',
   ],
 
   // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
