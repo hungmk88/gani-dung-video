@@ -5,7 +5,8 @@
  */
 
 export interface ApiErrorBody {
-  error: { code: string; message: string };
+  /** `pipeline_id` / `job_id` only on 409 `pipeline_active` / `project_locked`. */
+  error: { code: string; message: string; pipeline_id?: number; job_id?: number };
 }
 
 export interface ApiProject {
