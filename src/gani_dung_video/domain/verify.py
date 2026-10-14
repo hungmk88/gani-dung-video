@@ -131,7 +131,27 @@ def _check_beats(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
     if total != plan.planned_beats:
         out.append(Issue("V2", "ai", f"Tổng {total} phách, phải đúng {plan.planned_beats}.",
                          d.draft))  # fmt: skip
+    out += _check_block_order(d, ctx)
     return out
+
+
+def _check_block_order(d: AiDraft, ctx: VerifyContext) -> list[Issue]:
+    """V2: the blocks follow the plan's order and each is one unbroken run of cuts.
+
+    Counting beats per block does not see the order, yet everything downstream assumes it: a
+    block's caption is held from its first cut to its last, and a chapter title sits on its
+    first cut. A draft that goes main, cta, main, hook has the right counts and overlapping
+    captions (T6, found only after the paid call). Roles the plan does not have are V1's
+    business and left out here."""
+    order = [b.role for b in ctx.plan.blocks]
+    rank = {r: i for i, r in enumerate(order)}
+    runs = [r for r, _ in itertools.groupby(s.block for s in d.segments if s.block in rank)]
+    ranks = [rank[r] for r in runs]
+    if ranks == sorted(ranks) and len(set(runs)) == len(runs):
+        return []
+    return [Issue("V2", "ai", f"Thứ tự khối sai: plan đi {' → '.join(order)}, bản nháp đang đi "
+                              f"{' → '.join(runs)}. Mỗi khối là một mạch liền, đúng thứ tự "
+                              "plan.", d.draft)]  # fmt: skip
 
 
 # ─────────────── V4, V5, V6 ───────────────
