@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.drafts import DATA_TAG, NOTE_TAG
+from gani_dung_video.domain.drafts import data_block, note_block
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.speech_edit import PhrasesFile
@@ -128,10 +128,9 @@ def build_speech_user_prompt(
         "never_together": [list(p) for p in pick.similar_pairs],
         "missing_shots_known": pick.missing_shots,
     }  # fmt: skip
-    parts = [f"<{DATA_TAG}>{json.dumps(data, ensure_ascii=False)}</{DATA_TAG}>"]
+    parts = [data_block(data)]
     if note and note.strip():
-        safe = note.replace(f"</{NOTE_TAG}>", "").replace(f"<{NOTE_TAG}>", "")
-        parts.append(f"<{NOTE_TAG}>\n{safe.strip()}\n</{NOTE_TAG}>")
+        parts.append(note_block(note))
     if errors:
         prev = json.dumps(previous.model_dump(), ensure_ascii=False) if previous else "{}"
         parts.append("Bản trả lời trước bị kiểm tra phát hiện lỗi, hãy sửa và trả lại đủ các "
