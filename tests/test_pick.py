@@ -67,6 +67,16 @@ def test_candidate_ids_match_the_snap_ids_of_phase_4a() -> None:
     )
 
 
+def test_candidate_ids_stay_unique_and_match_snap_ids_when_two_clips_share_a_stem() -> None:
+    from gani_dung_video.domain.beats import segment_refs
+
+    scenes = [scene("IMG_1.MOV", [seg(0, 5)]), scene("IMG_1.mp4", [seg(0, 5)]),
+              scene("IMG_2.mp4", [seg(0, 5)])]  # fmt: skip
+    ids = [c.id for c in eligible_candidates(scenes, STYLE, BEAT, ALLOWED)]
+    assert len(set(ids)) == 3 and "IMG_2_s0_0" in ids
+    assert ids == list(segment_refs(scenes, STYLE))
+
+
 # ─────────────── ranking (step 2: required tags, step 3: dish, step 4: aesthetic) ───────────────
 
 

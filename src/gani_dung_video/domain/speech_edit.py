@@ -114,12 +114,15 @@ def _breaks(words: Sequence[SpokenWord], cfg: Mapping[str, Any], style: Mapping[
 
 
 def split_phrases(words: Sequence[SpokenWord], clip: str, cfg: Mapping[str, Any],
-                  style: Mapping[str, Any]) -> list[Phrase]:  # fmt: skip
-    """Cut a clip's words into phrases with padded cut windows (pad_ms of the style)."""
+                  style: Mapping[str, Any], stem: str | None = None) -> list[Phrase]:  # fmt: skip
+    """Cut a clip's words into phrases with padded cut windows (pad_ms of the style).
+
+    `stem` is the id prefix (footage.clip_stems over the whole folder); default: the file
+    name without its extension."""
     if not words:
         return []
     before, after = (float(x) / 1000 for x in style["pad_ms"])
-    stem, first = clip.rsplit(".", 1)[0], 0
+    stem, first = stem if stem is not None else clip.rsplit(".", 1)[0], 0
     out: list[Phrase] = []
     for end_idx in _breaks(words, cfg, style):
         ws = list(words[first : end_idx + 1])
