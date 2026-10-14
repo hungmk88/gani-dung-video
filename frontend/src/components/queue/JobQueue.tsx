@@ -1,5 +1,6 @@
 import { Ban, Clock3, Coins, Inbox, RotateCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { startPolling } from '../../lib/poll';
 import { api } from '../../services/api';
 import type { JobStatus, PipelineJobInfo, RenderJob } from '../../types/rules';
 import { ApprovalDialog } from './ApprovalDialog';
@@ -33,31 +34,30 @@ export function JobQueue({
   const [activeJob, setActiveJob] = useState<RenderJob | null>(null);
   const [showPlan, setShowPlan] = useState(false);
   const [showApproval, setShowApproval] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Tied to the card it came from: switching cards must not show another card's failure.
+  const [actionError, setActionError] = useState<{ jobId: string | null; message: string } | null>(null);
+  // Bumped after an approval: restarting the subscription drops a poll that was already in
+  // flight before it, whose stale "awaiting approval" answer would otherwise win.
+  const [subscription, setSubscription] = useState(0);
 
   // Poll the job list (neither the mock nor the server pushes list changes).
-  useEffect(() => {
-    let cancelled = false;
-    async function tick() {
-      try {
-        const list = await api.listJobs();
-        if (!cancelled) setJobs(list);
-      } catch {
-        // Server offline: keep the last list, the header badge already says so.
-      }
-    }
-    void tick();
-    const t = setInterval(tick, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+  useEffect(
+    () =>
+      startPolling(async (signal) => {
+        try {
+          const list = await api.listJobs();
+          if (!signal.aborted) setJobs(list);
+        } catch {
+          // Server offline: keep the last list, the header badge already says so.
+        }
+      }, 2000),
+    [],
+  );
 
   useEffect(() => {
     if (!selectedJobId) return;
     return api.subscribeJob(selectedJobId, setActiveJob);
-  }, [selectedJobId]);
+  }, [selectedJobId, subscription]);
 
   // Derived instead of reset via a second effect: avoids a stale job flashing while the
   // new subscription's first update is still in flight after switching selection.
@@ -66,12 +66,18 @@ export function JobQueue({
     displayedJob !== null &&
     (LIVE.includes(displayedJob.status) || (displayedJob.jobs ?? []).some((j) => LIVE.includes(j.status)));
 
+  const shownError = actionError && actionError.jobId === selectedJobId ? actionError.message : null;
+
+  const closePlan = useCallback(() => setShowPlan(false), []);
+  const closeApproval = useCallback(() => setShowApproval(false), []);
+
   async function run(action: () => Promise<unknown>) {
+    const jobId = selectedJobId;
     setActionError(null);
     try {
       await action();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError({ jobId, message: e instanceof Error ? e.message : String(e) });
     }
   }
 
@@ -121,9 +127,9 @@ export function JobQueue({
           </div>
         ) : (
           <>
-            {actionError && (
+            {shownError && (
               <p className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
-                {actionError}
+                {shownError}
               </p>
             )}
 
@@ -171,6 +177,8 @@ export function JobQueue({
             )}
 
             <VideoPlayerWithQA
+              // Draft/tab choices belong to one card: a new card starts from its own defaults.
+              key={displayedJob.id}
               job={displayedJob}
               rerenderBlocked={live}
               // plan.json is only shown as a real sample in mock mode; the API has no route for it.
@@ -187,15 +195,16 @@ export function JobQueue({
         )}
       </div>
 
-      {showPlan && <PlanModal onClose={() => setShowPlan(false)} />}
+      {showPlan && <PlanModal onClose={closePlan} />}
       {showApproval && displayedJob?.approval && (
         <ApprovalDialog
           // A new estimate is a new decision: remounting drops any earlier tick.
           key={`${displayedJob.approval.jobId}|${displayedJob.approval.worstCallVnd}|${displayedJob.approval.capVnd}`}
           job={displayedJob}
-          onClose={() => setShowApproval(false)}
+          onClose={closeApproval}
           onApproved={(next) => {
             setActiveJob(next);
+            setSubscription((n) => n + 1);
             setShowApproval(false);
           }}
         />
