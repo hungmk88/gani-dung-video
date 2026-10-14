@@ -416,6 +416,15 @@ def test_malformed_bodies_are_400_and_change_nothing(api: Api, raw: bytes) -> No
     assert api.ctx.db.list_jobs() == []
 
 
+@pytest.mark.parametrize("route", ["/api/jobs", "/api/pipelines", "/api/preflight"])
+def test_deeply_nested_json_is_a_400_not_a_crash(api: Api, route: str) -> None:
+    """Python's JSON parser gives up on deep nesting with a RecursionError (audit L3)."""
+    depth = RULES["api"]["max_body_bytes"] // 2 - 10
+    status, _h, body = api.call("POST", route, raw=b"[" * depth + b"]" * depth)
+    assert status == 400 and json.loads(body)["error"]["code"] == "bad_request"
+    assert api.ctx.db.list_jobs() == []
+
+
 def test_cancel_and_retry_accept_no_body_at_all_but_a_content_type_must_be_json(
     api: Api,
 ) -> None:

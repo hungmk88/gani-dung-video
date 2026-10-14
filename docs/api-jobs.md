@@ -63,7 +63,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 
 | HTTP | `code` | Khi nào |
 |---|---|---|
-| 400 | `bad_request` | Thân/tham số sai (`draft` không phải A/B/C/all, `limit` ngoài 1–200, `project_id` sai dạng, JSON hỏng, trường thừa) |
+| 400 | `bad_request` | Thân/tham số sai (`draft` không phải A/B/C/all, `limit` ngoài 1–200, `project_id` sai dạng, JSON hỏng hoặc lồng quá sâu, trường thừa) |
 | 403 | `host_khong_hop_le` / `origin_khong_hop_le` / `yeu_cau_cheo_trang` | Sai Host, Origin không nằm trong danh sách, yêu cầu chéo trang không có Origin/Referer tin cậy |
 | 404 | `not_found` | Không có dự án / job / tệp / đường dẫn; job hoặc pipeline có thư mục nằm ngoài `GANI_DV_ALLOWED_ROOTS` cũng là 404 (mọi route `/api/jobs/{id}…`, `/media/{id}/…`; `GET /api/jobs` bỏ hẳn các job đó khỏi danh sách) |
 | 405 | `method_not_allowed` | Sai phương thức (kèm header `Allow`) |

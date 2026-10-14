@@ -293,7 +293,7 @@ def _make_handler(ctx: ApiContext, cfg: Mapping[str, Any]) -> type[BaseHTTPReque
             body = self.rfile.read(length)
             try:
                 data = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, ValueError) as e:
+            except (UnicodeDecodeError, ValueError, RecursionError) as e:  # deep nesting
                 raise _HttpError(400, "bad_request", "Thân yêu cầu không phải JSON hợp lệ.") from e
             if not isinstance(data, dict):
                 raise _HttpError(400, "bad_request", "Thân yêu cầu phải là một đối tượng JSON.")
