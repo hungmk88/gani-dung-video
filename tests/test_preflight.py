@@ -249,6 +249,20 @@ def test_x12_variants() -> None:
     assert far is not None and far["level"] == "warn"
 
 
+def test_x13_counts_the_end_card_in_the_video_length() -> None:
+    """Audit 4: 16 s of music is longer than a 15 s video but not than 15 s + the 2 s end card."""
+    kw: dict[str, Any] = {
+        "phong_cach": "ke_chuyen_nghe",
+        "muc_dich": "gioi_thieu_xuong",
+        "do_dai_giay": 15,
+        "nhac": "tai_len",
+        "nhac_quyen_su_dung": True,
+    }
+    assert "X13" in codes(run(nhac_giay=16, **kw))
+    assert "X13" not in codes(run(nhac_giay=17, **kw))
+    assert "X13" not in codes(run(nhac_giay=40, **kw))
+
+
 def test_music_facts_ignored_without_music() -> None:
     r = run(phong_cach="sang_trong", muc_dich="ke_chuyen_thuong_hieu", nhac="khong_nhac",
             nhac_bpm=200, nhac_giay=5)  # fmt: skip

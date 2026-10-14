@@ -233,8 +233,18 @@ def _check_music(rules: Rules, o: VideoOptions) -> list[Issue]:
         x12 = check_bpm(rules, o.nhac_bpm, float(rng[0]), float(rng[1]))
         if x12:
             out.append(x12)
-    if o.nhac_giay is not None and o.nhac_giay < o.do_dai_giay:
-        out.append(_issue(rules, "X13", music=f"{o.nhac_giay:g}", video=o.do_dai_giay))
+    # the music runs to the end of the file: the video plus its end card (rules.render)
+    end_card = float(rules["render"]["end_card_sec"])
+    if o.nhac_giay is not None and o.nhac_giay < o.do_dai_giay + end_card:
+        out.append(
+            _issue(
+                rules,
+                "X13",
+                music=f"{o.nhac_giay:g}",
+                video=f"{o.do_dai_giay + end_card:g}",
+                end_card=f"{end_card:g}",
+            )
+        )
     out += _check_bpm_safety(rules, o)
     return out
 
