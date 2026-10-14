@@ -60,6 +60,7 @@ export function MusicPicker({
             <button
               key={id}
               type="button"
+              aria-pressed={selected}
               onClick={() => onChange({ nhac: id, nhac_quyen_su_dung: id === 'tai_len' ? false : null })}
               className={`rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${
                 selected

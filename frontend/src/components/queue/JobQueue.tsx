@@ -128,7 +128,10 @@ export function JobQueue({
         ) : (
           <>
             {shownError && (
-              <p className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+              <p
+                aria-live="polite"
+                className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300"
+              >
                 {shownError}
               </p>
             )}

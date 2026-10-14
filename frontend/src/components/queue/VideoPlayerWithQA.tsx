@@ -125,6 +125,7 @@ export function VideoPlayerWithQA({
             <button
               key={o.draft}
               type="button"
+              aria-pressed={o.draft === (output?.draft ?? '')}
               onClick={() => setChosenDraft(o.draft)}
               className={`rounded-md border px-3 py-1 ${
                 o.draft === (output?.draft ?? '')
@@ -141,6 +142,7 @@ export function VideoPlayerWithQA({
         <div className="flex gap-1 rounded-lg border border-slate-800 bg-slate-950/40 p-0.5 text-xs">
           <button
             type="button"
+            aria-pressed={tab === 'preview'}
             onClick={() => setTab('preview')}
             className={`rounded-md px-3 py-1 ${tab === 'preview' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}
           >
@@ -148,6 +150,7 @@ export function VideoPlayerWithQA({
           </button>
           <button
             type="button"
+            aria-pressed={tab === 'final'}
             onClick={() => setTab('final')}
             disabled={!finalUrl}
             className={`rounded-md px-3 py-1 disabled:opacity-40 ${

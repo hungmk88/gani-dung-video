@@ -1,19 +1,33 @@
 import { X } from 'lucide-react';
+import { useEffect } from 'react';
 import { SAMPLE_PLAN_JSON } from '../../data/mockPlan';
 
 export function PlanModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="plan-modal-title"
         onClick={(e) => e.stopPropagation()}
         className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200">edit/plan.json</h3>
+            <h3 id="plan-modal-title" className="text-sm font-semibold text-slate-200">
+              edit/plan.json
+            </h3>
             <p className="text-[11px] text-slate-500">
               Mẫu thật từ lần chạy 29/09/2026 (review_mon_an · ban_hang · 30s) — minh hoạ hình
               dạng dữ liệu, không phải tác vụ đang chọn.
@@ -22,6 +36,7 @@ export function PlanModal({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng"
             className="rounded p-1 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
           >
             <X className="h-4 w-4" />

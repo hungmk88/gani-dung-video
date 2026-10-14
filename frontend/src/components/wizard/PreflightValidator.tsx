@@ -51,7 +51,10 @@ export function PreflightValidator({
           Chọn đủ phong cách, mục đích, thời lượng và chế độ nhạc để bắt đầu kiểm tra.
         </p>
       ) : result === null ? (
-        <p className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500">
+        <p
+          aria-live="polite"
+          className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-500"
+        >
           {error === null && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {error === null ? 'Đang kiểm tra…' : 'Chưa kiểm tra được.'}
         </p>
@@ -135,7 +138,9 @@ export function PreflightValidator({
 
 function ErrorNote({ message }: { message: string }) {
   return (
-    <p className="mt-3 flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+    <p
+      aria-live="polite"
+      className="mt-3 flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       {message}
     </p>

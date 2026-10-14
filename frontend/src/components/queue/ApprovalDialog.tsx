@@ -188,14 +188,16 @@ export function ApprovalDialog({
           </label>
 
           {error && (
-            <p className="flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-rose-300">
+            <p aria-live="polite" className="flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-rose-300">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               {error}
             </p>
           )}
 
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] text-slate-500">{check.ok ? '' : check.reason}</span>
+            <span aria-live="polite" className="text-[11px] text-slate-500">
+              {check.ok ? '' : check.reason}
+            </span>
             <div className="flex gap-2">
               <button
                 type="button"

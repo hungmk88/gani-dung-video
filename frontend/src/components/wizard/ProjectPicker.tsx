@@ -87,7 +87,7 @@ export function ProjectPicker({
       </div>
 
       {error ? (
-        <p className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+        <p aria-live="polite" className="rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
           {error}
         </p>
       ) : projects === null ? (
@@ -108,6 +108,7 @@ export function ProjectPicker({
                   <button
                     type="button"
                     disabled={!selectable}
+                    aria-pressed={selected}
                     onClick={() => onChange({ projectId: p.id })}
                     className={`w-full rounded-lg border px-3 py-2.5 text-left transition ${
                       selected

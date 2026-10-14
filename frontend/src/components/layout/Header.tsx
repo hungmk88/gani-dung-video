@@ -112,6 +112,7 @@ export function Header({ tab, onTabChange }: { tab: TabId; onTabChange: (t: TabI
             <button
               key={t.id}
               type="button"
+              aria-current={tab === t.id ? 'page' : undefined}
               onClick={() => onTabChange(t.id)}
               className={`flex-1 rounded-md px-4 py-2 font-medium transition sm:flex-none ${
                 tab === t.id

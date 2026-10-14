@@ -55,6 +55,7 @@ export function RuleSelector({
               <button
                 key={id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => onChange({ phong_cach: id })}
                 className={`relative rounded-lg border px-3 py-2.5 text-left transition ${
                   selected
@@ -79,6 +80,7 @@ export function RuleSelector({
         {options.phong_cach === 'theo_mo_ta' && (
           <div className="mt-3">
             <textarea
+              aria-label="Mô tả phong cách mong muốn"
               value={options.ghi_chu}
               onChange={(e) => onChange({ ghi_chu: e.target.value })}
               rows={3}
@@ -109,6 +111,7 @@ export function RuleSelector({
               <button
                 key={id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => onChange({ muc_dich: id })}
                 className={`rounded-lg border px-3 py-2.5 text-left transition ${
                   selected
@@ -176,6 +179,7 @@ export function RuleSelector({
                   key={d}
                   type="button"
                   disabled={locked}
+                  aria-pressed={selected}
                   title={locked ? 'Video 3 phút chưa mở: đang chờ nghiệm thu bằng footage thật.' : undefined}
                   onClick={() =>
                     onChange({ do_dai_giay: d, so_ban_nhap: draftsFor(d, options.so_ban_nhap) })
@@ -208,6 +212,7 @@ export function RuleSelector({
               <button
                 key={n}
                 type="button"
+                aria-pressed={options.so_ban_nhap === n}
                 onClick={() => onChange({ so_ban_nhap: n })}
                 title={
                   options.do_dai_giay === 180 && n === 3
