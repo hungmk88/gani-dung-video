@@ -394,19 +394,23 @@ def _qa_view(report: QcReport, job: Job, folder: Path) -> QaView:
 
 
 def _media_path(ctx: ApiContext, job: Job, kind: str) -> Path | None:
-    """Where a media file of a finished job lives, or None. Rebuilt, never trusted."""
+    """Where a media file of a finished job lives, or None. Rebuilt, never trusted.
+
+    Every folder on the way (edit/, render/, the draft's) may be a link: the file itself, once
+    every link is followed, must still be inside an allowed root."""
     if job.status != "completed":
         return None
     try:
         name = media_file_name(kind, job.draft, job.final)
     except ValueError:
         return None
+    roots = ctx.roots
     folder = Path(job.project_dir).resolve()
-    if not any(_inside(folder, r) for r in ctx.roots):
+    if not any(_inside(folder, r) for r in roots):
         return None
     out = (folder / EDIT_DIR / "render" / job.draft).resolve()
     path = (out / name).resolve()
-    if path.parent != out or not path.is_file():
+    if path.parent != out or not any(_inside(path, r) for r in roots) or not path.is_file():
         return None
     return path
 

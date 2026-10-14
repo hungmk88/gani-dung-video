@@ -416,6 +416,34 @@ def test_a_forged_row_cannot_point_media_elsewhere(ctx: ApiContext, root: Path,
     assert e.value.status == 404
 
 
+def link_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("cannot create links here")
+
+
+@pytest.mark.parametrize("linked", ["edit", "edit/render", "edit/render/A"])
+def test_a_render_folder_linked_outside_the_roots_is_not_served(
+    ctx: ApiContext, root: Path, tmp_path: Path, linked: str
+) -> None:
+    """Only the project folder used to be checked: edit/, render/ or render/A could be a link
+    to anywhere, and the video behind it was served (audit L1)."""
+    jid = queue_one(ctx, root)
+    finish_job(ctx, jid)
+    inside = root / "footage" / linked
+    outside = tmp_path / "outside" / "x"
+    outside.parent.mkdir()
+    inside.rename(outside)
+    link_or_skip(inside, outside)
+    assert (root / "footage" / "edit" / "render" / "A" / "nhap_A_540p.mp4").is_file()
+    assert get_job(ctx, jid).video_url is None
+    for kind in ("video", "cover", "srt"):
+        with pytest.raises(ApiError) as e:
+            resolve_media(ctx, jid, kind)
+        assert e.value.status == 404
+
+
 # ─────────────── no absolute paths leave the server (console lines, errors) ───────────────
 
 

@@ -626,7 +626,8 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
   64KB, `Content-Length`, không nhận `Transfer-Encoding`.
 - **CORS** chỉ trả cho Origin được phép; `OPTIONS` (preflight) chỉ cho Origin được phép.
 - **Media**: client chỉ gửi `id` + loại tệp; server tự dựng đường dẫn từ thư mục dự án và bản
-  nháp của job, kiểm tra lại allow-list mỗi lần, chặn liên kết trỏ ra ngoài; kiểu tệp cố định
+  nháp của job, kiểm tra lại allow-list mỗi lần, chặn liên kết trỏ ra ngoài (tệp thật, sau khi
+  đi hết mọi liên kết ở `edit/`, `render/`, `render/<bản>`, phải còn nằm trong allow-list); kiểu tệp cố định
   (`video/mp4`, `image/jpeg`, `text/plain`), `X-Content-Type-Options: nosniff`.
 - **Đường dẫn**: dòng console (`events`) và `error_msg` do tiến trình khác sinh ra nên có thể
   chứa đường dẫn tuyệt đối; server thay thư mục dự án bằng `<tên dự án>` và thư mục gốc bằng
