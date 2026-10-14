@@ -7,6 +7,7 @@ starts on its beat (xfade overlaps the two, it does not shift the timeline).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -175,17 +176,21 @@ def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int,
 
 def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Clip], fps: int,
            group_of: Mapping[str, str] | None = None) -> list[Shot]:  # fmt: skip
+    """Shots in whole frames. The source window is the cut's own length (+ its dissolve) counted
+    from the rounded in-point, so source + freeze - dissolve is exactly t_end - t_start frames
+    and the joined picture (concat/xfade only add lengths up) lands on every cut. A source too
+    short for that ends on its last whole frame; the rest is frozen (pad)."""
     segs = draft.segments
     out: list[Shot] = []
     for seg, d in zip(segs, _dissolves(segs, style, fps, group_of), strict=True):
         source = _source(seg, clips)
         clip = clips[source]
-        want = seg.src_out + d
-        src_out = min(want, clip.duration_sec)
-        out.append(Shot(source=source, src_in=_frame(seg.src_in, fps), src_out=_frame(src_out, fps),
-                        t_start=_frame(seg.t_start, fps), t_end=_frame(seg.t_end, fps),
-                        block=seg.block, hdr=clip.is_hdr, dissolve_out_sec=_frame(d, fps),
-                        pad_sec=_frame(max(0.0, want - src_out), fps)))  # fmt: skip
+        f_in, f0, f1, fd = (round(x * fps) for x in (seg.src_in, seg.t_start, seg.t_end, d))
+        want = f_in + (f1 - f0) + fd
+        f_out = max(f_in, min(want, math.floor(clip.duration_sec * fps + 1e-3)))
+        out.append(Shot(source=source, src_in=f_in / fps, src_out=f_out / fps, t_start=f0 / fps,
+                        t_end=f1 / fps, block=seg.block, hdr=clip.is_hdr,
+                        dissolve_out_sec=fd / fps, pad_sec=(want - f_out) / fps))  # fmt: skip
     return out
 
 

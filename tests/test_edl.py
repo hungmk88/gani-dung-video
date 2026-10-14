@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import Any
 
 import pytest
@@ -130,6 +131,51 @@ def test_extension_past_the_end_of_the_source_is_padded_with_its_last_frame() ->
     c = e.shots[3]  # c.mp4: 10 s long, src_out 9.8 + 0.4 s wanted
     assert c.src_out == pytest.approx(10.0) and c.pad_sec == pytest.approx(0.2)
     assert all(s.pad_sec == 0 for s in e.shots if s.source != "c.mp4")
+
+
+def test_the_cut_out_never_reads_past_the_end_of_the_source() -> None:
+    clips = {"d.mp4": clip("d.mp4", dur=3.02)}  # 90.6 frames: frame 91 does not exist
+    e = build_edl(draft([cut("hook", "d.mp4", 0.0, 3.0, 0.1)]), plan(), clips, RULES, False)
+    [s] = e.shots
+    assert s.src_out <= 3.02 and frames(s.src_out) == pytest.approx(90)
+    assert frames(s.pad_sec) == pytest.approx(round(frames(0.1 + 3.0)) - 90)  # from rounded ends
+
+
+def _played_frames(s: Any) -> int:
+    """Frames a shot adds to the joined picture: its source window, its freeze, minus the
+    cross-fade the next shot overlaps it by."""
+    return round(frames(s.src_out - s.src_in)) + round(frames(s.pad_sec)) - round(
+        frames(s.dissolve_out_sec))  # fmt: skip
+
+
+@pytest.mark.parametrize("style", ["tvc_cat_nhanh", "ke_chuyen_nghe", "sang_trong"])
+def test_shots_add_up_to_the_planned_timeline_to_the_frame(style: str) -> None:
+    rng = random.Random(f"edl-{style}")
+    for _ in range(200):
+        beat = rng.uniform(0.3, 1.2)
+        n = rng.randint(2, 8)
+        bounds = sorted(rng.sample(range(1, 4 * n), n - 1))
+        edges = [round(b * beat * FPS) / FPS for b in [0, *bounds, 4 * n]]
+        blocks = ["hook"] + ["main"] * (n - 2) + ["cta"]
+        clips: dict[str, Any] = {}
+        segs = []
+        for i in range(n):
+            src_in = rng.uniform(0.0, 5.0)
+            length = edges[i + 1] - edges[i]
+            name = f"v{i}.mp4"  # some sources end before the cut (and its dissolve) does
+            clips[name] = clip(name, dur=src_in + length + rng.uniform(-0.3, 1.0))
+            segs.append(cut(blocks[i], name, edges[i], edges[i + 1], src_in))
+        p = plan(style, text_rules={"max_words": 4})
+        if rng.random() < 0.3:  # music mode cut at a chosen length
+            p = trimmed(round(rng.uniform(edges[1], edges[-1]), 1), fade=0.0)
+        e = build_edl(draft(segs), p, clips, RULES, preview=False)
+        played = 0
+        for s in e.shots:
+            played += _played_frames(s)
+            assert played == round(frames(s.t_end))  # 0 frames of drift at every cut
+            assert s.src_out <= clips[s.source].duration_sec + 1e-9
+            assert s.pad_sec >= 0
+        assert played == round(frames(e.content_end))
 
 
 # ─────────────── audio ───────────────
