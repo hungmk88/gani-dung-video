@@ -1,6 +1,7 @@
 import { Cpu, Database, KeyRound, Music2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { musicBadge } from '../../lib/music';
+import { startPolling } from '../../lib/poll';
 import { api } from '../../services/api';
 import { useMusicTracks } from '../wizard/useMusicTracks';
 import type { HealthInfo } from '../../types/rules';
@@ -38,20 +39,18 @@ const HEALTH_POLL_MS = 5000;
 // Daemon status badge: mock always reads "online"; real polls GET /api/health.
 function useHealth(): HealthInfo | null {
   const [health, setHealth] = useState<HealthInfo | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const tick = () =>
-      api
-        .health()
-        .then((h) => !cancelled && setHealth(h))
-        .catch(() => !cancelled && setHealth(null));
-    void tick();
-    const t = setInterval(tick, HEALTH_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+  useEffect(
+    () =>
+      startPolling(
+        (signal) =>
+          api
+            .health()
+            .then((h) => !signal.aborted && setHealth(h))
+            .catch(() => !signal.aborted && setHealth(null)),
+        HEALTH_POLL_MS,
+      ),
+    [],
+  );
   return health;
 }
 
