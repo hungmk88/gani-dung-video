@@ -93,7 +93,12 @@ def test_banned_list_is_the_agreed_phrase_list() -> None:
         # Dev Package 03, T0 (decision 01/10/2026): flat list, four more phrases.
         # NVH verified the list on 13/10/2026: "hàn the" and "không chất bảo quản" are not on it.
         "thần dược", "minh long", "atala", "foco",
+        # NVH 14/10/2026: "100%" does not match the words "100 phần trăm"; four narrow phrases,
+        # both orders, so the claim of natural origin is caught without flagging "100 phần trăm".
+        "100 phần trăm tự nhiên", "100 phần trăm thiên nhiên",
+        "tự nhiên 100 phần trăm", "thiên nhiên 100 phần trăm",
     }  # fmt: skip
+    assert len(BANNED) == 23 and len(set(BANNED)) == 23  # no phrase twice
     assert "trị" not in BANNED and "chữa" not in BANNED and "nhất" not in BANNED
 
 
@@ -213,3 +218,23 @@ def test_the_stricter_matching_adds_no_false_alarms(text: str) -> None:
 )  # fmt: skip
 def test_words_that_only_share_a_syllable_are_never_a_claim(word: str) -> None:
     assert find_banned_claims(word, BANNED) == []
+
+
+# ─────────────── NVH 14/10/2026: "100 phần trăm" written in words ───────────────
+
+
+@pytest.mark.parametrize(
+    ("text", "caught"),
+    [
+        ("sản phẩm 100 phần trăm tự nhiên", True),
+        ("tự nhiên 100 phần trăm", True),
+        ("hàm lượng đạt 100 phần trăm", False),  # a measurement, not a claim of origin
+        ("Mã số 100 phần trăm", False),
+        ("100% tự nhiên", True),  # already caught through the phrase "100%"
+        ("sản phẩm đạt 100 phần trăm theo kiểm nghiệm", False),
+    ],
+)  # fmt: skip
+def test_100_phan_tram_is_a_claim_only_next_to_tu_nhien_or_thien_nhien(
+    text: str, caught: bool
+) -> None:
+    assert bool(find_banned_claims(text, BANNED)) is caught
