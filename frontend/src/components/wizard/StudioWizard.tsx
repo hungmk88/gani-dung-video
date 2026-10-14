@@ -46,9 +46,13 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const [options, setOptions] = useState<VideoOptions>(DEFAULT_OPTIONS);
   const [footage, setFootage] = useState<FootageFile[]>([]);
   const [choice, setChoice] = useState<RealJobChoice>(DEFAULT_CHOICE);
-  const [preflight, setPreflight] = useState<PreflightResult | null>(null);
-  const [preflightError, setPreflightError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
+  // A preflight answer belongs to the exact inputs it was asked for (identity, see `patch`).
+  const [checked, setChecked] = useState<{
+    options: VideoOptions;
+    footage: FootageFile[];
+    result: PreflightResult | null;
+    error: string | null;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [longVideo, setLongVideo] = useState<boolean | null>(null);
@@ -79,6 +83,12 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   // "Chỉ dựng lại": the server takes everything from plan.json, so the matrix is not sent.
   const renderOnly = isReal && choice.mode === 'render';
   const draftLetters = DRAFT_LETTERS.slice(0, options.so_ban_nhap);
+  // Any change since the last answer means "checking" right away (not after the debounce):
+  // the old verdict stays on screen dimmed but can no longer unlock "Gửi xử lý".
+  const fresh = checked !== null && checked.options === options && checked.footage === footage;
+  const checking = !incomplete && !renderOnly && !fresh;
+  const preflight = checked?.result ?? null;
+  const preflightError = fresh && !incomplete && !renderOnly ? checked.error : null;
 
   // Whether the server has opened 3-minute videos (phase 7g); unknown until it answers.
   useEffect(() => {
@@ -99,19 +109,14 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
     if (incomplete || renderOnly) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      setChecking(true);
       api
         .preflight(options, footage)
         .then((r) => {
-          if (cancelled) return;
-          setPreflight(r);
-          setPreflightError(null);
+          if (!cancelled) setChecked({ options, footage, result: r, error: null });
         })
         .catch((e: unknown) => {
-          if (!cancelled) setPreflightError(messageOf(e));
-        })
-        .finally(() => {
-          if (!cancelled) setChecking(false);
+          // A failed check clears the old verdict: it must not keep the button enabled.
+          if (!cancelled) setChecked({ options, footage, result: null, error: messageOf(e) });
         });
     }, PREFLIGHT_DEBOUNCE_MS);
     return () => {
@@ -187,7 +192,8 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
           incomplete={incomplete}
           renderOnly={renderOnly}
           checking={checking}
-          error={preflightError ?? submitError}
+          error={preflightError}
+          submitError={submitError}
           missingProject={needsProject}
           submitting={submitting}
           onSubmit={handleSubmit}

@@ -7,6 +7,7 @@ export function PreflightValidator({
   renderOnly,
   checking,
   error,
+  submitError,
   missingProject,
   submitting,
   onSubmit,
@@ -16,14 +17,22 @@ export function PreflightValidator({
   /** Re-render of an existing plan: nothing to preflight, only a project to pick. */
   renderOnly: boolean;
   checking: boolean;
+  /** The preflight call itself failed (not a rule violation). */
   error: string | null;
+  submitError: string | null;
   missingProject: boolean;
   submitting: boolean;
   onSubmit: () => void;
 }) {
   const disabled = renderOnly
     ? missingProject || submitting
-    : incomplete || result === null || !result.valid || checking || missingProject || submitting;
+    : incomplete ||
+      result === null ||
+      !result.valid ||
+      checking ||
+      error !== null ||
+      missingProject ||
+      submitting;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -101,12 +110,8 @@ export function PreflightValidator({
         </div>
       )}
 
-      {error && (
-        <p className="mt-3 flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {error}
-        </p>
-      )}
+      {error && <ErrorNote message={error} />}
+      {submitError && <ErrorNote message={submitError} />}
       {missingProject && (renderOnly || !incomplete) && (
         <p className="mt-3 text-[11px] text-amber-400/90">Chọn một dự án ở mục 1 để gửi xử lý.</p>
       )}
@@ -125,5 +130,14 @@ export function PreflightValidator({
         {submitting ? 'Đang gửi…' : renderOnly ? 'Xếp hàng dựng lại' : 'Gửi xử lý (Queue Render)'}
       </button>
     </div>
+  );
+}
+
+function ErrorNote({ message }: { message: string }) {
+  return (
+    <p className="mt-3 flex items-start gap-2 rounded-lg border border-rose-800/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-300">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      {message}
+    </p>
   );
 }
