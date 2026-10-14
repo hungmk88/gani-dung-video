@@ -12,7 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from gani_dung_video.domain.compliance import CODE, ClaimHit, check_claims, edl_texts
+from gani_dung_video.domain.compliance import (
+    CODE,
+    ClaimHit,
+    check_claims,
+    check_edl_claims,
+    edl_texts,
+)
 from gani_dung_video.domain.edl import Caption, Edl, Shot
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.infrastructure.config_files import load_glossary
@@ -106,3 +112,40 @@ def test_the_phrase_list_is_read_from_the_config_file_not_the_code(tmp_path: Pat
 
     assert hits_with(["cú mèo"]) == ["cú mèo"]
     assert hits_with(["cú vọ"]) == []  # editing the file changes the verdict
+
+
+# ─────────────── audit C3: a phrase that crosses two karaoke groups ───────────────
+
+
+def _edl_with_karaoke(groups: list[list[str]]) -> Edl:
+    shot = Shot(source="a.mp4", src_in=0, src_out=3, t_start=0, t_end=3, block="hook",
+                hdr=False, dissolve_out_sec=0, pad_sec=0)  # fmt: skip
+    karaoke = [[SpokenWord(text=t, start=0.0, end=0.3, prob=0.9) for t in g] for g in groups]
+    return Edl(style="ke_chuyen_nghe", width=540, height=960, fps=30, video_kbps=2500,
+               shots=[shot], content_end=3.0, end_card_sec=2.0, duration=5.0, music=None,
+               ambient_db=None, lufs=-14.0, true_peak_db=-2.0, font="x", captions=[],
+               karaoke=karaoke, emphasis=[])  # fmt: skip
+
+
+def test_a_phrase_split_across_two_karaoke_groups_is_caught() -> None:
+    # Spoken as one sentence, drawn as two groups: each group alone is clean.
+    e = _edl_with_karaoke([["Giò", "lụa", "ngon"], ["nhất", "Sài", "Gòn"]])
+    assert check_claims(edl_texts(e), BANNED) == []  # the per-group check cannot see it
+    hits = check_edl_claims(e, BANNED)
+    assert [h.phrase for h in hits] == ["ngon nhất"]
+    assert hits[0].source == "lời 1–2"
+
+
+def test_a_phrase_inside_one_group_is_reported_once() -> None:
+    e = _edl_with_karaoke([["Giò", "ngon", "nhất"], ["Sài", "Gòn"]])
+    assert [(h.source, h.phrase) for h in check_edl_claims(e, BANNED)] == [("lời 1", "ngon nhất")]
+
+
+def test_a_phrase_can_cross_more_than_two_groups() -> None:
+    e = _edl_with_karaoke([["Giò", "chất"], ["lượng"], ["nhất", "vùng"]])
+    assert [h.phrase for h in check_edl_claims(e, BANNED)] == ["chất lượng nhất"]
+
+
+def test_clean_speech_stays_clean_across_groups() -> None:
+    e = _edl_with_karaoke([["Giá"], ["trị", "thật"], ["từ", "xưởng"]])
+    assert check_edl_claims(e, BANNED) == []

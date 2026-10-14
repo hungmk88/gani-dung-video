@@ -156,3 +156,46 @@ def test_bad_visual_entries_are_refused(tmp_path: Path, visual: object) -> None:
     g.write_text(json.dumps({"terms": [], "banned_claims": [], "visual": visual}), encoding="utf-8")
     with pytest.raises(ConfigError, match=r"glossary\.json"):
         load_glossary(g)
+
+
+# ─────────────── audit C3: spellings that used to slip past the banned list ───────────────
+
+ZWJ = "\u200d"  # zero-width joiner: invisible, but it split "trị" into two tokens
+
+
+@pytest.mark.parametrize(
+    ("text", "found"),
+    [
+        ("Sạch 100 %", ["100%"]),  # a space before the percent sign
+        ("Sạch 100\u00a0%", ["100%"]),  # a no-break space does the same
+        ("Đứng số1 thị trường", ["số 1"]),  # the digit glued to the word
+        ("Đứng số\u00a01 thị trường", ["số 1"]),  # a no-break space between the two
+        ("\uff11\uff10\uff10%", ["100%"]),  # full-width digits
+        ("\u00d0\u1eb6C TR\u1eca", ["đặc trị"]),  # U+00D0 (Ð), not Đ (U+0110)
+        ("sản phẩm duy_nhất", ["duy nhất"]),  # underscore is not a letter
+        ("Chất lượng, đặctrị mọi bệnh", ["đặc trị"]),  # syllables written together
+        ("tr" + ZWJ + "ị bệnh", ["trị bệnh"]),  # invisible character inside a syllable
+        ("ngon\u200bnhất", ["ngon nhất"]),  # zero-width space between the syllables
+        ("TỐT\u00adNHẤT", ["tốt nhất"]),  # soft hyphen
+        ("MinhLong", ["minh long"]),  # a competitor brand written as one word
+    ],
+)
+def test_spellings_that_used_to_slip_past_are_caught(text: str, found: list[str]) -> None:
+    assert find_banned_claims(text, BANNED) == found
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Đứng số 10 trong bảng",  # "số 10" is not "số 1" (digits are not split inside a number)
+        "Mã số 1000",
+        "Giá trị 100 phần trăm",  # not the "100%" claim
+        "Atalanta thắng trận",
+        "Focaccia nướng lò",
+        "Quản trị chất lượng HACCP",
+        "Giátrị thật",  # a longer glued word is not the phrase "trị bệnh"
+        "Thống nhất quy trình",
+    ],
+)
+def test_the_stricter_matching_adds_no_false_alarms(text: str) -> None:
+    assert find_banned_claims(text, BANNED) == []

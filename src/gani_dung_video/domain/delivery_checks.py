@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.compliance import check_claims, edl_texts
+from gani_dung_video.domain.compliance import check_edl_claims, edl_texts
 from gani_dung_video.domain.edl import Edl
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import PLAY_W, Finding, WidthFn, size_key, usable_width, wrap_lines
@@ -241,7 +241,7 @@ def check_onscreen_claims(e: Edl, banned: Sequence[str]) -> tuple[E1Item, list[F
     """C1 again on the finished video's texts (the gate before ffmpeg already refuses to
     render them; this is the proof written into the manifest). `value` = number of hits."""
     texts = edl_texts(e)
-    hits = check_claims(texts, banned)
+    hits = check_edl_claims(e, banned)
     detail = f"Đã soát {len(texts)} đoạn chữ: " + (
         "; ".join(f"{h.source}: '{h.text}' chứa cụm cấm '{h.phrase}'" for h in hits)
         if hits

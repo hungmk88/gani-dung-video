@@ -6,6 +6,11 @@ Vietnamese words are space-separated syllables, so matching works on syllable se
 - Banned claims are PHRASES (decision 28/09/2026): "trị bệnh" is banned, while "giá trị"
   is not — a substring or regex \\b check would wrongly flag it, because "trị" is its own
   syllable there too. Từ cấm so theo cụm âm tiết liền nhau, không theo chuỗi con.
+
+Claims are compared on a folded form (audit C3): NFKC, invisible characters dropped, tone
+marks and case ignored, "_" and no-break spaces are spaces, digits are split from letters
+("số1" = "số 1") and a space before "%" is ignored. A text token may also be several syllables
+of the phrase written together ("đặctrị"), but never a part of a syllable or of a longer word.
 """
 
 from __future__ import annotations
@@ -17,6 +22,10 @@ from dataclasses import dataclass, replace
 
 # Keep '%' so "100%" stays one token; everything else non-word splits syllables.
 _TOKEN = re.compile(r"[\w%]+", re.UNICODE)
+# Claims only: letters, digits and "%" are separate pieces, so "số1" is "số" + "1".
+_CLAIM_PIECE = re.compile(r"[^\W\d_]+|\d+%?|%", re.UNICODE)
+_SPACE_BEFORE_PERCENT = re.compile(r"(?<=\d)\s+%")
+_FOLD_LETTERS = str.maketrans({"đ": "d", "ð": "d"})  # ð (U+00F0) is not a Vietnamese letter
 
 
 @dataclass(frozen=True)
@@ -55,18 +64,45 @@ def fold_tokens(text: str) -> list[str]:
     Used for claims only: people type on-screen text without tone marks, and a claim must
     not slip through that way. The glossary spellings keep their marks (see tokens()).
 
-    Example: "Đặc TRỊ!" → ["dac", "tri"].
+    Example: "Đặc TRỊ!" → ["dac", "tri"]; "Sạch 100 %" → ["sach", "100%"].
     """
+    clean = unicodedata.normalize("NFKC", text)
+    clean = "".join(c for c in clean if unicodedata.category(c) != "Cf").lower()
+    clean = _SPACE_BEFORE_PERCENT.sub("%", clean)
     return [
-        "".join(c for c in unicodedata.normalize("NFD", t) if not unicodedata.combining(c)).replace(
-            "đ", "d"
-        )
-        for t in tokens(text)
+        "".join(
+            c for c in unicodedata.normalize("NFD", piece) if not unicodedata.combining(c)
+        ).translate(_FOLD_LETTERS)
+        for piece in _CLAIM_PIECE.findall(clean)
     ]
 
 
 def _match_at(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
     return bool(pattern) and list(toks[i : i + len(pattern)]) == list(pattern)
+
+
+def _match_glued(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
+    """The phrase starts at toks[i]; each text token is one or more WHOLE syllables of it.
+
+    "đặc", "trị" and "đặctrị" all match the phrase "đặc trị"; "giátrị" does not match "trị
+    bệnh", because the token would have to start in the middle of a longer word.
+    """
+    if not pattern:
+        return False
+    joined = "".join(pattern)
+    edges, at = {0}, 0
+    for syllable in pattern:
+        at += len(syllable)
+        edges.add(at)
+    offset = 0
+    for tok in toks[i:]:
+        end = offset + len(tok)
+        if not tok or end not in edges or not joined.startswith(tok, offset):
+            return False
+        offset = end
+        if offset == len(joined):
+            return True
+    return False
 
 
 def _patterns(terms: Sequence[Term]) -> list[tuple[list[str], Term]]:
@@ -118,6 +154,6 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
     found: list[str] = []
     for phrase in banned:
         pat = fold_tokens(phrase)
-        if any(_match_at(toks, i, pat) for i in range(len(toks))):
+        if any(_match_glued(toks, i, pat) for i in range(len(toks))):
             found.append(phrase)
     return found

@@ -26,7 +26,7 @@ from gani_dung_video.application.qc_service import (
     render_checked,
 )
 from gani_dung_video.domain.asr_check import T8Measures
-from gani_dung_video.domain.compliance import check_claims, edl_texts
+from gani_dung_video.domain.compliance import check_edl_claims
 from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
@@ -193,7 +193,7 @@ def _claims_gate(e: Edl) -> Edl:
     """
     g = load_glossary()
     e = e.model_copy(update={"emphasis": list(g.caption_highlight_keywords)})
-    hits = check_claims(edl_texts(e), g.banned_claims)
+    hits = check_edl_claims(e, g.banned_claims)
     if hits:
         found = "; ".join(f"{h.source}: '{h.text}' chứa cụm cấm '{h.phrase}'" for h in hits)
         raise ConfigError(f"C1: không dựng vì có chữ vi phạm. {found}. Sửa chữ này ở bản nháp "
