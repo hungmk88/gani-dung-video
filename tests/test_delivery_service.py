@@ -410,8 +410,8 @@ def test_with_music_a_plan_that_fits_is_left_alone(tmp_path: Path, clips: Path) 
 def test_a_cut_beyond_ten_percent_is_stopped_by_the_gap_guard_not_hidden_by_the_cut(
     tmp_path: Path, clips: Path
 ) -> None:
-    """Sang trọng at 104 BPM (counted at 52): every block needs one 6.9 s scene, so the plan is
-    20.8 s (+38%)."""
+    """Sang trọng at 104 BPM (counted at 52): every block needs one 5-beat scene of 5.8 s, so the
+    plan is 17.3 s (+15%)."""
     folder = _music_project(tmp_path, clips, "troi_xa", "sang_trong", 104.0)
     plan = Plan.model_validate_json((folder / "edit" / "plan.json").read_text(encoding="utf-8"))
     assert plan.trim_to_sec == 15.0 and any(w.startswith("W_DUR_GAP") for w in plan.warnings)
@@ -420,7 +420,7 @@ def test_a_cut_beyond_ten_percent_is_stopped_by_the_gap_guard_not_hidden_by_the_
     _assert_blocked(folder, "E1-DUR-GAP", res.qc_notes)
     items = {i.code: i for i in manifest_of(folder).e1.items}
     assert items["E1-DUR"].passed  # the video itself is exactly 15 s long …
-    assert items["E1-DUR-GAP"].value == pytest.approx(5.77, abs=0.05)  # … the plan was not
+    assert items["E1-DUR-GAP"].value == pytest.approx(2.31, abs=0.05)  # … the plan was not
     assert "chọn bài có BPM hợp phong cách" in items["E1-DUR-GAP"].detail
 
 
