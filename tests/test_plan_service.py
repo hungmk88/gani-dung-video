@@ -205,10 +205,10 @@ def luxe_15(tmp_path: Path, **kw: Any) -> Path:
 def test_a_track_that_cannot_build_the_video_stops_the_plan_and_writes_nothing(
     folder: Path, tmp_path: Path
 ) -> None:
-    with_bpm(folder, 104)  # Sang trọng 15 s: 20.8 s planned, +38%
+    with_bpm(folder, 104)  # Sang trọng 15 s: 17.3 s planned, +15%
     with pytest.raises(BpmBlockedError, match="BPM 104") as err:
         build_plan(luxe_15(tmp_path), folder, rules=RULES)
-    assert "+38%" in str(err.value) and "--bpm-override" in str(err.value)
+    assert "+15%" in str(err.value) and "--bpm-override" in str(err.value)
     assert not (folder / "edit" / "plan.json").exists()
 
 
@@ -230,10 +230,10 @@ def test_the_options_file_can_carry_the_override_too(folder: Path, tmp_path: Pat
 
 
 def test_a_track_that_only_needs_a_cut_warns_and_goes_on(folder: Path, tmp_path: Path) -> None:
-    with_bpm(folder, 88)  # +1.36 s, within 10%
+    with_bpm(folder, 110)  # +1.36 s, within 10%
     plan, _ = build_plan(luxe_15(tmp_path), folder, rules=RULES)
     assert plan.trim_to_sec == 15.0
-    assert any(w.startswith("W_BPM_CUT") and "BPM 88" in w for w in plan.warnings)
+    assert any(w.startswith("W_BPM_CUT") and "BPM 110" in w for w in plan.warnings)
 
 
 def test_a_track_that_fits_has_no_bpm_warning(folder: Path, tmp_path: Path) -> None:
@@ -260,8 +260,8 @@ def test_cli_plan_exits_4_with_the_reason_on_stderr_unless_overridden(
 def test_cli_plan_prints_the_bpm_cut_warning_on_stderr(
     folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with_bpm(folder, 88)
+    with_bpm(folder, 110)
     assert main(["plan", str(luxe_15(tmp_path)), str(folder)]) == 0
     cap = capsys.readouterr()
-    assert cap.err.startswith("CẢNH BÁO: Bài này ở BPM 88") and "cắt bớt" in cap.err
+    assert cap.err.startswith("CẢNH BÁO: Bài này ở BPM 110") and "cắt bớt" in cap.err
     assert "W_BPM" not in cap.out  # not repeated in the summary

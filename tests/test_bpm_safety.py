@@ -79,10 +79,10 @@ def test_ranges_are_ordered_inside_the_domain_and_never_overlap() -> None:
 @pytest.mark.parametrize(
     ("style", "duration", "bpm", "level"),
     [
-        ("sang_trong", 15, 104, "BLOCKING"),  # 20.8 s for 15 s: +38 %
-        ("sang_trong", 15, 100, "WARNING"),  # counted at 100 instead of 50 since 14/10/2026
-        ("sang_trong", 15, 88, "WARNING"),  # +1.36 s: cut, within 10 %
-        ("sang_trong", 15, 87, "BLOCKING"),  # inside the style's own 60–85 range: still blocked
+        ("sang_trong", 15, 104, "BLOCKING"),  # 17.3 s for 15 s: +15 %
+        ("sang_trong", 15, 110, "WARNING"),  # +1.36 s: cut, within 10 %
+        ("sang_trong", 15, 100, "OK"),  # 5-beat scenes (15/10/2026), counted at 100: 15.0 s
+        ("sang_trong", 15, 87, "OK"),  # blocked while scenes were 6 or 8 beats only
         ("ke_chuyen_nghe", 15, 80, "OK"),  # 15.0 s exactly
         ("ke_chuyen_nghe", 15, 100, "WARNING"),  # +0.6 s
         ("tvc_cat_nhanh", 15, 120, "OK"),
@@ -95,7 +95,7 @@ def test_levels_of_known_cases(style: str, duration: int, bpm: float, level: str
 
 @pytest.mark.parametrize(
     ("style", "duration", "bpm"),
-    [("sang_trong", 15, 100), ("sang_trong", 15, 88), ("ke_chuyen_nghe", 15, 80),
+    [("sang_trong", 15, 104), ("sang_trong", 15, 110), ("ke_chuyen_nghe", 15, 80),
      ("sang_trong", 30, 105), ("review_mon_an", 30, 100)],
 )  # fmt: skip
 def test_a_compiled_plan_gets_the_same_level_as_the_table(
@@ -114,7 +114,7 @@ def test_outside_the_measured_domain_the_table_stays_silent() -> None:
 def test_a_decimal_bpm_is_looked_up_at_the_nearest_whole_one() -> None:
     assert check_bpm_safe(RULES, "sang_trong", 15, 104.4).level == "BLOCKING"
     assert check_bpm_safe(RULES, "sang_trong", 15, 103.6).level == "BLOCKING"
-    assert check_bpm_safe(RULES, "sang_trong", 15, 100.4).level == "WARNING"
+    assert check_bpm_safe(RULES, "sang_trong", 15, 102.4).level == "OK"
 
 
 def test_buildable_ranges_are_what_blocked_leaves_free() -> None:
@@ -138,22 +138,22 @@ def test_the_block_message_names_the_track_the_style_the_length_and_the_way_out(
     chk = check_bpm_safe(RULES, "sang_trong", 15, 104)
     text = message(RULES, "W_BPM_BLOCK", "sang_trong", 15, 104, chk.buildable)
     assert "BPM 104" in text and "Sang trọng" in text and "15 giây" in text
-    assert "±10%" in text and "66–82" in text and "Chọn bài khác" in text
+    assert "±10%" in text and "55–102, 110–180" in text and "Chọn bài khác" in text
 
 
 def test_the_stop_message_has_the_numbers_and_the_override() -> None:
     plan = plan_at("sang_trong", 15, 104.0)
     text = blocked_text(RULES, plan, 104.0)
-    assert "20.8s" in text and "+5.8s" in text and "+38%" in text and "--bpm-override" in text
+    assert "17.3s" in text and "+2.3s" in text and "+15%" in text and "--bpm-override" in text
 
 
 def test_a_count_that_cannot_reach_the_length_falls_back_on_one_that_can() -> None:
     # 14/10/2026: 100 BPM is counted at 50 for Sang trọng (closest to 60–85), which makes every
-    # scene 7.2 s and 15 s impossible (21.6 s). Counted at 100 (still within 20 %) it fits.
+    # scene at least 6 s and 15 s impossible (18 s). Counted at 100 (still within 20 %) it fits.
     plan = plan_at("sang_trong", 15, 100.0)
     assert plan.music is not None and plan.music.fold == "giu_nguyen"
     assert plan.music.effective_bpm == 100.0 and plan.beat_sec == pytest.approx(0.6)
-    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.6)
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.0)
     assert any("thay vì 50 BPM" in a for a in plan.adjustments)
     # a count that already fits is never changed, even if another one would fit too
     fits = plan_at("sang_trong", 15, 80.0)

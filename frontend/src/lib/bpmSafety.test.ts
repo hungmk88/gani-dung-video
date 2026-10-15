@@ -22,10 +22,10 @@ test('the copy in data/bpmSafe.ts is the table of config/rules.json', () => {
 
 test('levels of the known cases match the Python side', () => {
   const level = (style: string, d: number, bpm: number) => checkBpmSafe(BPM_SAFE, style, d, bpm).level;
-  assert.equal(level('sang_trong', 15, 104), 'BLOCKING'); // 20.8 s planned for 15 s
-  assert.equal(level('sang_trong', 15, 100), 'WARNING'); // counted at 100, not 50 (14/10/2026)
-  assert.equal(level('sang_trong', 15, 87), 'BLOCKING'); // inside the style's own 60–85 range
-  assert.equal(level('sang_trong', 15, 88), 'WARNING'); // +1.36 s, cut
+  assert.equal(level('sang_trong', 15, 104), 'BLOCKING'); // 17.3 s planned for 15 s
+  assert.equal(level('sang_trong', 15, 100), 'OK'); // 5-beat scenes (15/10/2026), counted at 100
+  assert.equal(level('sang_trong', 15, 87), 'OK'); // was blocked with 6/8-beat scenes only
+  assert.equal(level('sang_trong', 15, 110), 'WARNING'); // +1.36 s, cut
   assert.equal(level('ke_chuyen_nghe', 15, 80), 'OK');
   assert.equal(level('ke_chuyen_nghe', 15, 100), 'WARNING');
   assert.equal(level('tvc_cat_nhanh', 15, 120), 'OK');
@@ -58,18 +58,18 @@ test('the notice names the track, the style, the length and the way out', () => 
   assert.equal(n.level, 'BLOCKING');
   assert.equal(n.headline, 'Bài này ở BPM 104');
   assert.match(n.body, /"Sang trọng" và độ dài 15 giây/);
-  assert.match(n.body, /66–82/);
+  assert.match(n.body, /55–102, 110–180/);
   assert.match(n.body, /Chọn bài khác/);
 });
 
 test('a measured BPM is shown with at most one decimal', () => {
-  const n = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 100.04);
+  const n = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 104.04);
   assert.ok(n);
-  assert.equal(n.headline, 'Bài này ở BPM 100');
+  assert.equal(n.headline, 'Bài này ở BPM 104');
 });
 
 test('a cut-only track gets the lighter notice and a fitting track none', () => {
-  const cut = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 88);
+  const cut = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 110);
   assert.ok(cut);
   assert.equal(cut.level, 'WARNING');
   assert.match(cut.body, /cắt bớt/);

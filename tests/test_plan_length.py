@@ -110,8 +110,8 @@ def test_with_music_the_length_is_the_chosen_one_or_cut_to_it(style: str, durati
 
 
 def test_music_plan_longer_than_the_threshold_is_cut_at_the_chosen_length() -> None:
-    # Sang trọng at 100 BPM: scenes of 6 or 8 beats of 0.6 s, the plan comes out at 21.6 s.
-    p = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(100.0),
+    # Sang trọng at 110 BPM (counted at 55): one 5-beat scene of 5.5 s per block = 16.4 s.
+    p = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(110.0),
                      available_tags=TAGS)  # fmt: skip
     assert p.planned_beats * p.beat_sec > 15.5
     assert p.trim_to_sec == 15.0 and planned_sec(p) == 15.0
@@ -126,10 +126,11 @@ def test_music_plan_within_the_threshold_is_kept_as_it_is() -> None:
 
 
 def test_music_plan_shorter_than_the_threshold_is_rebuilt_with_more_beats() -> None:
-    # Sang trọng at 85 BPM used to plan 20 beats = 14.1 s (0.9 s short of 15).
-    p = compile_plan(opts("sang_trong", 15, music=True), RULES, music=track(85.0),
+    # Kể chuyện nghề at 58 BPM first plans 14 beats = 14.48 s (0.52 s short of 15). (Sang trọng
+    # at 85 BPM was the example until its 5-beat scenes made it fit, 15/10/2026.)
+    p = compile_plan(opts("ke_chuyen_nghe", 15, music=True), RULES, music=track(58.0),
                      available_tags=TAGS)  # fmt: skip
-    assert p.planned_beats > 20
+    assert p.planned_beats > 14
     assert planned_sec(p) >= 15 - THRESHOLD - 1e-9
     assert any("lập lại kế hoạch" in a for a in p.adjustments)
 
@@ -141,7 +142,7 @@ def test_policy_none_turns_the_music_trim_off_but_not_the_grid_stretch() -> None
     rules = with_qc(duration_trim_policy="none")
     p = compile_plan(opts("sang_trong", 15, music=True), rules, music=track(104.0),
                      available_tags=TAGS)  # fmt: skip
-    assert p.trim_to_sec is None and p.planned_beats * p.beat_sec > 20  # as before
+    assert p.trim_to_sec is None and p.planned_beats * p.beat_sec > 17  # as before
     g = compile_plan(opts("tvc_cat_nhanh", 15, music=False), rules, music=None, available_tags=TAGS)
     assert g.planned_beats * g.beat_sec == pytest.approx(15.0)
 
@@ -154,7 +155,7 @@ def test_a_wider_threshold_lets_a_longer_plan_through() -> None:
 
 def test_the_fade_length_comes_from_the_policy_text() -> None:
     p = compile_plan(opts("sang_trong", 15, music=True), with_qc(duration_trim_policy="fade_1.25s"),
-                     music=track(100.0), available_tags=TAGS)  # fmt: skip
+                     music=track(110.0), available_tags=TAGS)  # fmt: skip
     assert p.trim_fade_sec == pytest.approx(1.25)
 
 

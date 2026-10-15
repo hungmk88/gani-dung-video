@@ -116,7 +116,7 @@ def test_track_outside_style_range_is_folded_and_beats_follow_the_folded_tempo()
     assert p.music is not None and p.music.fold == "dem_2_thanh_1"
     assert p.music.effective_bpm == 64.0 and p.beat_sec == pytest.approx(0.9375)
     assert p.target_beats == 32 and p.planned_beats == 32
-    assert p.beats_per_scene_allowed == [6, 8]
+    assert p.beats_per_scene_allowed == [5, 6, 8]  # 5 added 15/10/2026
 
 
 def test_no_music_uses_the_virtual_grid_of_the_style() -> None:
