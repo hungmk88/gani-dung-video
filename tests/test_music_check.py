@@ -50,7 +50,7 @@ def folder(tmp_path: Path) -> Path:
     f = tmp_path / "nhac"
     f.mkdir()
     write_wav(f / "Am_ap_80.wav", click_track(80))  # declared, fits Kể chuyện nghề 15 s
-    write_wav(f / "Sang_88.wav", click_track(88))  # measured, Sang trọng 15 s needs a cut
+    write_wav(f / "Sang_113.wav", click_track(113))  # measured, Sang trọng 15 s needs a cut
     write_wav(f / "Nhanh_104.wav", click_track(104))  # declared, Sang trọng 15 s is blocked
     write_wav(f / "Tieng_on.wav", np.random.default_rng(7).normal(scale=0.2, size=int(15 * SR)))
     (f / "ghi_chu.txt").write_text("không phải âm thanh", encoding="utf-8")
@@ -75,10 +75,10 @@ def verdict(chk: Any, style: str, duration: int, file: str) -> str:
 def test_tracks_get_their_bpm_source_and_length(folder: Path) -> None:
     chk = check_music_folder(folder, RULES)
     by = {t.file: t for t in chk.tracks}
-    assert sorted(by) == ["Am_ap_80.wav", "Nhanh_104.wav", "Sang_88.wav", "Tieng_on.wav"]
+    assert sorted(by) == ["Am_ap_80.wav", "Nhanh_104.wav", "Sang_113.wav", "Tieng_on.wav"]
     assert (by["Am_ap_80.wav"].bpm, by["Am_ap_80.wav"].source) == (80.0, "library")
-    assert by["Sang_88.wav"].source == "measured"
-    assert by["Sang_88.wav"].bpm == pytest.approx(88.0, abs=0.6)
+    assert by["Sang_113.wav"].source == "measured"
+    assert by["Sang_113.wav"].bpm == pytest.approx(113.0, abs=0.6)
     assert by["Tieng_on.wav"].source == "unknown" and by["Tieng_on.wav"].bpm is None
     assert by["Am_ap_80.wav"].duration_sec == pytest.approx(20.0, abs=0.2)
     assert by["Tieng_on.wav"].duration_sec == pytest.approx(15.0, abs=0.2)
@@ -87,7 +87,7 @@ def test_tracks_get_their_bpm_source_and_length(folder: Path) -> None:
 def test_verdicts_are_the_planners_for_each_style_and_length(folder: Path) -> None:
     chk = check_music_folder(folder, RULES)
     assert verdict(chk, "ke_chuyen_nghe", 15, "Am_ap_80.wav") == "ok"
-    assert verdict(chk, "sang_trong", 15, "Sang_88.wav") == "cắt"
+    assert verdict(chk, "sang_trong", 15, "Sang_113.wav") == "cắt"
     assert verdict(chk, "sang_trong", 15, "Nhanh_104.wav") == "chặn"
     assert verdict(chk, "sang_trong", 15, "Tieng_on.wav") == "lưới"
     assert verdict(chk, "tvc_cat_nhanh", 15, "Nhanh_104.wav") == "ok"  # TVC fits any tempo
@@ -136,7 +136,7 @@ def test_an_empty_folder_says_so(tmp_path: Path) -> None:
 def test_the_text_report_has_the_tracks_the_matrix_and_the_notes(folder: Path) -> None:
     text = format_report(check_music_folder(folder, RULES))
     assert "BÀI NHẠC" in text and "KHẢ NĂNG DÙNG THEO PHONG CÁCH × ĐỘ DÀI" in text
-    assert "Sang_88.wav" in text and "measured" in text and "library" in text
+    assert "Sang_113.wav" in text and "measured" in text and "library" in text
     line = next(ln for ln in text.splitlines() if ln.startswith("Sang trọng") and "15s" in ln)
     assert "Am_ap_80" in line  # a track that fits is named in the "usable" column
     assert "da_xoa.mp3" in text  # the orphan

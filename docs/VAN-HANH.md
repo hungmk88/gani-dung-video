@@ -108,7 +108,7 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
 - Bài ngắn hơn video được lặp theo ô nhịp (X13). "Ngắn hơn" tính **phần nghe được** (từ nhịp đầu tiên của bài) so với độ dài video **cộng 2 giây khung kết**: bài đúng 15 giây cho video 15 giây vẫn được lặp, nếu không nhạc hết trước khung kết. Bài nhạc **tải lên phải tick "tôi có quyền sử
   dụng"** (X14), nếu không bị chặn.
 - **Cảnh báo BPM:** mỗi bài nhạc làm kế hoạch dài ra vì khối nào cũng cần ít nhất một cảnh. Bài
-  chậm có thể khiến video 15 giây lập kế hoạch dài 21s và bị `E1-DUR-GAP` chặn khi giao. Nên
+  chậm hoặc nhanh có thể khiến video 15 giây lập kế hoạch dài hơn 16,5s và bị `E1-DUR-GAP` chặn khi giao. Nên
   khi chọn bài, hệ thống cảnh báo trước theo bảng `music.bpm_safe_by_style_duration` trong
   `rules.json` (đo thật bằng bộ lập kế hoạch, không phải một khoảng min–max):
   - `W_BPM_CUT`: phần cuối bị cắt bớt, trong ±10%, video vẫn dựng được;
@@ -370,17 +370,19 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
 ## 9c. Hạn chế đã biết
 
 - **Có nhạc, cắt đuôi:** phần cuối bị cắt thuộc khối cuối của video (thường là cảnh kêu gọi).
-  Đo lại ngày 14/10/2026 trên 620 tổ hợp phong cách × độ dài × BPM 55–145 (bước 3): 26% bị cắt
-  (162), trung vị 0,79s; 142 ca trong ±10%, 20 ca (3,2%) vượt ±10% và bị `E1-DUR-GAP` chặn khi
-  giao. 18/20 ca là Sang trọng ở video 15 và 30 giây: mỗi khối cần ít nhất một cảnh 6 phách, ở
-  nhạc chậm (hoặc nhạc nhanh đếm "2 thành 1") cảnh đó dài 6–7s, ba khối đã quá 15 giây. Ca tệ
-  nhất: Sang trọng 103 BPM, 15 giây, kế hoạch 21,0s (+40%).
-  Đã sửa (14/10/2026): khi cách đếm X12 chọn theo cảm giác nhạc không thể vừa độ dài, bộ lập
-  kế hoạch thử cách đếm khác vẫn trong dung sai BPM của phong cách và giữ cách gần độ dài nhất
-  (ví dụ Sang trọng 100 BPM: đếm 100 thay vì 50, kế hoạch 15,6s thay vì 21,6s, ghi trong
-  `adjustments`). Bỏ hẳn phần còn lại cần đổi số phách mỗi cảnh của Sang trọng (`beats_allowed`
-  [6, 8] → [5, 6, 8]: đo được 15 giây còn 7 BPM bị chặn thay vì 53, 30 giây còn 0 thay vì 7); đó
-  là thay đổi nhịp cắt của phong cách, chờ chủ quyết.
+  Đo lại ngày 15/10/2026 trên 620 tổ hợp phong cách × độ dài × BPM 55–145 (bước 3): 19% bị cắt
+  (118), trung vị 0,71s; 113 ca trong ±10%, 5 ca (0,8%) vượt ±10% và bị `E1-DUR-GAP` chặn khi
+  giao (3 ca Sang trọng 15 giây ở 103–109 BPM, 1 Kể chuyện nghề 15 giây, 1 Theo mô tả 15 giây).
+  Ca tệ nhất: Sang trọng 103 BPM, 15 giây, kế hoạch 17,5s (+17%).
+  Hai thay đổi đã giảm số ca bị chặn (trước đó 21 ca, 3,4%; ca tệ nhất 21,6s, +44%):
+  · 14/10/2026: khi cách đếm X12 chọn theo cảm giác nhạc không thể vừa độ dài, bộ lập kế hoạch
+    thử cách đếm khác vẫn trong dung sai BPM của phong cách và giữ cách gần độ dài nhất (ví dụ
+    Sang trọng 100 BPM: đếm 100 thay vì 50; ghi trong `adjustments`).
+  · 15/10/2026 (chủ duyệt): Sang trọng có thêm cảnh 5 phách (`beats_allowed` [6, 8] →
+    [5, 6, 8]). Cảnh 5 phách dài 3,5–5,0s ở 60–85 BPM, trong `scene_sec` 3–5s. Bảng BPM: 15 giây
+    còn 7 BPM bị chặn (103–109) thay vì 53; 30 giây còn 0 thay vì 7; số BPM phải cắt đuôi ở 30/45/
+    60 giây và 3 phút giảm từ ~50 xuống 4–12. Video Sang trọng không nhạc: lưới ảo 0,8s/phách
+    (trước 0,67s), vì một phách lưới = cảnh trung bình 4s chia cho cảnh ngắn nhất.
 - **Hộp cảnh báo BPM chưa được thử tay với nhạc thật của xưởng.** Đã thử trên máy dựng thật
   với bài tổng hợp (ca vừa khít, cắt đuôi, không dựng được, đang đo, không đo được); giao diện
   chỉ có test tự động cho hàm thuần, không có test component: cần thử tay trước T-F với nhạc
