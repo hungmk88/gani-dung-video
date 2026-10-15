@@ -79,7 +79,8 @@ def test_ranges_are_ordered_inside_the_domain_and_never_overlap() -> None:
 @pytest.mark.parametrize(
     ("style", "duration", "bpm", "level"),
     [
-        ("sang_trong", 15, 100, "BLOCKING"),  # 21.6 s for 15 s: +44 %
+        ("sang_trong", 15, 104, "BLOCKING"),  # 20.8 s for 15 s: +38 %
+        ("sang_trong", 15, 100, "WARNING"),  # counted at 100 instead of 50 since 14/10/2026
         ("sang_trong", 15, 88, "WARNING"),  # +1.36 s: cut, within 10 %
         ("sang_trong", 15, 87, "BLOCKING"),  # inside the style's own 60–85 range: still blocked
         ("ke_chuyen_nghe", 15, 80, "OK"),  # 15.0 s exactly
@@ -111,15 +112,16 @@ def test_outside_the_measured_domain_the_table_stays_silent() -> None:
 
 
 def test_a_decimal_bpm_is_looked_up_at_the_nearest_whole_one() -> None:
-    assert check_bpm_safe(RULES, "sang_trong", 15, 100.4).level == "BLOCKING"
-    assert check_bpm_safe(RULES, "sang_trong", 15, 99.6).level == "BLOCKING"
+    assert check_bpm_safe(RULES, "sang_trong", 15, 104.4).level == "BLOCKING"
+    assert check_bpm_safe(RULES, "sang_trong", 15, 103.6).level == "BLOCKING"
+    assert check_bpm_safe(RULES, "sang_trong", 15, 100.4).level == "WARNING"
 
 
 def test_buildable_ranges_are_what_blocked_leaves_free() -> None:
-    chk = check_bpm_safe(RULES, "sang_trong", 15, 100)
+    chk = check_bpm_safe(RULES, "sang_trong", 15, 104)
     blocked = [tuple(r) for r in TABLE["sang_trong"]["15"]["blocked"]]
     assert chk.buildable == complement(blocked, LO, HI)
-    assert all(not (a <= 100 <= b) for a, b in chk.buildable)
+    assert all(not (a <= 104 <= b) for a, b in chk.buildable)
 
 
 def test_complement_and_format() -> None:
@@ -133,14 +135,28 @@ def test_complement_and_format() -> None:
 
 
 def test_the_block_message_names_the_track_the_style_the_length_and_the_way_out() -> None:
-    chk = check_bpm_safe(RULES, "sang_trong", 15, 100)
-    text = message(RULES, "W_BPM_BLOCK", "sang_trong", 15, 100, chk.buildable)
-    assert "BPM 100" in text and "Sang trọng" in text and "15 giây" in text
+    chk = check_bpm_safe(RULES, "sang_trong", 15, 104)
+    text = message(RULES, "W_BPM_BLOCK", "sang_trong", 15, 104, chk.buildable)
+    assert "BPM 104" in text and "Sang trọng" in text and "15 giây" in text
     assert "±10%" in text and "66–82" in text and "Chọn bài khác" in text
 
 
 def test_the_stop_message_has_the_numbers_and_the_override() -> None:
+    plan = plan_at("sang_trong", 15, 104.0)
+    text = blocked_text(RULES, plan, 104.0)
+    assert "20.8s" in text and "+5.8s" in text and "+38%" in text and "--bpm-override" in text
+
+
+def test_a_count_that_cannot_reach_the_length_falls_back_on_one_that_can() -> None:
+    # 14/10/2026: 100 BPM is counted at 50 for Sang trọng (closest to 60–85), which makes every
+    # scene 7.2 s and 15 s impossible (21.6 s). Counted at 100 (still within 20 %) it fits.
     plan = plan_at("sang_trong", 15, 100.0)
-    text = blocked_text(RULES, plan, 100.0)
-    assert "21.6s" in text and "+6.6s" in text and "+44%" in text and "--bpm-override" in text
+    assert plan.music is not None and plan.music.fold == "giu_nguyen"
+    assert plan.music.effective_bpm == 100.0 and plan.beat_sec == pytest.approx(0.6)
+    assert plan.planned_beats * plan.beat_sec == pytest.approx(15.6)
+    assert any("thay vì 50 BPM" in a for a in plan.adjustments)
+    # a count that already fits is never changed, even if another one would fit too
+    fits = plan_at("sang_trong", 15, 80.0)
+    assert fits.music is not None and fits.music.fold == "giu_nguyen"
+    assert not any("thay vì" in a for a in fits.adjustments)
     assert BPM_BLOCKED_EXIT_CODE == 4  # 0 ok, 1 failed, 2 bad input, 3 infeasible

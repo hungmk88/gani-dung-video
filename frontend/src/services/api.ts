@@ -44,6 +44,11 @@ export interface StudioApi {
   approve(job: RenderJob, maxVnd: number): Promise<RenderJob>;
   /** Re-run a card: retry what failed (in order), otherwise queue fresh renders. */
   rerender(job: RenderJob): Promise<RenderJob>;
+  /**
+   * Decide on a delivered final video (T-F): approve moves it to final/, reject keeps it in
+   * drafts/ with the reason. Final either way: a decided video cannot be decided again.
+   */
+  decideReview(jobId: string, decision: 'approve' | 'reject', reviewer: string, reason: string): Promise<void>;
 }
 
 export const api: StudioApi = USE_MOCK ? mockApi : realApi;

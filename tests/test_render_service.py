@@ -142,7 +142,7 @@ def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> No
     log = json.loads((out / "render_log.json").read_text(encoding="utf-8"))
     assert log["draft"] == "A" and log["options"]["style"] == "tvc_cat_nhanh"
     assert log["music"] is None and [s["source"] for s in log["shots"]][:2] == ["a.mp4", "b.mp4"]
-    assert log["brand_placeholders"] == ["logo", "zalo"]
+    assert log["brand_placeholders"] == []  # real logo and Zalo since 14/10/2026
     qc = json.loads((out / "qc_report.json").read_text(encoding="utf-8"))
     assert qc["passed"] is True and qc["rounds"] >= 1 and res.qc_passed
     assert log["qc"]["passed"] is True

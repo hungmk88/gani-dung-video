@@ -144,6 +144,10 @@ export interface VideoOptions {
   nhac_quyen_su_dung: boolean | null;
   khuyen_mai: KhuyenMaiFields | null;
   ghi_chu: string;
+  /** Product in the delivered file name (delivery.naming.products); unset = "chung". */
+  san_pham?: string;
+  /** Campaign = delivery folder; unset/blank = the project folder name. */
+  chien_dich?: string;
   pacing: PacingMode;
   /** The person chose a track the BPM table warns about (ticket 13/10/2026); null = not asked. */
   bpm_override?: boolean | null;
@@ -275,6 +279,8 @@ export interface ApprovalInfo {
 
 /** Where a delivered final video stands with its reviewer (T-F). */
 export interface ReviewInfo {
+  /** Server id of the final render job this review belongs to (approve/reject target). */
+  jobId: string;
   status: 'pending' | 'approved' | 'changes_requested';
   reason: string | null;
   decidedBy: string | null;

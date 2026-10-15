@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* GANI FOODY AI Studio — dark studio theme (spec: slate-950/900 base, amber/orange brand
+/* GANI FOODS AI Studio — dark studio theme (spec: slate-950/900 base, amber/orange brand
    accent, emerald for success states). The dashboard is a video-editor tool, so it stays
    dark permanently rather than following the OS theme. */
 :root {

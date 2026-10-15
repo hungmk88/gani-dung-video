@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import type { FootageFile, PreflightResult, VideoOptions } from '../../types/rules';
 import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
+import { DeliveryFields } from './DeliveryFields';
 import { MusicPicker } from './MusicPicker';
 import { PreflightValidator, type MissingChoice } from './PreflightValidator';
 import { useMusicTracks } from './useMusicTracks';
@@ -190,6 +191,10 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
                 <MusicPicker options={options} onChange={patch} list={music} error={musicError} />
                 <BpmWarning options={options} onChange={patch} tracks={musicTracks} />
               </div>
+            </Panel>
+
+            <Panel title="4. Tên file giao" id="chon-giao-hang">
+              <DeliveryFields options={options} onChange={patch} />
             </Panel>
           </>
         )}

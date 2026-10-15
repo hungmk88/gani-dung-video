@@ -3,8 +3,8 @@ import type { ReviewInfo } from '../../types/rules';
 
 /**
  * Where a delivered final video stands with its reviewer (T-F): pending / approved /
- * changes requested. Hover shows the reason. Display only: deciding is done with
- * `review approve|reject` (command line) or the API, not from this screen.
+ * changes requested. Hover shows the reason. Deciding is done in ReviewPanel (card detail),
+ * `review approve|reject` (command line) or the API.
  */
 export function ReviewBadge({ review }: { review: ReviewInfo | null | undefined }) {
   if (!review) return null;

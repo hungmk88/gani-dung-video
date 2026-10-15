@@ -17,15 +17,18 @@ import re
 import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from gani_dung_video.domain.edl import Edl, Shot
 from gani_dung_video.domain.preflight import Rules
+from gani_dung_video.domain.qc import PLAY_W
 from gani_dung_video.domain.speech_edit import duck_expression
 from gani_dung_video.infrastructure.config_files import CONFIG_DIR
 from gani_dung_video.infrastructure.ffprobe import FfprobeMissingError, ProbeError, probe
 
-FONTS_DIR = CONFIG_DIR.parent / "assets" / "fonts"
+APP_DIR = CONFIG_DIR.parent
+FONTS_DIR = APP_DIR / "assets" / "fonts"
 SAMPLE_RATE = 48000
 _HDR_TO_SDR = ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
                "tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv")  # fmt: skip
@@ -180,6 +183,83 @@ def _overlays(e: Edl) -> list[str]:
     return out
 
 
+@dataclass(frozen=True)
+class BrandLogo:
+    """The two logo pictures (the last two inputs) and where they go, in 1080-wide pixels.
+
+    The watermark shows from `start_sec` and hops to the next of `positions` (top-left corner
+    of the picture) every `hop_sec`, so it never sits still; the end card gets the large one.
+    """
+
+    watermark_idx: int
+    end_card_idx: int
+    width: int
+    opacity: float
+    start_sec: float
+    hop_sec: float
+    positions: tuple[tuple[int, int], ...]
+    end_card_width: int
+    end_card_top: int
+
+
+def logo_files(rules: Rules) -> tuple[Path, Path] | None:
+    """(watermark, end card) pictures from rules.render.brand, or None for the text logo.
+
+    Raises:
+        RenderError: a picture named in rules.json is not on disk.
+    """
+    brand = rules["render"]["brand"]
+    if not brand.get("logo_image"):
+        return None
+    files = (APP_DIR / str(brand["logo_image"]), APP_DIR / str(brand["end_card_image"]))
+    for f in files:
+        if not f.is_file():
+            raise RenderError(f"Không thấy ảnh logo {f} (rules.json → render.brand).")
+    return files
+
+
+def brand_logo(rules: Rules, first_idx: int) -> BrandLogo:
+    """Layout from rules.render.brand for pictures given as inputs `first_idx`, `first_idx + 1`."""
+    b = rules["render"]["brand"]
+    return BrandLogo(
+        watermark_idx=first_idx, end_card_idx=first_idx + 1, width=int(b["logo_width"]),
+        opacity=float(b["logo_opacity"]), start_sec=float(b["logo_start_sec"]),
+        hop_sec=float(b["logo_hop_sec"]),
+        positions=tuple((int(x), int(y)) for x, y in b["logo_positions"]),
+        end_card_width=int(b["end_card_logo_width"]), end_card_top=int(b["end_card_logo_top"]),
+    )  # fmt: skip
+
+
+def _even(x: float) -> int:
+    return max(2, 2 * round(x / 2))
+
+
+def _hop(values: Sequence[int], slot: str) -> str:
+    """ffmpeg expression picking values[slot] (nested if: no array type in the evaluator)."""
+    expr = str(values[-1])
+    for i in range(len(values) - 2, -1, -1):
+        expr = f"if(eq({slot},{i}),{values[i]},{expr})"
+    return expr
+
+
+def _logo_lines(e: Edl, logo: BrandLogo, pic: str) -> list[str]:
+    """Watermark over the content (`pic` → [vlogo]); large logo on the end card ([vend])."""
+    k = e.width / PLAY_W  # the layout is written for the final 1080-wide frame
+    start, hop, n = _n(logo.start_sec), _n(logo.hop_sec), len(logo.positions)
+    slot = f"mod(floor((t-{start})/{hop}),{n})"
+    xs = _hop([round(x * k) for x, _ in logo.positions], slot)
+    ys = _hop([round(y * k) for _, y in logo.positions], slot)
+    return [
+        f"[{logo.watermark_idx}:v]format=rgba,scale={_even(logo.width * k)}:-1,"
+        f"colorchannelmixer=aa={_n(logo.opacity)}[logo]",
+        f"[{pic}][logo]overlay=x='{xs}':y='{ys}':enable='gte(t,{start})':format=auto,"
+        "format=yuv420p[vlogo]",
+        f"[{logo.end_card_idx}:v]format=rgba,scale={_even(logo.end_card_width * k)}:-1[endlogo]",
+        f"[vend0][endlogo]overlay=x=(W-w)/2:y={round(logo.end_card_top * k)}:format=auto,"
+        "format=yuv420p[vend]",
+    ]  # fmt: skip
+
+
 def audio_graph(e: Edl, has_audio: Sequence[bool], music_idx: int | None,
                 measure_only: bool = False) -> str:  # fmt: skip
     """Audio part alone (loudness pass 1 prints its measurements as JSON)."""
@@ -195,14 +275,19 @@ def _join_label(lines: list[str], e: Edl) -> list[str]:
 
 def build_graph(
     e: Edl, has_audio: Sequence[bool], music_idx: int | None = None, ass_name: str | None = None,
-    loudnorm: Mapping[str, float] | None = None,
+    loudnorm: Mapping[str, float] | None = None, logo: BrandLogo | None = None,
 ) -> str:  # fmt: skip
-    """The -filter_complex text (pure: testable without ffmpeg)."""
+    """The -filter_complex text (pure: testable without ffmpeg).
+
+    Args:
+        logo: picture logo (watermark + end card); None = the .ass draws the text logo.
+    """
     lines = [_video_chain(i, s, e) for i, s in enumerate(e.shots)]
     lines += _join_label(_join_video(e), e)
     lines += _overlays(e)
+    end = "vend0" if logo else "vend"
     lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(e.end_card_sec)},"
-                 "format=yuv420p,setsar=1[vend]")  # fmt: skip
+                 f"format=yuv420p,setsar=1[{end}]")  # fmt: skip
     subs = f",subtitles=filename={ass_name}:fontsdir=fonts" if ass_name else ""
     pic = "vjoin"
     if e.grade:  # T-D: tone the picture before the end card and captions are added
@@ -212,6 +297,9 @@ def build_graph(
         start = max(0.0, e.content_end - e.trim_fade_sec)
         lines.append(f"[{pic}]fade=t=out:st={_n(start)}:d={_n(e.trim_fade_sec)}[vfade]")
         pic = "vfade"
+    if logo:  # after the fade: the logo stays sharp while the picture goes to black
+        lines += _logo_lines(e, logo, pic)
+        pic = "vlogo"
     lines.append(f"[{pic}][vend]concat=n=2:v=1:a=0{subs}[vout]")
     lines += _audio(e, has_audio, music_idx, measured=loudnorm)
     return ";\n".join(lines)
@@ -286,9 +374,14 @@ def render(
     ensure_ffmpeg_version()
     work = ass.parent
     inputs, has_audio, music_idx = _inputs(e, footage_dir, music)
+    logo = None
+    if (pictures := logo_files(rules)) is not None:
+        logo = brand_logo(rules, len(e.shots) + len(e.overlays) + (music_idx is not None))
+        inputs += ["-i", str(pictures[0]), "-i", str(pictures[1])]
     _copy_fonts(work / "fonts")
     graph = work / "graph.txt"
-    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm), encoding="utf-8")
+    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm, logo),
+                     encoding="utf-8")  # fmt: skip
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,
             "-/filter_complex", graph.name, "-map", "[vout]", "-map", "[aout]",
             *encode_args(e, rules), "-t", _n(e.duration), str(out)]  # fmt: skip

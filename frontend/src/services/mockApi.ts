@@ -14,6 +14,7 @@ import { MUSIC_LIBRARY } from '../data/mockMusic';
 import { RULES } from '../data/rules';
 import { validateMax } from '../lib/approval';
 import { runPreflight } from '../lib/preflight';
+import { reviewProblem } from '../lib/review';
 import { PIPELINE_STEPS } from '../types/rules';
 import type {
   ConsoleLine,
@@ -174,7 +175,7 @@ function advance(id: string): void {
     job.finalUrl = job.previewUrl; // demo: reuse the same real render as the "final" clip
     job.qa = buildQaReport();
     // demo: a delivered final video waits for its reviewer (T-F); the real API sets this from the manifest
-    job.review = { status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
+    job.review = { jobId: id, status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
     job.logLines.push(log('info', 'Hoàn tất pipeline — soát kỹ thuật ĐẠT ở vòng 1/3.'));
     notify(id);
     return;
@@ -305,6 +306,26 @@ export const mockApi: StudioApi = {
     rec.timer = setTimeout(() => advance(job.id), STEP_TICK_MS);
     notify(job.id);
     return { ...rec.job };
+  },
+
+  async decideReview(jobId, decision, reviewer, reason): Promise<void> {
+    const rec = store.get(jobId);
+    const review = rec?.job.review;
+    if (!rec || !review) throw new Error('Video này không có gì chờ duyệt.');
+    const bad = reviewProblem(decision, reviewer, reason);
+    if (bad) throw new Error(bad);
+    if (review.status !== 'pending') throw new Error('Video này đã được quyết định rồi, không đổi được nữa.');
+    rec.job.review = {
+      ...review,
+      status: decision === 'approve' ? 'approved' : 'changes_requested',
+      decidedBy: reviewer.trim(),
+      decidedAt: new Date().toISOString(),
+      reason: reason.trim() || null,
+    };
+    rec.job.logLines.push(log('info', decision === 'approve'
+      ? `Đã duyệt bởi ${reviewer.trim()} (mô phỏng: chuyển sang final/).`
+      : `Yêu cầu sửa (${reviewer.trim()}): ${reason.trim()}`));
+    notify(jobId);
   },
 
   async rerender(job: RenderJob): Promise<RenderJob> {

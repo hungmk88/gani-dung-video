@@ -270,3 +270,45 @@ def test_a_word_or_a_number_that_only_holds_the_syllables_is_not_a_claim(text: s
 )
 def test_the_exceptions_never_hide_a_real_claim(text: str, found: list[str]) -> None:
     assert find_banned_claims(text, BANNED) == found
+
+
+# ─────────────── 14/10/2026: the variants VAN-HANH 9c listed as "not caught yet" ───────────────
+
+CYR_O = "\u043e"  # Cyrillic small o, looks like a Latin o
+
+
+@pytest.mark.parametrize(
+    ("text", "found"),
+    [
+        ("trăm phần trăm tự nhiên", ["100 phần trăm tự nhiên"]),  # "trăm" written for 100
+        ("Một trăm phần trăm thiên nhiên", ["100 phần trăm thiên nhiên"]),
+        ("tự nhiên trăm phần trăm", ["tự nhiên 100 phần trăm"]),
+        ("100pt tự nhiên", ["100 phần trăm tự nhiên"]),  # "pt" = phần trăm
+        ("100 phần trămm tự nhiên", ["100 phần trăm tự nhiên"]),  # a letter typed twice
+        ("Ngoon nhấtt", ["ngon nhất"]),
+        ("s" + CYR_O + " 1", ["số 1"]),  # Cyrillic o in "so"
+        ("\u0422Ố\u0422 NHẤ\u0422", ["tốt nhất"]),  # Cyrillic T in "TỐT NHẤT"
+        ("ngon nh\u03b1́t", ["ngon nhất"]),  # Greek alpha with a combining tone mark
+        ("Sạch 1 0 0 %", ["100%"]),  # digits spaced out before the percent
+        ("1 0 0 phần trăm tự nhiên", ["100 phần trăm tự nhiên"]),
+    ],
+)  # fmt: skip
+def test_variants_that_used_to_slip_past_are_caught(text: str, found: list[str]) -> None:
+    assert find_banned_claims(text, BANNED) == found
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "hai trăm phần trăm tự nhiên",  # 200, not the claim (and not a listed phrase)
+        "năm trăm phần trăm",
+        "trăm phần trăm",  # "100 phần trăm" alone is not banned (NVH 14/10/2026)
+        "Làm theo bước 1 2 3",  # spaced digits are joined only before a percent
+        "Bước 1 0 xong",
+        "Xoong nồi sạch sẽ",  # a real double letter: folded, but no phrase comes of it
+        "Đạt 5pt chất lượng",
+        "100 percent natural",  # English stays outside the Vietnamese filter
+    ],
+)
+def test_the_new_folding_adds_no_false_alarms(text: str) -> None:
+    assert find_banned_claims(text, BANNED) == []

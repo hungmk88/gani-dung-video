@@ -22,7 +22,8 @@ test('the copy in data/bpmSafe.ts is the table of config/rules.json', () => {
 
 test('levels of the known cases match the Python side', () => {
   const level = (style: string, d: number, bpm: number) => checkBpmSafe(BPM_SAFE, style, d, bpm).level;
-  assert.equal(level('sang_trong', 15, 100), 'BLOCKING'); // 21.6 s planned for 15 s
+  assert.equal(level('sang_trong', 15, 104), 'BLOCKING'); // 20.8 s planned for 15 s
+  assert.equal(level('sang_trong', 15, 100), 'WARNING'); // counted at 100, not 50 (14/10/2026)
   assert.equal(level('sang_trong', 15, 87), 'BLOCKING'); // inside the style's own 60–85 range
   assert.equal(level('sang_trong', 15, 88), 'WARNING'); // +1.36 s, cut
   assert.equal(level('ke_chuyen_nghe', 15, 80), 'OK');
@@ -34,14 +35,14 @@ test('levels of the known cases match the Python side', () => {
 test('outside the measured domain, and a decimal BPM, are handled', () => {
   assert.equal(checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 30).level, 'OK');
   assert.equal(checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 400).level, 'OK');
-  assert.equal(checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 100.4).level, 'BLOCKING');
+  assert.equal(checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 104.4).level, 'BLOCKING');
 });
 
 test('buildable ranges are what blocked leaves free, inside the domain', () => {
-  const { buildable } = checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 100);
+  const { buildable } = checkBpmSafe(BPM_SAFE, 'sang_trong', 15, 104);
   const [lo, hi] = BPM_SAFE.domain;
   assert.deepEqual(buildable, complement(BPM_SAFE.byStyleDuration.sang_trong['15'].blocked, lo, hi));
-  assert.ok(buildable.every(([a, b]) => !(a <= 100 && 100 <= b)));
+  assert.ok(buildable.every(([a, b]) => !(a <= 104 && 104 <= b)));
 });
 
 test('complement and formatRanges', () => {
@@ -52,10 +53,10 @@ test('complement and formatRanges', () => {
 });
 
 test('the notice names the track, the style, the length and the way out', () => {
-  const n = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 100);
+  const n = bpmNotice(BPM_SAFE, 'sang_trong', 'Sang trọng', 15, 104);
   assert.ok(n);
   assert.equal(n.level, 'BLOCKING');
-  assert.equal(n.headline, 'Bài này ở BPM 100');
+  assert.equal(n.headline, 'Bài này ở BPM 104');
   assert.match(n.body, /"Sang trọng" và độ dài 15 giây/);
   assert.match(n.body, /66–82/);
   assert.match(n.body, /Chọn bài khác/);

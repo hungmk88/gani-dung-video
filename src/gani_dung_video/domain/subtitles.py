@@ -81,7 +81,11 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
     r = rules["render"]
     brand = r["brand"]
     fade = "" if edl.style in _POP_STYLES else r"{\fad(200,200)}"
+    # A picture logo (brand.logo_image) is laid over by ffmpeg; only the text logo is drawn here.
+    text_logo = not brand.get("logo_image")
     out = [_dialogue(0.0, edl.content_end, "Logo", escape_ass(brand["logo_text"]))]
+    if not text_logo:
+        out = []
     style_of = {"cta": "CTA", "title": "ChapterTitle"}
     pop = r["keyword_highlight"]
     on = rf"{{\c{ass_colour(str(pop['colour']))}\fscx{pop['scale_pct']}\fscy{pop['scale_pct']}}}"
@@ -96,8 +100,10 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
                                  edl.emphasis, pop)  # fmt: skip
     t0, t1 = edl.content_end, edl.duration
     cx = PLAY_W // 2
+    if text_logo:
+        out.append(_dialogue(t0, t1, "EndCardLogo",
+                             rf"{{\pos({cx},820)}}" + escape_ass(brand["logo_text"])))  # fmt: skip
     out += [
-        _dialogue(t0, t1, "EndCardLogo", rf"{{\pos({cx},820)}}" + escape_ass(brand["logo_text"])),
         _dialogue(t0, t1, "EndCardText", rf"{{\pos({cx},1020)}}" + escape_ass(brand["zalo"])),
         _dialogue(t0, t1, "EndCardText", rf"{{\pos({cx},1140)\fs44}}"
                   + escape_ass(brand["footer"])),
@@ -113,7 +119,7 @@ def ass_document(edl: Edl, rules: Rules, font_px: Mapping[str, int] | None = Non
     """
     r = rules["render"]
     brand = r["brand"]
-    flags = (("logo: placeholder (logo chữ tạm)", brand["logo_placeholder"]),
+    flags = (("logo: placeholder (logo tạm)", brand["logo_placeholder"]),
              ("zalo: placeholder (số tạm)", brand["zalo_placeholder"]))  # fmt: skip
     notes = [n for n, flag in flags if flag]
     head = ["[Script Info]", "; GANI dựng video — " + "; ".join(notes or ["brand kit thật"]),

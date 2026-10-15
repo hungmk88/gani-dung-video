@@ -205,17 +205,17 @@ def luxe_15(tmp_path: Path, **kw: Any) -> Path:
 def test_a_track_that_cannot_build_the_video_stops_the_plan_and_writes_nothing(
     folder: Path, tmp_path: Path
 ) -> None:
-    with_bpm(folder, 100)  # Sang trọng 15 s: 21.6 s planned, +44%
-    with pytest.raises(BpmBlockedError, match="BPM 100") as err:
+    with_bpm(folder, 104)  # Sang trọng 15 s: 20.8 s planned, +38%
+    with pytest.raises(BpmBlockedError, match="BPM 104") as err:
         build_plan(luxe_15(tmp_path), folder, rules=RULES)
-    assert "+44%" in str(err.value) and "--bpm-override" in str(err.value)
+    assert "+38%" in str(err.value) and "--bpm-override" in str(err.value)
     assert not (folder / "edit" / "plan.json").exists()
 
 
 def test_bpm_override_goes_on_records_the_choice_and_drops_the_warning(
     folder: Path, tmp_path: Path
 ) -> None:
-    with_bpm(folder, 100)
+    with_bpm(folder, 104)
     plan, _ = build_plan(luxe_15(tmp_path), folder, rules=RULES, bpm_override=True)
     assert plan.options["bpm_override"] is True
     assert not any(w.startswith(("W_DUR_GAP", "W_BPM")) for w in plan.warnings)
@@ -224,7 +224,7 @@ def test_bpm_override_goes_on_records_the_choice_and_drops_the_warning(
 
 
 def test_the_options_file_can_carry_the_override_too(folder: Path, tmp_path: Path) -> None:
-    with_bpm(folder, 100)
+    with_bpm(folder, 104)
     plan, _ = build_plan(luxe_15(tmp_path, bpm_override=True), folder, rules=RULES)
     assert plan.options["bpm_override"] is True
 
@@ -247,11 +247,11 @@ def test_a_track_that_fits_has_no_bpm_warning(folder: Path, tmp_path: Path) -> N
 def test_cli_plan_exits_4_with_the_reason_on_stderr_unless_overridden(
     folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    with_bpm(folder, 100)
+    with_bpm(folder, 104)
     opt = luxe_15(tmp_path)
     assert main(["plan", str(opt), str(folder)]) == 4
     err = capsys.readouterr().err
-    assert err.startswith("BPM BỊ CHẶN: ") and "BPM 100" in err and "Chọn bài khác" in err
+    assert err.startswith("BPM BỊ CHẶN: ") and "BPM 104" in err and "Chọn bài khác" in err
     assert main(["plan", str(opt), str(folder), "--bpm-override"]) == 0
     out = capsys.readouterr()
     assert "BPM" not in out.err and "W_DUR_GAP" not in out.out  # the warning is switched off

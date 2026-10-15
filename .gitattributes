@@ -6,5 +6,6 @@
 *.jpg binary
 *.ico binary
 *.webp binary
+*.ai binary
 # Windows launcher: cmd.exe wants CRLF line endings.
 *.bat text eol=crlf

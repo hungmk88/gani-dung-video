@@ -51,12 +51,12 @@ def folder(tmp_path: Path) -> Path:
     f.mkdir()
     write_wav(f / "Am_ap_80.wav", click_track(80))  # declared, fits Kể chuyện nghề 15 s
     write_wav(f / "Sang_88.wav", click_track(88))  # measured, Sang trọng 15 s needs a cut
-    write_wav(f / "Nhanh_100.wav", click_track(100))  # declared, Sang trọng 15 s is blocked
+    write_wav(f / "Nhanh_104.wav", click_track(104))  # declared, Sang trọng 15 s is blocked
     write_wav(f / "Tieng_on.wav", np.random.default_rng(7).normal(scale=0.2, size=int(15 * SR)))
     (f / "ghi_chu.txt").write_text("không phải âm thanh", encoding="utf-8")
     (f / "library.json").write_text(json.dumps({"tracks": {
         "Am_ap_80.wav": {"bpm": 80, "first_beat_sec": 0.5},
-        "Nhanh_100.wav": {"bpm": 100, "first_beat_sec": 0.5},
+        "Nhanh_104.wav": {"bpm": 104, "first_beat_sec": 0.5},
         "da_xoa.mp3": {"bpm": 90, "first_beat_sec": 0.2},
     }}), encoding="utf-8")  # fmt: skip
     return f
@@ -75,7 +75,7 @@ def verdict(chk: Any, style: str, duration: int, file: str) -> str:
 def test_tracks_get_their_bpm_source_and_length(folder: Path) -> None:
     chk = check_music_folder(folder, RULES)
     by = {t.file: t for t in chk.tracks}
-    assert sorted(by) == ["Am_ap_80.wav", "Nhanh_100.wav", "Sang_88.wav", "Tieng_on.wav"]
+    assert sorted(by) == ["Am_ap_80.wav", "Nhanh_104.wav", "Sang_88.wav", "Tieng_on.wav"]
     assert (by["Am_ap_80.wav"].bpm, by["Am_ap_80.wav"].source) == (80.0, "library")
     assert by["Sang_88.wav"].source == "measured"
     assert by["Sang_88.wav"].bpm == pytest.approx(88.0, abs=0.6)
@@ -88,9 +88,9 @@ def test_verdicts_are_the_planners_for_each_style_and_length(folder: Path) -> No
     chk = check_music_folder(folder, RULES)
     assert verdict(chk, "ke_chuyen_nghe", 15, "Am_ap_80.wav") == "ok"
     assert verdict(chk, "sang_trong", 15, "Sang_88.wav") == "cắt"
-    assert verdict(chk, "sang_trong", 15, "Nhanh_100.wav") == "chặn"
+    assert verdict(chk, "sang_trong", 15, "Nhanh_104.wav") == "chặn"
     assert verdict(chk, "sang_trong", 15, "Tieng_on.wav") == "lưới"
-    assert verdict(chk, "tvc_cat_nhanh", 15, "Nhanh_100.wav") == "ok"  # TVC fits any tempo
+    assert verdict(chk, "tvc_cat_nhanh", 15, "Nhanh_104.wav") == "ok"  # TVC fits any tempo
 
 
 def test_the_speech_style_is_not_listed_and_180_only_on_request(folder: Path) -> None:

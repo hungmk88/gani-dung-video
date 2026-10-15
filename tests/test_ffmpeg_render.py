@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import shutil
+import struct
 import subprocess
 from pathlib import Path
 
@@ -14,10 +17,13 @@ from gani_dung_video.domain.edl import Caption, Edl, MusicTrack, Shot
 from gani_dung_video.domain.subtitles import ass_document
 from gani_dung_video.infrastructure.config_files import load_rules
 from gani_dung_video.infrastructure.ffmpeg_render import (
+    APP_DIR,
     RenderError,
     audio_graph,
+    brand_logo,
     build_graph,
     encode_args,
+    logo_files,
     parse_loudnorm,
     render,
 )
@@ -125,6 +131,86 @@ def test_grade_goes_on_the_picture_only_not_on_the_captions_or_the_end_card() ->
                     ass_name="s.ass")  # fmt: skip
     assert f"[vjoin]{tone}[vgrade]" in g
     assert "[vgrade][vend]concat=n=2:v=1:a=0,subtitles=" in g  # captions drawn after the grade
+
+
+# ─────────────── picture logo (14/10/2026) ───────────────
+
+BRAND = RULES["render"]["brand"]
+
+
+def at(expr: str, t: float) -> float:
+    """Evaluate the overlay x/y expression the way ffmpeg does at time t."""
+    py = expr.replace("if(", "IF(").replace("eq(", "EQ(").replace("mod(", "MOD(")
+    env = {"IF": lambda c, a, b: a if c else b, "EQ": lambda a, b: a == b,
+           "MOD": lambda a, b: a % b, "floor": math.floor, "t": t}  # fmt: skip
+    return float(eval(py, env))  # test-only: the expression is built by our own code
+
+
+def logo_overlay(g: str) -> tuple[str, str, str]:
+    m = re.search(r"\[logo\]overlay=x='([^']*)':y='([^']*)':enable='([^']*)'", g)
+    assert m, g
+    return m.group(1), m.group(2), m.group(3)
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    w, h = struct.unpack(">II", path.read_bytes()[16:24])
+    return int(w), int(h)
+
+
+def test_logo_appears_at_5_s_and_hops_to_the_next_place_every_4_s() -> None:
+    e = edl([shot("a.mp4", 0, 10), shot("b.mp4", 10, 20)], preview=False)
+    g = build_graph(e, has_audio=[True, True], ass_name="s.ass", logo=brand_logo(RULES, 2))
+    x, y, enable = logo_overlay(g)
+    assert enable == "gte(t,5)"
+    places = [tuple(p) for p in BRAND["logo_positions"]]
+    assert len(set(places)) >= 2  # it never sits still
+    seen = [(at(x, t), at(y, t)) for t in (5.0, 8.9, 9.0, 13.0, 17.0, 21.0)]
+    assert seen == [places[0], places[0], places[1], places[2 % len(places)],
+                    places[3 % len(places)], places[4 % len(places)]]  # fmt: skip
+    assert "[2:v]format=rgba,scale=170:-1,colorchannelmixer=aa=0.8[logo]" in g
+    assert "[3:v]format=rgba,scale=520:-1[endlogo]" in g
+    assert "[vend0][endlogo]overlay=x=(W-w)/2:y=420" in g
+    assert "[vlogo][vend]concat=n=2:v=1:a=0,subtitles=" in g  # captions still on top
+
+
+def test_draft_logo_is_laid_out_at_half_size() -> None:
+    g = build_graph(edl([shot("a.mp4", 0, 10)]), has_audio=[True], logo=brand_logo(RULES, 1))
+    x, y, _ = logo_overlay(g)
+    x0, y0 = BRAND["logo_positions"][0]
+    assert (at(x, 5.0), at(y, 5.0)) == (round(x0 / 2), round(y0 / 2))
+    assert "scale=84:-1" in g or "scale=86:-1" in g  # 170 px at 1080 wide → about 85 at 540
+
+
+def test_without_a_picture_logo_the_graph_is_unchanged() -> None:
+    g = build_graph(edl([shot("a.mp4", 0, 1)]), has_audio=[True])
+    assert "[logo]" not in g and "[vend0]" not in g and "[vfade][vend]" not in g
+
+
+def test_logo_places_stay_clear_of_titles_captions_and_the_side_buttons() -> None:
+    r = RULES["render"]
+    safe = r["safe"]
+    wm, card = logo_files(RULES) or pytest.fail("rules.json names no picture logo")
+    w0, h0 = png_size(wm)
+    w, h = BRAND["logo_width"], BRAND["logo_width"] * h0 / w0
+    title_top = safe["top"] + r["chapter_title_offset"]
+    captions_top = 1920 - safe["bottom"] - 2 * r["font_px"]["caption"]  # two caption lines
+    for x, y in BRAND["logo_positions"]:
+        assert safe["left"] <= x and x + w <= 1080 - safe["right"]
+        assert safe["top"] <= y and y + h <= captions_top
+        if y < title_top:  # top row: ends above the chapter title line
+            assert y + h <= title_top
+    cw0, ch0 = png_size(card)
+    bottom = BRAND["end_card_logo_top"] + BRAND["end_card_logo_width"] * ch0 / cw0
+    zalo_top = 1020 - r["font_px"]["end_card_text"] / 2  # EndCardText is centred at y = 1020
+    assert BRAND["end_card_logo_top"] >= safe["top"] and bottom < zalo_top
+
+
+def test_a_missing_logo_picture_stops_the_render_with_its_name() -> None:
+    brand = {**BRAND, "logo_image": "assets/brand/khong-co.png"}
+    rules = {**RULES, "render": {**RULES["render"], "brand": brand}}
+    with pytest.raises(RenderError, match=r"khong-co\.png"):
+        logo_files(rules)
+    assert APP_DIR.joinpath(BRAND["logo_image"]).is_file()
 
 
 MEASURED = {
@@ -255,6 +341,39 @@ def test_real_render_has_the_planned_size_length_fps_and_audio(tmp_path: Path) -
     assert a["sample_rate"] == "48000"
     fmt = info["format"]
     assert isinstance(fmt, dict) and float(fmt["duration"]) == pytest.approx(3.0, abs=0.1)
+
+
+def grey_at(video: Path, t: float, box: tuple[int, int, int, int]) -> float:
+    """Share of pixels inside box (x, y, w, h) still the plain grey of the test source."""
+    x, y, w, h = box
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", str(t), "-i",
+                        str(video), "-frames:v", "1", "-vf", f"crop={w}:{h}:{x}:{y}", "-f",
+                        "rawvideo", "-pix_fmt", "gray", "-"],
+                       capture_output=True, check=True, timeout=60)  # fmt: skip
+    return sum(1 for v in r.stdout if abs(v - 128) <= 6) / len(r.stdout)
+
+
+@needs_render_ffmpeg
+def test_real_render_moves_the_picture_logo_and_puts_it_on_the_end_card(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "color=c=0x808080:s=360x640:r=30:d=11", 11.0)
+    e = edl([shot("a.mp4", 0, 10.0)]).model_copy(update={"captions": []})
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    (x0, y0), (x1, y1) = BRAND["logo_positions"][:2]
+    first = (round(x0 / 2) + 10, round(y0 / 2) + 10, 60, 30)  # inside the 85 px draft logo
+    second = (round(x1 / 2) + 10, round(y1 / 2) + 10, 60, 30)
+    assert grey_at(out, 2.0, first) > 0.99  # nothing before 5 s
+    assert grey_at(out, 6.0, first) < 0.7 and grey_at(out, 6.0, second) > 0.99
+    assert grey_at(out, 9.5, second) < 0.7 and grey_at(out, 9.5, first) > 0.99  # hopped at 9 s
+    card = (240, 230, 60, 60)  # centre of the large logo on the black end card
+    probe_card = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "10.5",
+                                 "-i", str(out), "-frames:v", "1", "-vf",
+                                 "crop={2}:{3}:{0}:{1}".format(*card), "-f", "rawvideo",
+                                 "-pix_fmt", "gray", "-"],
+                                capture_output=True, check=True, timeout=60)  # fmt: skip
+    assert max(probe_card.stdout) > 60  # not black: the logo is there
 
 
 @needs_render_ffmpeg

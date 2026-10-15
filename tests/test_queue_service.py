@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from gani_dung_video.application.daemon import render_argv
 from gani_dung_video.application.queue_service import (
     ApprovalRefused,
     NotReadyError,
@@ -728,6 +729,18 @@ def test_vietnamese_text_in_options_is_stored_readable(db: QueueDb, root: Path) 
     pipe(db, root, options={**OPTS, "ghi_chu": "Xưởng sạch, viên bò tròn đều"})
     text = (root / "footage" / "edit" / "options.json").read_text(encoding="utf-8")
     assert "Xưởng sạch" in text
+
+
+def test_product_and_campaign_chosen_in_the_web_reach_the_render_command(
+    db: QueueDb, root: Path
+) -> None:
+    # 14/10/2026: the wizard sends san_pham / chien_dich with the options (POST /api/pipelines).
+    r = pipe(db, root, options={**OPTS, "san_pham": "gio-lua", "chien_dich": "Tết 2027"})
+    _, _, ra, _ = db.jobs_of_pipeline(r.pipeline_id)
+    saved = VideoOptions.model_validate(json.loads(Path(ra.options_file).read_text("utf-8")))
+    argv = render_argv(ra, base=["gani"], options=saved)
+    assert argv[argv.index("--san-pham") + 1] == "gio-lua"
+    assert argv[argv.index("--chien-dich") + 1] == "Tết 2027"
 
 
 def test_a_single_draft_letter_or_final_size_and_no_asr_are_carried_to_the_renders(

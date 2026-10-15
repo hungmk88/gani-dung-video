@@ -175,6 +175,14 @@ export const realApi: StudioApi = {
     return detail(job.id);
   },
 
+  async decideReview(jobId, decision, reviewer, reason) {
+    const note = reason.trim();
+    await post(`/api/jobs/${enc(jobId)}/review/${decision}`, {
+      reviewer: reviewer.trim(),
+      ...(note ? { reason: note } : {}),
+    });
+  },
+
   async rerender(job) {
     // Retry what failed, in order (analyze → draft → render); draft needs a fresh approval.
     const retryable = (job.jobs ?? []).filter((j) => j.retryable);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ApiJob } from '../types/api.ts';
-import { latestReview, reviewBadge, toReview } from './review.ts';
+import { cardReviews, latestReview, reviewBadge, reviewProblem, toReview } from './review.ts';
 
 const api = (over: Record<string, unknown> = {}) => ({
   status: 'pending' as const,
@@ -26,34 +26,34 @@ function job(id: number, over: Partial<ApiJob> = {}): ApiJob {
 }
 
 test('toReview maps the three states and the null cases', () => {
-  assert.equal(toReview(null), null);
-  assert.equal(toReview(undefined), null);
-  const p = toReview(api());
+  assert.equal(toReview(null, 1), null);
+  assert.equal(toReview(undefined, 1), null);
+  const p = toReview(api(), 7);
   assert.deepEqual(p, {
-    status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [],
+    jobId: '7', status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [],
   });
-  const c = toReview(api({ status: 'changes_requested', reason: 'chữ cuối bị che', decided_by: 'NVH' }));
+  const c = toReview(api({ status: 'changes_requested', reason: 'chữ cuối bị che', decided_by: 'NVH' }), 7);
   assert.equal(c?.status, 'changes_requested');
   assert.equal(c?.reason, 'chữ cuối bị che');
   assert.equal(c?.decidedBy, 'NVH');
 });
 
 test('the badge names the state and puts the reason in the hover text', () => {
-  const pending = reviewBadge(toReview(api())!);
+  const pending = reviewBadge(toReview(api(), 7)!);
   assert.equal(pending.label, 'Chờ duyệt');
   assert.match(pending.cls, /amber/);
-  const approved = reviewBadge(toReview(api({ status: 'approved', decided_by: 'Hùng' }))!);
+  const approved = reviewBadge(toReview(api({ status: 'approved', decided_by: 'Hùng' }), 7)!);
   assert.equal(approved.label, 'Đã duyệt');
   assert.match(approved.cls, /emerald/);
   assert.match(approved.title, /Hùng/);
-  const changes = reviewBadge(toReview(api({ status: 'changes_requested', reason: 'chữ cuối bị che' }))!);
+  const changes = reviewBadge(toReview(api({ status: 'changes_requested', reason: 'chữ cuối bị che' }), 7)!);
   assert.equal(changes.label, 'Cần sửa');
   assert.match(changes.cls, /rose/);
   assert.match(changes.title, /chữ cuối bị che/);
 });
 
 test('an overdue pending video says so', () => {
-  const late = reviewBadge(toReview(api({ overdue: true }))!);
+  const late = reviewBadge(toReview(api({ overdue: true }), 7)!);
   assert.match(late.label, /Chờ duyệt/);
   assert.match(late.title, /quá hạn/i);
 });
@@ -66,6 +66,35 @@ test('latestReview takes the newest final render that has a review, and ignores 
     job(7, { kind: 'draft', review: api() }),
   ];
   assert.equal(latestReview(jobs)?.status, 'changes_requested');
+  assert.equal(latestReview(jobs)?.jobId, '3'); // the job approve/reject is sent to
   assert.equal(latestReview([job(2)]), null);
   assert.equal(latestReview([]), null);
+});
+
+test('cardReviews lists the newest final video of each draft of a pipeline, in letter order', () => {
+  const r = (jobId: string, status: 'pending' | 'approved' = 'pending') => ({ ...toReview(api({ status }), jobId)! });
+  const items = cardReviews({
+    jobs: [
+      { kind: 'render', draft: 'B', review: r('9') },
+      { kind: 'render', draft: 'A', review: r('4', 'approved') },
+      { kind: 'render', draft: 'A', review: r('11') }, // re-rendered: the newer one counts
+      { kind: 'render', draft: 'C' }, // a preview: nothing to decide
+      { kind: 'draft', draft: '', review: r('2') },
+    ],
+  });
+  assert.deepEqual(items.map((i) => [i.label, i.review.jobId]), [['Bản cuối A', '11'], ['Bản cuối B', '9']]);
+});
+
+test('cardReviews of a lone card is its own review, and nothing without one', () => {
+  const review = toReview(api(), 5)!;
+  assert.deepEqual(cardReviews({ draft: 'B', review }), [{ label: 'Bản cuối B', review }]);
+  assert.deepEqual(cardReviews({ draft: 'all', review }), [{ label: 'Bản cuối', review }]);
+  assert.deepEqual(cardReviews({}), []);
+});
+
+test('reviewProblem asks for a name, and a reason only when asking for changes', () => {
+  assert.match(reviewProblem('approve', ' ', '')!, /tên/);
+  assert.equal(reviewProblem('approve', 'Hùng', ''), null);
+  assert.match(reviewProblem('reject', 'Hùng', '  ')!, /lý do/);
+  assert.equal(reviewProblem('reject', 'Hùng', 'chữ cuối bị che'), null);
 });

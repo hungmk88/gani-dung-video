@@ -108,7 +108,7 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
 - Bài ngắn hơn video được lặp theo ô nhịp (X13). "Ngắn hơn" tính **phần nghe được** (từ nhịp đầu tiên của bài) so với độ dài video **cộng 2 giây khung kết**: bài đúng 15 giây cho video 15 giây vẫn được lặp, nếu không nhạc hết trước khung kết. Bài nhạc **tải lên phải tick "tôi có quyền sử
   dụng"** (X14), nếu không bị chặn.
 - **Cảnh báo BPM:** mỗi bài nhạc làm kế hoạch dài ra vì khối nào cũng cần ít nhất một cảnh. Bài
-  chậm có thể khiến video 15 giây lập kế hoạch dài 21,6s và bị `E1-DUR-GAP` chặn khi giao. Nên
+  chậm có thể khiến video 15 giây lập kế hoạch dài 21s và bị `E1-DUR-GAP` chặn khi giao. Nên
   khi chọn bài, hệ thống cảnh báo trước theo bảng `music.bpm_safe_by_style_duration` trong
   `rules.json` (đo thật bằng bộ lập kế hoạch, không phải một khoảng min–max):
   - `W_BPM_CUT`: phần cuối bị cắt bớt, trong ±10%, video vẫn dựng được;
@@ -210,6 +210,22 @@ hơn, nên đừng bật khử ồn cho chế độ lời trước khi người 
   không dựng**, và báo "C1: …" kèm nguồn chữ và cụm cấm. Ngoài ra, nạp `glossary.json` cũng dừng nếu một
   từ nhấn chứa cụm cấm, trống hay bị lặp. Soát không phân biệt hoa thường và dấu thanh.
 
+## 6c. Logo và số Zalo (từ 14/10/2026)
+
+Mọi video mang logo thật của GANI và số **Zalo 0853 9999 77**. Thông số nằm trong
+`config/rules.json` → `render.brand`; đổi số ở đó, không cần sửa mã.
+
+- **Logo trong video:** lá và chữ GANI (`assets/brand/logo-video.png`). Logo chỉ hiện **từ giây
+  thứ 5** (`logo_start_sec`), sau đó cứ **4 giây** (`logo_hop_sec`) lại nhảy sang vị trí kế tiếp
+  trong `logo_positions`: trên trái → trên phải → giữa bên trái → lặp lại. Logo không đứng yên
+  một chỗ. Mọi vị trí đều nằm trong vùng an toàn, không đè tiêu đề chương, phụ đề hay cột nút
+  bên phải của TikTok (một test kiểm điều này). Độ rộng 170 px trên khung 1080, mờ 80%.
+- **Khung kết 2 giây:** logo đầy đủ trên nền tối (`assets/brand/logo-khung-ket.png`), dưới là số
+  Zalo và dòng "GANI FOODS – Đạt chuẩn HACCP Codex 2022".
+- **Đổi logo:** thay `assets/brand/logo-goc.ai` (file Illustrator của bên thiết kế) rồi chạy
+  `python scripts/tao_logo_video.py` (cần `pdftocairo` và Pillow, chỉ dùng khi tạo lại ảnh).
+  Muốn quay về logo chữ thì xóa khóa `logo_image`.
+
 ## 7. Nhãn QC T8 (chế độ lời)
 
 T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch lời và độ lệch phụ đề; chỉ chạy cho
@@ -305,7 +321,7 @@ chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi đ�
 **Giao hàng:** video đạt cả bộ kiểm tra được chép sang `edit/delivery/<chiến-dịch>/drafts/` với tên
 `GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_v{n}_{YYYYMMDD}.mp4` (chữ thường, gạch
 ngang, không dấu; `v{n}` tăng theo số bản cùng ngày, tính cả `drafts/` lẫn `final/`), manifest sang
-`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9c) và `raw/` dành cho footage gốc
+`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9b) và `raw/` dành cho footage gốc
 (không chép vào đây).
 Đặt sản phẩm và chiến dịch bằng cờ của lệnh dựng: `render <thư mục> --san-pham "Giò lụa"
 --chien-dich "Ra mắt tháng 10"`; không đặt thì sản phẩm là `chung` và chiến dịch là tên thư mục
@@ -315,11 +331,14 @@ footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn đượ
 kịch bản gần nhất (phần của bản nháp này = chi phí mỗi vòng chia đều cho các bản nó viết), cộng thời
 gian dựng thật. Bản nháp ghép tay chưa gọi Claude thì ghi rõ lý do thay vì số 0.
 
-## 9c. Duyệt video cuối (T-F)
+## 9b. Duyệt video cuối (T-F)
 
 Một **bản cuối 1080×1920** đã qua mọi kiểm tra nằm ở `edit/delivery/<chiến-dịch>/drafts/` với
 `review.status = pending` trong manifest. Bản **nháp 540p không bao giờ được duyệt**. Người duyệt
-quyết định bằng dòng lệnh (hoặc API, mục 9c-API); giao diện chỉ hiện huy hiệu trạng thái.
+quyết định **trên giao diện** (tab "Video đang làm" → chọn video → khung "Duyệt video cuối": ghi
+tên, bấm "Duyệt video" hoặc ghi lý do rồi bấm "Yêu cầu sửa"), bằng dòng lệnh, hoặc qua API (cuối
+mục này). Giao diện nhớ tên người duyệt trên máy đó và hỏi xác nhận trước khi gửi. Nút "Duyệt
+video" bị khóa khi còn mục kiểm tra hỏng (danh sách hiện ngay trên nút).
 
 | Việc | Lệnh | Kết quả |
 |---|---|---|
@@ -348,13 +367,20 @@ quyết định bằng dòng lệnh (hoặc API, mục 9c-API); giao diện ch�
 `POST /api/jobs/{id}/review/reject`. Chưa có xác thực: máy chủ chỉ nghe `127.0.0.1` và vẫn kiểm
 Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`.
 
-## 9b. Hạn chế đã biết
+## 9c. Hạn chế đã biết
 
 - **Có nhạc, cắt đuôi:** phần cuối bị cắt thuộc khối cuối của video (thường là cảnh kêu gọi).
-  Đo trên 620 tổ hợp phong cách × độ dài × BPM 55–145: 27% bị cắt (169), trung vị 0,82s; 148 ca
-  trong ±10%, 21 ca (3,4%) vượt ±10% và bị `E1-DUR-GAP` chặn khi giao. 21 ca đó gần hết là Sang
-  trọng ở video 15 và 30 giây (mỗi khối đã ở mức tối thiểu một cảnh nên không giảm được phách).
-  Ca tệ nhất: Sang trọng 100 BPM, 15 giây, kế hoạch 21,6s (+44%).
+  Đo lại ngày 14/10/2026 trên 620 tổ hợp phong cách × độ dài × BPM 55–145 (bước 3): 26% bị cắt
+  (162), trung vị 0,79s; 142 ca trong ±10%, 20 ca (3,2%) vượt ±10% và bị `E1-DUR-GAP` chặn khi
+  giao. 18/20 ca là Sang trọng ở video 15 và 30 giây: mỗi khối cần ít nhất một cảnh 6 phách, ở
+  nhạc chậm (hoặc nhạc nhanh đếm "2 thành 1") cảnh đó dài 6–7s, ba khối đã quá 15 giây. Ca tệ
+  nhất: Sang trọng 103 BPM, 15 giây, kế hoạch 21,0s (+40%).
+  Đã sửa (14/10/2026): khi cách đếm X12 chọn theo cảm giác nhạc không thể vừa độ dài, bộ lập
+  kế hoạch thử cách đếm khác vẫn trong dung sai BPM của phong cách và giữ cách gần độ dài nhất
+  (ví dụ Sang trọng 100 BPM: đếm 100 thay vì 50, kế hoạch 15,6s thay vì 21,6s, ghi trong
+  `adjustments`). Bỏ hẳn phần còn lại cần đổi số phách mỗi cảnh của Sang trọng (`beats_allowed`
+  [6, 8] → [5, 6, 8]: đo được 15 giây còn 7 BPM bị chặn thay vì 53, 30 giây còn 0 thay vì 7); đó
+  là thay đổi nhịp cắt của phong cách, chờ chủ quyết.
 - **Hộp cảnh báo BPM chưa được thử tay với nhạc thật của xưởng.** Đã thử trên máy dựng thật
   với bài tổng hợp (ca vừa khít, cắt đuôi, không dựng được, đang đo, không đo được); giao diện
   chỉ có test tự động cho hàm thuần, không có test component: cần thử tay trước T-F với nhạc
@@ -363,20 +389,22 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
   thư mục nhạc bị bỏ qua (test liên kết bị bỏ qua trên Windows khi không đủ quyền tạo).
 - Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
   bằng bảng, bước `plan` vẫn đo chính xác.
-- Giao diện (web) chưa truyền `--san-pham` và `--chien-dich`: job tạo từ giao diện mang tên
-  sản phẩm `chung` và chiến dịch là tên thư mục footage.
+- Giao diện (web) chọn được sản phẩm và chiến dịch ở bước "4. Tên file giao" (từ 14/10/2026):
+  hai trường đi cùng tùy chọn vào `edit/options.json` rồi tới lệnh `render`. Bỏ trống thì sản
+  phẩm là `chung` và chiến dịch là tên thư mục footage. Chế độ "Chỉ dựng lại" không gửi tùy
+  chọn nên luôn dùng mặc định.
 - Hàng đợi đã truyền `--san-pham` và `--chien-dich` (từ 06/10/2026): job đọc hai trường từ
   `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
   như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
   báo vào manifest. Cờ CLI `--san-pham` / `--chien-dich` vẫn ghi đè được khi gõ `render` tay.
+- Biến thể đã bắt thêm (14/10/2026): `trăm phần trăm` / `một trăm phần trăm` viết thay "100"
+  (trừ khi có số khác đứng trước, "hai trăm phần trăm" là 200), `100pt`, chữ gõ lặp
+  (`trămm`, `nhấtt`), chữ Cyrillic hoặc Hy Lạp trông giống chữ Latin (`sо 1` với "о" Cyrillic),
+  chữ số gõ cách nhau ngay trước dấu % hoặc "phần trăm" (`1 0 0 %`).
 - Biến thể chưa bắt (theo dõi, bổ sung nếu gặp thực tế):
-  · `trăm phần trăm tự nhiên` (viết "trăm" thay "100")
-  · `100 phần trăm nguyên chất` (claim tương đương)
-  · `100pt tự nhiên` (viết tắt)
-  · `100 phần trămm tự nhiên` (chèn ký tự lạ vào "trăm")
+  · `100 phần trăm nguyên chất` và các tuyên bố tương đương khác: cần NVH thêm cụm vào
+    `banned_claims` (danh sách đã chốt, app không tự thêm)
   · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
-  · chữ trông giống chữ Việt nhưng là chữ Cyrillic (`sо 1` với "о" Cyrillic), chữ số cách nhau
-    (`1 0 0 %`)
 - Không coi là cụm cấm (14/10/2026): cụm bắt đầu ở âm tiết thứ hai của một từ có sẵn trong
   danh sách `_WORD_BEFORE` (`domain/glossary.py`: giá trị, quản trị, chính trị, cai trị, thống
   trị, văn phòng, sửa chữa), nên "giá trị bệnh nhân" không bị bắt là "trị bệnh"; số có dấu thập
