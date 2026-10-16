@@ -1,8 +1,10 @@
 # CI: the same checks the project's "Done" asks for (README → Phát triển), on every PR and on main.
 #
 # Notes for whoever maintains this file:
+# - Runner: pinned to ubuntu-24.04 (16/10/2026), not ubuntu-latest, which moves to Ubuntu 26 from
+#   19/10/2026 (actions/runner-images#14748). Bump it on purpose, in its own PR.
 # - ffmpeg: the render graph needs ffmpeg >= 7.0 (`-/filter_complex`, see ffmpeg_render.py), but
-#   ubuntu-latest ships 6.1, so the real-render tests would stop at the version check. The job
+#   Ubuntu 24.04 ships 6.1, so the real-render tests would stop at the version check. The job
 #   installs a static BtbN build instead, pinned by release tag, file name AND sha256 written
 #   here: a moved or replaced file fails the job instead of being installed. The tag is the last
 #   build of a month on purpose: BtbN prunes daily builds after 14 but keeps each month's last
@@ -36,7 +38,7 @@ env:
 jobs:
   python:
     name: Python (ruff, mypy, pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -80,7 +82,7 @@ jobs:
 
   frontend:
     name: Frontend (test, tsc, lint, build)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
