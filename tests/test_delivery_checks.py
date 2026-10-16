@@ -13,6 +13,7 @@ from gani_dung_video.domain.delivery_checks import (
     check_duration_gap,
     check_glyphs,
     check_onscreen_claims,
+    check_platform_words,
     check_safe_zone,
     duration_deviations,
     screen_texts,
@@ -21,7 +22,7 @@ from gani_dung_video.domain.edl import Caption, Edl, Shot
 from gani_dung_video.domain.qc import Finding
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.subtitles import ass_document
-from gani_dung_video.infrastructure.config_files import load_rules
+from gani_dung_video.infrastructure.config_files import load_glossary, load_rules
 from gani_dung_video.infrastructure.media_probe import FontMetrics
 
 RULES = load_rules()
@@ -291,3 +292,33 @@ def test_black_frames_fail_the_picture_item_but_a_freeze_only_warns() -> None:
     both = build_e1(edl(), RULES, [black, freeze], -14.0, -2.0, _checks())
     pic = [next(i for i in r.items if i.code == "E1-PICTURE") for r in (only_freeze, both)]
     assert pic[0].passed and not pic[1].passed and pic[1].value == 1.0
+
+
+# ─────────────── 14/10/2026: platform risk words (warnings only) ───────────────
+
+
+def test_platform_words_warn_on_screen_and_spoken_text_and_never_block() -> None:
+    caps = [Caption(start=0.0, end=2.0, text="Màu đỏ tươi tự nhiên", kind="text"),
+            Caption(start=2.0, end=4.0, text="Nhắn tin Zalo ngay", kind="cta")]  # fmt: skip
+    spoken = [[SpokenWord(text="giá", start=4.0, end=4.3, prob=0.9),
+               SpokenWord(text="sỉ", start=4.3, end=4.6, prob=0.9)]]  # fmt: skip
+    e = edl(caps).model_copy(update={"platform": "tiktok", "karaoke": spoken})
+    words = load_glossary().platform_risk_words["tiktok"]
+    item, found = check_platform_words(e, words)
+    assert item.passed and item.value == 3.0  # nhắn tin, zalo (screen), giá sỉ (voice)
+    assert {f.level for f in found} == {"warn"}
+    assert any("lời nói" in f.msg and "giá sỉ" in f.msg for f in found)
+    assert not any("máu" in f.msg for f in found)  # "màu" (colour) is not "máu" (blood)
+
+
+def test_facebook_allows_nhan_tin_and_a_video_without_platform_is_not_checked() -> None:
+    caps = [Caption(start=0.0, end=2.0, text="Nhắn tin Zalo đặt hàng", kind="cta")]
+    words = load_glossary().platform_risk_words["facebook"]
+    item, found = check_platform_words(edl(caps).model_copy(update={"platform": "facebook"}), words)
+    assert item.value == 0.0 and found == []
+    item, found = check_platform_words(edl(caps), load_glossary().platform_risk_words["tiktok"])
+    assert found == [] and "không soát" in item.detail
+
+
+def test_every_platform_with_words_is_a_platform_of_rules_json() -> None:
+    assert set(load_glossary().platform_risk_words) <= set(RULES["platforms"]["profiles"])

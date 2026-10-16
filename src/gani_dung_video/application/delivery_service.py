@@ -27,6 +27,7 @@ from gani_dung_video.domain.delivery_checks import (
     check_duration_gap,
     check_glyphs,
     check_onscreen_claims,
+    check_platform_words,
     check_safe_zone,
     duration_deviations,
 )
@@ -86,13 +87,14 @@ def apply_e1(
     safe, f_safe = check_safe_zone(e, rules, rep.font_px, metrics.width)
     glyph, f_glyph = check_glyphs(e, _brand_texts(e, rules), metrics.has_glyph)
     claims, f_claims = check_onscreen_claims(e, glossary.banned_claims)
+    words, f_words = check_platform_words(e, glossary.platform_risk_words.get(e.platform, []))
     checks: dict[str, E1Item] = {"E1-DUR": dur, "E1-DUR-GAP": gap, "E1-SAFE": safe,
-                                 "E1-GLYPH": glyph, "C1": claims}  # fmt: skip
+                                 "E1-GLYPH": glyph, "C1": claims, "E1-NEN-TANG": words}  # fmt: skip
     report = build_e1(e, rules, rep.findings, rep.lufs, rep.true_peak_db, checks)
     vs_chosen, vs_plan = duration_deviations(file_sec, e, chosen, planned)
     report = report.model_copy(update={"deviation_vs_chosen": vs_chosen,
                                        "deviation_vs_plan": vs_plan})  # fmt: skip
-    stop: list[Finding] = [*f_dur, *f_gap, *f_safe, *f_glyph, *f_claims]
+    stop: list[Finding] = [*f_dur, *f_gap, *f_safe, *f_glyph, *f_claims, *f_words]  # words: warn
     updated = rep.model_copy(update={"findings": [*rep.findings, *stop],
                                      "passed": rep.passed and report.passed})  # fmt: skip
     return updated, report

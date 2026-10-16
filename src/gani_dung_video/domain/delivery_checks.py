@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict
 
 from gani_dung_video.domain.compliance import check_edl_claims, edl_texts
 from gani_dung_video.domain.edl import Edl
+from gani_dung_video.domain.glossary import find_phrases
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import PLAY_W, Finding, WidthFn, size_key, usable_width, wrap_lines
 from gani_dung_video.domain.subtitles import PLAY_H
@@ -252,6 +253,33 @@ def check_onscreen_claims(e: Edl, banned: Sequence[str]) -> tuple[E1Item, list[F
     return item, [Finding(code="C1", level="error", msg=detail)] if hits else []
 
 
+# ─────────────── platform risk words (14/10/2026) ───────────────
+
+
+def check_platform_words(e: Edl, words: Sequence[str]) -> tuple[E1Item, list[Finding]]:
+    """Words the target platform tends to limit, on screen or spoken (karaoke lines are the
+    voice). A warning per hit, never a block: the editor decides. `value` = number of hits."""
+    if not e.platform:
+        return E1Item(code="E1-NEN-TANG", name="Từ ngữ rủi ro theo nền tảng", passed=True,
+                      detail="Video không dựng theo nền tảng: không soát."), []  # fmt: skip
+    found: list[Finding] = []
+    used: set[str] = set()
+    for t in screen_texts(e):
+        for w in find_phrases(t.text, words):
+            used.add(w)
+            where = "lời nói" if t.kind == "karaoke" else "chữ trên màn hình"
+            found.append(Finding(code="E1-NEN-TANG", level="warn", at_sec=t.start,
+                                 msg=f"Bản {e.platform}: {where} '{t.text}' có từ '{w}' mà nền "
+                                     "tảng hay hạn chế (dễ bị giảm phân phối). Cân nhắc đổi "
+                                     "câu ở bản nháp."))  # fmt: skip
+    listed = ", ".join(f"'{w}'" for w in sorted(used))
+    detail = (f"Bản {e.platform}: {len(found)} chỗ dùng {listed} (chỉ cảnh báo, không chặn)."
+              if found else f"Bản {e.platform}: không có từ nào trong danh sách.")  # fmt: skip
+    item = E1Item(code="E1-NEN-TANG", name="Từ ngữ rủi ro theo nền tảng", passed=True,
+                  value=float(len(found)), unit="chỗ", detail=detail)  # fmt: skip
+    return item, found
+
+
 # ─────────────── report ───────────────
 
 
@@ -314,5 +342,6 @@ def build_e1(
         checks["E1-SAFE"],
         checks["E1-GLYPH"],
         checks["C1"],
+        *([checks["E1-NEN-TANG"]] if "E1-NEN-TANG" in checks else []),  # warning only
     ]
     return E1Report(passed=all(i.passed for i in items), items=items)

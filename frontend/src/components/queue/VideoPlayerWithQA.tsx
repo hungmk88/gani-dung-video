@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, FileJson, Info, RefreshCw, Wrench, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FileJson, Info, RefreshCw, Wrench, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { outputLabel } from '../../lib/platforms';
 import { seekTarget } from '../../lib/structure';
@@ -8,7 +8,9 @@ import { ChapterTimeline } from './ChapterTimeline';
 function CheckRow({ c }: { c: QaCheck }) {
   return (
     <li className="flex items-start gap-2 py-1.5 text-xs">
-      {c.passed ? (
+      {c.passed && c.detail.startsWith('Cảnh báo') ? (
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+      ) : c.passed ? (
         <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
       ) : (
         <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-400" />
