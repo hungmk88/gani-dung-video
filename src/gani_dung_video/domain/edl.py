@@ -88,6 +88,7 @@ class Edl(BaseModel):
     trim_fade_sec: float = 0.0  # music mode cut at the chosen length: fade the last seconds
     platform: str = ""  # tiktok | facebook (domain/platforms.apply_platform); "" = no profile
     end_card_zalo: bool = True  # the end card shows the Zalo line (TikTok: no, 14/10/2026)
+    no_music: bool = False  # the plan's music was left out: music is added in the app (16/10/2026)
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:

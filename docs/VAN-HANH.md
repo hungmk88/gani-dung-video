@@ -256,6 +256,19 @@ thì thời gian dựng gấp đôi nhưng **không tốn thêm tiền AI**.
   phải chính sách công bố của TikTok hay Meta.
 - Dòng lệnh: `render <thư mục> --nen-tang tiktok` (bỏ `--nen-tang` = không theo nền tảng, như
   trước); `qc … --nen-tang tiktok` để soát lại đúng bản đó.
+- **Không nhúng nhạc** (từ 16/10/2026): ô "Không nhúng nhạc — chèn nhạc trên app khi đăng" ở
+  bước "Đăng lên". Dùng khi chạy quảng cáo: quảng cáo TikTok và Facebook cần nhạc có bản quyền của
+  chính nền tảng, chèn trên app lúc đăng. Kịch bản, nhịp cắt và độ dài **giữ như kế hoạch** (vẫn
+  chọn nhạc ở bước 3 để có nhịp), chỉ bỏ nhạc khỏi file:
+  - Video còn lời nói (chế độ lời) và tiếng hiện trường, chuẩn âm lượng như thường. Phong cách tắt
+    tiếng máy quay (như TVC cắt nhanh) thì video **không có tiếng**; soát chất lượng ghi "video
+    không tiếng: không nhúng nhạc", không báo lỗi. Trên app, chỉnh âm lượng "âm thanh gốc" khi
+    chèn nhạc.
+  - Tên file giao có thêm `khong-nhac`: `…_9x16_tiktok_khong-nhac_v1_….mp4`; `manifest.json` và
+    `render_log.json` có `"no_music": true`.
+  - Áp cho mọi bản của lần gửi; dựng lại một bản có nhạc thì bản mới thay bản cũ trong cùng thư
+    mục làm việc (bản đã giao vẫn nằm ở thư mục giao với tên riêng).
+  - Dòng lệnh: `render … --khong-nhac`, `qc … --khong-nhac`, `queue add … --khong-nhac`.
 
 ## 7. Nhãn QC T8 (chế độ lời)
 
@@ -422,7 +435,7 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
   thư mục nhạc bị bỏ qua (test liên kết bị bỏ qua trên Windows khi không đủ quyền tạo).
 - Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
   bằng bảng, bước `plan` vẫn đo chính xác.
-- Giao diện (web) chọn được sản phẩm và chiến dịch ở bước "4. Tên file giao" (từ 14/10/2026):
+- Giao diện (web) chọn được sản phẩm và chiến dịch ở bước "Tên file giao" (từ 14/10/2026):
   hai trường đi cùng tùy chọn vào `edit/options.json` rồi tới lệnh `render`. Bỏ trống thì sản
   phẩm là `chung` và chiến dịch là tên thư mục footage. Chế độ "Chỉ dựng lại" không gửi tùy
   chọn nên luôn dùng mặc định.

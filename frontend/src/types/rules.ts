@@ -309,6 +309,8 @@ export interface PipelineJobInfo {
   draft: string;
   /** Render jobs: tiktok | facebook; '' = no platform profile. */
   platform?: string;
+  /** Render jobs: rendered without the plan's music (added in the app). */
+  noMusic?: boolean;
   status: JobStatus;
   errorMsg: string | null;
   /** failed / cancelled / QC-failed: `POST /api/jobs/{id}/retry` accepts it. */
@@ -353,6 +355,8 @@ export interface RenderJob {
   platform?: string;
   /** Real API: the platforms the card renders for, so "Dựng lại" asks them again. */
   platforms?: string[];
+  /** Real API: rendered without the plan's music, so "Dựng lại" keeps it out again. */
+  noMusic?: boolean;
   title: string;
   options: VideoOptions;
   status: JobStatus;
@@ -460,4 +464,6 @@ export interface SubmitRequest {
   forceAnalyze?: boolean;
   /** One render per draft and platform (tiktok, facebook); empty = no platform profile. */
   platforms?: string[];
+  /** Leave the plan's music out of the renders: the music is added in the TikTok/Facebook app. */
+  noMusic?: boolean;
 }

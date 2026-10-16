@@ -306,7 +306,11 @@ def _loud_item(e: Edl, rules: Rules, found: Sequence[Finding], lufs: float | Non
     cfg = rules["qc"]
     bad = _blocked(found, ("T3",))
     if lufs is None or peak is None:
-        quiet = "Không đo âm lượng (video không tiếng, theo kế hoạch)."
+        quiet = (
+            "Không đo âm lượng (video không tiếng: không nhúng nhạc, nhạc chèn trên app)."
+            if e.no_music
+            else "Không đo âm lượng (video không tiếng, theo kế hoạch)."
+        )
         detail = " ".join(f.msg for f in bad) or quiet
         return E1Item(code="E1-LOUD", name="Âm lượng và đỉnh", passed=not bad, detail=detail)
     detail = (f"{lufs:.1f} LUFS (cần {e.lufs:g} ±{float(cfg['lufs_tolerance']):g}), đỉnh thật "

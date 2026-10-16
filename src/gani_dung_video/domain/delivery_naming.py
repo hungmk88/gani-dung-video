@@ -1,9 +1,10 @@
 """E3 — file names and folder tree of a delivered video (Dev Package 03, T-E). Pure code.
 
-GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_v{n}_{ngay}.mp4, every field
-lower case, hyphen-separated and without Vietnamese marks. The template and the allowed products
-live in rules.json → delivery.naming. A video rendered without a platform profile has no
-{nen-tang} part (and no separator around it): its name is the one from before 14/10/2026.
+GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_{nhac}_v{n}_{ngay}.mp4, every
+field lower case, hyphen-separated and without Vietnamese marks. The template and the allowed
+products live in rules.json → delivery.naming. A video rendered without a platform profile has no
+{nen-tang} part (and no separator around it), and {nhac} is there only for a video exported
+without music (no_music_tag, 16/10/2026): a plain render keeps the name from before 14/10/2026.
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from datetime import date
 
 from gani_dung_video.domain.preflight import Rules
 
-_FIELDS = ("san-pham", "phong-cach", "muc-dich", "do-dai", "ty-le", "nen-tang", "n", "ngay")
+_FIELDS = ("san-pham", "phong-cach", "muc-dich", "do-dai", "ty-le", "nen-tang", "nhac", "n", "ngay")
+_OPTIONAL = ("nen-tang", "nhac")  # an empty one is dropped with one of its separators
 
 
 def slug(text: str) -> str:
@@ -53,6 +55,7 @@ class NameParts:
     duration_sec: int
     day: date
     platform: str = ""  # tiktok | facebook; "" = no platform part in the name
+    no_music: bool = False  # exported without music: the {nhac} part says so
 
 
 def file_name(parts: NameParts, version: int, rules: Rules) -> str:
@@ -65,12 +68,14 @@ def file_name(parts: NameParts, version: int, rules: Rules) -> str:
         "do-dai": str(parts.duration_sec),
         "ty-le": str(cfg["ratio"]),
         "nen-tang": slug(parts.platform),
+        "nhac": str(cfg["no_music_tag"]) if parts.no_music else "",
         "n": str(version),
         "ngay": parts.day.strftime(str(cfg["date_format"])),
     }
     name = str(cfg["template"])
-    if not values["nen-tang"]:  # no platform: drop the field with one of its separators
-        name = name.replace("_{nen-tang}", "").replace("{nen-tang}_", "")
+    for key in _OPTIONAL:
+        if not values[key]:
+            name = name.replace("_{" + key + "}", "").replace("{" + key + "}_", "")
     for key in _FIELDS:
         name = name.replace("{" + key + "}", values[key])
     return name

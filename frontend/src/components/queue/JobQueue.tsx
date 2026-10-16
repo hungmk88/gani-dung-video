@@ -245,6 +245,7 @@ function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jo
               {KIND_LABEL[j.kind] ?? j.kind}
               {j.draft ? ` ${j.draft}` : ''}
               {j.platform ? ` · ${platformShort(j.platform)}` : ''}
+              {j.noMusic ? ' · không nhạc' : ''}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[j.status].cls}`}>
               {STATUS_LABEL[j.status].label}

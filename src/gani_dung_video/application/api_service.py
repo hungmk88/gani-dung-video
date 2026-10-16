@@ -519,7 +519,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
     render_dir = folder / EDIT_DIR / "render" / render_dir_name(job.draft, job.platform)
     report = _read_qc(render_dir, job) if urls["video"] else None
     label = "cuối" if job.final else "nháp"
-    on = f", {job.platform}" if job.platform else ""
+    on = (f", {job.platform}" if job.platform else "") + (", không nhạc" if job.no_music else "")
     what = _KIND_TITLE.get(job.kind) or f"bản {job.draft} ({label}{on})"
     return JobView(
         id=job.id, pipeline_id=job.pipeline_id, depends_on=job.depends_on,
@@ -536,7 +536,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         created_at=iso(job.created_at),
         started_at=iso(job.started_at) if job.started_at is not None else None,
         finished_at=iso(job.finished_at) if job.finished_at is not None else None,
-        error_msg=error, no_asr=job.no_asr,
+        error_msg=error, no_asr=job.no_asr, no_music=job.no_music,
         options=_read_options(folder),
         video_url=urls["video"], cover_url=urls["cover"], srt_url=urls["srt"],
         steps=derive_steps(arts, run), qa=_qa_view(report, job, folder) if report else None,
@@ -662,7 +662,8 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
         queued = enqueue_project_render(folder, ctx.db, draft=req.draft, final=req.final,
                                         no_asr=req.no_asr, rules=ctx.rules,
                                         settings=ctx.settings, now=ctx.clock(),
-                                        platforms=req.platforms)  # fmt: skip
+                                        platforms=req.platforms,
+                                        no_music=req.no_music)  # fmt: skip
     except NotReadyError as e:
         raise ApiError(409, "not_ready", str(e)) from e
     except PipelineBusyError as e:
@@ -751,7 +752,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
         result = enqueue_pipeline(
             req.options, folder, ctx.db, draft=req.draft, final=req.final, no_asr=req.no_asr,
             force_analyze=req.force_analyze, rules=ctx.rules, settings=ctx.settings,
-            now=ctx.clock(), platforms=req.platforms)  # fmt: skip
+            now=ctx.clock(), platforms=req.platforms, no_music=req.no_music)  # fmt: skip
     except PipelineBusyError as e:
         raise _busy(e) from e
     except ProjectLockedError as e:

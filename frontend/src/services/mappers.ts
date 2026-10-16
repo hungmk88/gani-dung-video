@@ -307,6 +307,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     size: job.size,
     noAsr: job.no_asr,
     ...(job.platform ? { platform: job.platform } : {}),
+    ...(job.no_music ? { noMusic: true } : {}),
     title: job.title,
     options: optionsFromApi(job.options),
     status: toStatus(job.frontend_status),
@@ -416,6 +417,7 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
     kind: j.kind,
     draft: j.draft,
     ...(j.platform ? { platform: j.platform } : {}),
+    ...(j.no_music ? { noMusic: true } : {}),
     status,
     errorMsg: j.error_msg,
     retryable: status === 'error' || status === 'qa_review',
@@ -499,6 +501,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
     size: renders.some((j) => j.size === 'final') ? 'final' : 'preview',
     noAsr: renders.some((j) => j.no_asr),
     ...(platforms.length > 0 ? { platforms } : {}),
+    ...(renders.some((j) => j.no_music) ? { noMusic: true } : {}),
     title: `${p.project_name} — pipeline #${p.id}`,
     options: optionsFromApi(planJob?.options ?? {}),
     status: toStatus(p.status),
@@ -558,6 +561,7 @@ export function rerenderBody(job: RenderJob): {
   final: boolean;
   no_asr: boolean;
   platforms: string[];
+  no_music: boolean;
 } {
   if (!job.projectId) throw new Error('Job này không thuộc dự án nào nên không dựng lại được.');
   return {
@@ -566,6 +570,7 @@ export function rerenderBody(job: RenderJob): {
     final: job.size === 'final',
     no_asr: job.noAsr ?? false,
     platforms: job.platforms ?? (job.platform ? [job.platform] : []),
+    no_music: job.noMusic ?? false,
   };
 }
 
@@ -579,6 +584,7 @@ export function pipelineBody(
     noAsr: boolean;
     forceAnalyze: boolean;
     platforms?: string[];
+    noMusic?: boolean;
   },
 ): Record<string, unknown> {
   return {
@@ -589,6 +595,7 @@ export function pipelineBody(
     no_asr: run.noAsr,
     force_analyze: run.forceAnalyze,
     platforms: run.platforms ?? [],
+    no_music: run.noMusic ?? false,
   };
 }
 

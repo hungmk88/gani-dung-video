@@ -453,7 +453,7 @@ def test_an_approved_video_in_final_keeps_its_version_number(tmp_path: Path) -> 
 
     plan = SimpleNamespace(options={"style": "tvc_cat_nhanh", "purpose": "ban_hang",
                                     "duration": 15})  # fmt: skip
-    e = SimpleNamespace(platform="")  # the name reads only the platform of the EDL
+    e = SimpleNamespace(platform="", no_music=False)  # the name reads only these of the EDL
     target = DeliveryTarget(product="gio-lua", campaign="ra-mat", day=date(2026, 10, 15))
     root, first, _ = export_name(e, plan, tmp_path, RULES, target)  # type: ignore[arg-type]
     assert "_v1_" in first

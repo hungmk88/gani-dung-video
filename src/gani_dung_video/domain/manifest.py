@@ -51,6 +51,7 @@ class Manifest(BaseModel):
     delivered_as: str | None  # E3 name in delivery/<campaign>/drafts, None when blocked
     draft: str
     platform: str = ""  # tiktok | facebook (14/10/2026); "" = rendered without a profile
+    no_music: bool = False  # exported without the plan's music (16/10/2026)
     label: str
     resolution: str  # "1080x1920" or the 540p preview
     # Seconds the content length (file minus end card) is off the chosen length / the plan's

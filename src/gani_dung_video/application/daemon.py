@@ -92,6 +92,8 @@ def render_argv(
         argv.append("--no-asr")
     if job.platform:
         argv += ["--nen-tang", job.platform]
+    if job.no_music:
+        argv.append("--khong-nhac")
     if options is not None:
         if options.san_pham:
             argv += ["--san-pham", options.san_pham]

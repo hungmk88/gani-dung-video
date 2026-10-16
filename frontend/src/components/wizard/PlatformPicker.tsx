@@ -8,10 +8,14 @@ export function PlatformPicker({
   platforms,
   chosen,
   onChange,
+  noMusic,
+  onNoMusic,
 }: {
   platforms: readonly PlatformInfo[];
   chosen: string[];
   onChange: (ids: string[]) => void;
+  noMusic: boolean;
+  onNoMusic: (on: boolean) => void;
 }) {
   function toggle(id: string) {
     const next = chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id];
@@ -52,6 +56,23 @@ export function PlatformPicker({
         Mỗi nền tảng là một video riêng (cùng kịch bản, cùng nhịp cắt): chọn 2 nền tảng thì thời gian
         dựng gấp đôi, không tốn thêm tiền AI. Mỗi bản được duyệt riêng.
       </p>
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700 px-3 py-2.5 text-xs hover:border-slate-500">
+        <input
+          type="checkbox"
+          checked={noMusic}
+          onChange={(e) => onNoMusic(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-amber-500"
+        />
+        <span className="space-y-0.5">
+          <span className="block text-sm font-medium text-slate-100">
+            Không nhúng nhạc — chèn nhạc trên app khi đăng
+          </span>
+          <span className="block text-slate-400">
+            Video chỉ còn lời và tiếng hiện trường, nhịp cắt giữ như kế hoạch. Dùng khi chạy quảng cáo
+            (cần nhạc có bản quyền của TikTok/Facebook). Tên file có thêm “khong-nhac”.
+          </span>
+        </span>
+      </label>
       {chosen.length === 0 && (
         <p aria-live="polite" className="text-xs text-rose-300">
           Chọn ít nhất một nền tảng.
