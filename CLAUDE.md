@@ -2,9 +2,8 @@
 
 ## Git: không bao giờ đẩy thẳng lên `main`
 
-`main` không được GitHub bảo vệ (repo riêng tư, gói miễn phí; chủ quyết định 16/10/2026), nên quy
-ước dưới đây là hàng rào duy nhất. Mọi agent (Claude Code trên máy dựng, phiên cloud, …) đều phải
-theo.
+`main` chưa bật branch protection trên GitHub (chủ quyết định 16/10/2026), nên quy ước dưới đây là
+hàng rào duy nhất. Mọi agent (Claude Code trên máy dựng, phiên cloud, …) đều phải theo.
 
 1. Làm trên **nhánh riêng** tách từ `main` mới nhất (`fix/...`, `feat/...`, `docs/...`, hoặc nhánh
    được giao). Không commit trên `main`, không `git push origin main`.
