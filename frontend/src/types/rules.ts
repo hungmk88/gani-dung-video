@@ -94,6 +94,8 @@ export interface RulesBundle {
   bannedClaims: string[];
   /** delivery.naming.products: the product names a delivered file may carry. */
   deliveryProducts: readonly string[];
+  /** platforms.profiles + platforms.default (14/10/2026), in rules.json order. */
+  platforms: readonly PlatformInfo[];
   pickTagNames: Record<string, string>;
 }
 
@@ -291,10 +293,22 @@ export interface ReviewInfo {
 }
 
 /** One server job inside a pipeline card (analyze / draft / render). */
+/** A platform a draft is rendered for (rules.json → platforms). */
+export interface PlatformInfo {
+  id: string;
+  name: string;
+  short: string;
+  zaloOnEndCard: boolean;
+  /** Ticked when the wizard opens. */
+  default: boolean;
+}
+
 export interface PipelineJobInfo {
   id: string;
   kind: string;
   draft: string;
+  /** Render jobs: tiktok | facebook; '' = no platform profile. */
+  platform?: string;
   status: JobStatus;
   errorMsg: string | null;
   /** failed / cancelled / QC-failed: `POST /api/jobs/{id}/retry` accepts it. */
@@ -307,6 +321,8 @@ export interface PipelineJobInfo {
 /** Playable result of one draft (A/B/C) of a pipeline. */
 export interface DraftOutput {
   draft: string;
+  /** tiktok | facebook; '' = no platform profile. One output per draft and platform. */
+  platform?: string;
   /** Chapters of this draft with its own titles (3-minute videos only). */
   structure?: Structure;
   previewUrl: string | null;
@@ -333,6 +349,10 @@ export interface RenderJob {
   draft?: string;
   size?: 'preview' | 'final';
   noAsr?: boolean;
+  /** Real API: the platform of a lone render job; '' = no platform profile. */
+  platform?: string;
+  /** Real API: the platforms the card renders for, so "Dựng lại" asks them again. */
+  platforms?: string[];
   title: string;
   options: VideoOptions;
   status: JobStatus;
@@ -418,6 +438,8 @@ export interface HealthInfo {
   aiKeyConfigured: boolean;
   /** 3-minute videos open on this server; null = an older server that does not say. */
   longVideo: boolean | null;
+  /** Platforms the server renders for; empty = an older server (no platform choice). */
+  platforms: PlatformInfo[];
   budget: { limitVnd: number | null; spent24hVnd: number; reservedVnd: number };
 }
 
@@ -436,4 +458,6 @@ export interface SubmitRequest {
   final?: boolean;
   noAsr?: boolean;
   forceAnalyze?: boolean;
+  /** One render per draft and platform (tiktok, facebook); empty = no platform profile. */
+  platforms?: string[];
 }

@@ -1,5 +1,6 @@
 import { CheckCircle2, Download, FileJson, Info, RefreshCw, Wrench, XCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { outputLabel } from '../../lib/platforms';
 import { seekTarget } from '../../lib/structure';
 import type { QaCheck, QaGroup as QaGroupData, QaReport, RenderJob } from '../../types/rules';
 import { ChapterTimeline } from './ChapterTimeline';
@@ -106,7 +107,9 @@ export function VideoPlayerWithQA({
   const videoRef = useRef<HTMLVideoElement>(null);
   // A pipeline carries one result per draft (A/B/C); a lone job shows its own files.
   const outputs = job.outputs ?? [];
-  const output = outputs.find((o) => o.draft === chosenDraft) ?? outputs[0];
+  // One output per draft and platform: the key tells "A · TikTok" from "A · Reels".
+  const keyOf = (o: { draft: string; platform?: string }) => `${o.draft}|${o.platform ?? ''}`;
+  const output = outputs.find((o) => keyOf(o) === chosenDraft) ?? outputs[0];
   const previewUrl = output ? output.previewUrl : job.previewUrl;
   const finalUrl = output ? output.finalUrl : job.finalUrl;
   const qa = output ? output.qa : job.qa;
@@ -120,20 +123,20 @@ export function VideoPlayerWithQA({
   return (
     <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       {outputs.length > 1 && (
-        <div className="flex gap-1 text-xs">
+        <div className="flex flex-wrap gap-1 text-xs">
           {outputs.map((o) => (
             <button
-              key={o.draft}
+              key={keyOf(o)}
               type="button"
-              aria-pressed={o.draft === (output?.draft ?? '')}
-              onClick={() => setChosenDraft(o.draft)}
+              aria-pressed={output !== undefined && keyOf(o) === keyOf(output)}
+              onClick={() => setChosenDraft(keyOf(o))}
               className={`rounded-md border px-3 py-1 ${
-                o.draft === (output?.draft ?? '')
+                output !== undefined && keyOf(o) === keyOf(output)
                   ? 'border-amber-500 bg-amber-500/10 text-amber-200'
                   : 'border-slate-800 text-slate-400 hover:border-slate-600'
               }`}
             >
-              Bản {o.draft}
+              {outputLabel(o.draft, o.platform)}
             </button>
           ))}
         </div>

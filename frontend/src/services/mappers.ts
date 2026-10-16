@@ -52,6 +52,7 @@ import type {
   VerifyStatus,
   VideoOptions,
 } from '../types/rules.ts';
+import { platformOrder } from '../lib/platforms.ts';
 import { latestReview, toReview } from '../lib/review.ts';
 
 // rules.json → qc.max_rounds; the API does not echo it, so it is mirrored here.
@@ -91,6 +92,13 @@ export function toHealthInfo(h: ApiHealth): HealthInfo {
     allowedRootsConfigured: h.allowed_roots_configured,
     aiKeyConfigured: h.ai_key_configured,
     longVideo: h.features ? h.features.long_video : null,
+    platforms: (h.features?.platforms ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      short: p.short,
+      zaloOnEndCard: p.zalo_on_end_card,
+      default: p.default,
+    })),
     budget: {
       limitVnd: h.budget.limit_vnd,
       spent24hVnd: h.budget.spent_24h_vnd,
@@ -297,6 +305,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
     draft: job.draft,
     size: job.size,
     noAsr: job.no_asr,
+    ...(job.platform ? { platform: job.platform } : {}),
     title: job.title,
     options: optionsFromApi(job.options),
     status: toStatus(job.frontend_status),
@@ -317,7 +326,7 @@ export function toRenderJob(job: ApiJob | ApiJobDetail, siblings: ApiJob[]): Ren
 export function groupLatest(jobs: ApiJob[]): RenderJob[] {
   const byKey = new Map<string, ApiJob[]>();
   for (const j of jobs) {
-    const key = `${j.project_id ?? j.project_name}|${j.draft}`;
+    const key = `${j.project_id ?? j.project_name}|${j.draft}|${j.platform ?? ''}`;
     byKey.set(key, [...(byKey.get(key) ?? []), j]);
   }
   return [...byKey.values()]
@@ -405,6 +414,7 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
     id: String(j.id),
     kind: j.kind,
     draft: j.draft,
+    ...(j.platform ? { platform: j.platform } : {}),
     status,
     errorMsg: j.error_msg,
     retryable: status === 'error' || status === 'qa_review',
@@ -413,17 +423,25 @@ function toJobInfo(j: ApiJob): PipelineJobInfo {
   };
 }
 
+/** One output per (draft, platform): A · TikTok, A · Reels, B · TikTok, … */
 function toOutputs(jobs: ApiJob[], hasVerify: boolean): DraftOutput[] {
   const renders = jobs.filter((j) => j.kind === 'render');
   const letters = [...new Set(renders.map((j) => j.draft))].sort();
-  return letters.map((draft) => {
-    const own = renders.filter((j) => j.draft === draft);
+  const platforms = platformOrder(renders.map((j) => j.platform ?? ''));
+  const pairs = letters.flatMap((draft) =>
+    platforms
+      .filter((pf) => renders.some((j) => j.draft === draft && (j.platform ?? '') === pf))
+      .map((pf) => [draft, pf] as const),
+  );
+  return pairs.map(([draft, platform]) => {
+    const own = renders.filter((j) => j.draft === draft && (j.platform ?? '') === platform);
     const withQa = own
       .filter((j) => j.qa !== null && j.status === 'completed')
       .sort((a, b) => (a.size === b.size ? b.id - a.id : a.size === 'final' ? -1 : 1))[0];
     const planned = [...own].sort((a, b) => b.id - a.id).find((j) => j.structure != null)?.structure;
     return {
       draft,
+      ...(platform ? { platform } : {}),
       ...(planned ? { structure: toStructure(planned) } : {}),
       previewUrl: newestUrl(own, 'preview'),
       finalUrl: newestUrl(own, 'final'),
@@ -471,6 +489,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
   // What the chain renders, so "Render lại" asks the same letters / size / ASR switch again.
   const renders = jobs.filter((j) => j.kind === 'render');
   const letters = new Set(renders.map((j) => j.draft));
+  const platforms = platformOrder(renders.map((j) => j.platform ?? '')).filter((p) => p);
   return {
     id: pipelineCardId(p.id),
     pipelineId: p.id,
@@ -478,6 +497,7 @@ export function toPipelineCard(p: ApiPipeline, details: ApiJobDetail[] = []): Re
     draft: letters.size === 1 ? [...letters][0] : 'all',
     size: renders.some((j) => j.size === 'final') ? 'final' : 'preview',
     noAsr: renders.some((j) => j.no_asr),
+    ...(platforms.length > 0 ? { platforms } : {}),
     title: `${p.project_name} — pipeline #${p.id}`,
     options: optionsFromApi(planJob?.options ?? {}),
     status: toStatus(p.status),
@@ -531,20 +551,34 @@ export function buildCards(jobs: ApiJob[]): RenderJob[] {
 }
 
 /** Body of POST /api/jobs that renders a card again with the same draft / size / ASR switch. */
-export function rerenderBody(job: RenderJob): { project_id: string; draft: string; final: boolean; no_asr: boolean } {
+export function rerenderBody(job: RenderJob): {
+  project_id: string;
+  draft: string;
+  final: boolean;
+  no_asr: boolean;
+  platforms: string[];
+} {
   if (!job.projectId) throw new Error('Job này không thuộc dự án nào nên không dựng lại được.');
   return {
     project_id: job.projectId,
     draft: job.draft || 'all',
     final: job.size === 'final',
     no_asr: job.noAsr ?? false,
+    platforms: job.platforms ?? (job.platform ? [job.platform] : []),
   };
 }
 
 /** Body of POST /api/pipelines: `options` share the preflight shape, plus the run switches. */
 export function pipelineBody(
   o: VideoOptions,
-  run: { projectId: string; draft: string; final: boolean; noAsr: boolean; forceAnalyze: boolean },
+  run: {
+    projectId: string;
+    draft: string;
+    final: boolean;
+    noAsr: boolean;
+    forceAnalyze: boolean;
+    platforms?: string[];
+  },
 ): Record<string, unknown> {
   return {
     project_id: run.projectId,
@@ -553,6 +587,7 @@ export function pipelineBody(
     final: run.final,
     no_asr: run.noAsr,
     force_analyze: run.forceAnalyze,
+    platforms: run.platforms ?? [],
   };
 }
 

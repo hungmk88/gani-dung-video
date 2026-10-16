@@ -239,7 +239,10 @@ test('toMusicList keeps the file name as identity and builds the preview URL fro
 
 test('rerenderBody asks again for the same draft, size and ASR switch', () => {
   const r = toRenderJob(job({ draft: 'B', size: 'final', no_asr: true }), []);
-  assert.deepEqual(rerenderBody(r), { project_id: '0/Xuong GANI', draft: 'B', final: true, no_asr: true });
+  assert.deepEqual(rerenderBody(r), { project_id: '0/Xuong GANI', draft: 'B', final: true, no_asr: true, platforms: [] });
+  // A lone TikTok render asks for TikTok again (14/10/2026).
+  const t = toRenderJob(job({ draft: 'A', size: 'final', platform: 'tiktok' }), []);
+  assert.deepEqual(rerenderBody(t).platforms, ['tiktok']);
   // A lone analyze/draft job has no letter: render every draft rather than send a 400.
   assert.equal(rerenderBody(toRenderJob(job({ kind: 'draft', draft: '' }), [])).draft, 'all');
   assert.throws(() => rerenderBody(toRenderJob(job({ project_id: null }), [])), /không thuộc dự án/);

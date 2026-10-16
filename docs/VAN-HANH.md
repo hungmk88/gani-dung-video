@@ -226,6 +226,30 @@ Mọi video mang logo thật của GANI và số **Zalo 0853 9999 77**. Thông s
   `python scripts/tao_logo_video.py` (cần `pdftocairo` và Pillow, chỉ dùng khi tạo lại ảnh).
   Muốn quay về logo chữ thì xóa khóa `logo_image`.
 
+## 6d. Đăng TikTok và Facebook Reels (từ 14/10/2026)
+
+GANI đăng mỗi video lên **TikTok** và **Facebook Reels** (có chạy quảng cáo, không gắn giỏ hàng).
+Ở bước **"Đăng lên"** của Wizard, hai ô đều được chọn sẵn; bỏ ô nào thì không dựng bản đó. Mỗi
+nền tảng là **một video riêng**, dựng từ **cùng** footage, kịch bản và nhịp cắt: chọn 2 nền tảng
+thì thời gian dựng gấp đôi nhưng **không tốn thêm tiền AI**.
+
+| | TikTok | Facebook Reels |
+|---|---|---|
+| Câu kêu gọi (Bán hàng) | "Bình luận để GANI tư vấn" | "Nhắn tin đặt hàng" (như mục đích) |
+| Câu kêu gọi (Giới thiệu xưởng) | "Bình luận để GANI liên hệ" | "Nhắn tin nhận báo giá sỉ" |
+| Khuyến mãi, Kể chuyện thương hiệu | như mục đích | như mục đích |
+| Khung kết | logo + dòng GANI FOODS, **không** có số Zalo | logo + Zalo + dòng GANI FOODS |
+| Tên file giao | `…_9x16_tiktok_v1_….mp4` | `…_9x16_facebook_v1_….mp4` |
+
+- Khách TikTok liên hệ bằng bình luận, tin nhắn TikTok và link trong hồ sơ, nên bản TikTok tránh
+  các từ đưa người xem ra ngoài ứng dụng (nhắn tin, inbox, Zalo, sỉ…). Đổi câu chữ trong
+  `config/rules.json` → `platforms.profiles.<nền tảng>.cta` (không dùng ô `[ngày]`).
+- Trang chi tiết video có nút chuyển **"Bản A · TikTok / Bản A · Reels"**; khung "Duyệt video
+  cuối" có một dòng cho từng bản, duyệt riêng. Thư mục làm việc: `edit/render/A-tiktok/`,
+  `edit/render/A-facebook/`.
+- Dòng lệnh: `render <thư mục> --nen-tang tiktok` (bỏ `--nen-tang` = không theo nền tảng, như
+  trước); `qc … --nen-tang tiktok` để soát lại đúng bản đó.
+
 ## 7. Nhãn QC T8 (chế độ lời)
 
 T8 là bước Whisper **nghe lại** video đã dựng để đo sai lệch lời và độ lệch phụ đề; chỉ chạy cho

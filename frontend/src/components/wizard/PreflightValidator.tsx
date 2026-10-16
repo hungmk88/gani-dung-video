@@ -39,9 +39,11 @@ export function PreflightValidator({
   submitting: boolean;
   onSubmit: () => void;
 }) {
+  // `missing` also lists a platform not chosen yet (render-only runs too).
   const disabled = renderOnly
-    ? missingProject || submitting
-    : incomplete ||
+    ? missingProject || submitting || missing.length > 0
+    : missing.length > 0 ||
+      incomplete ||
       result === null ||
       !result.valid ||
       checking ||

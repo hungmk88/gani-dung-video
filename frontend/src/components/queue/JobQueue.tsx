@@ -8,6 +8,7 @@ import { ConsoleLog } from './ConsoleLog';
 import { FootageWarning } from './FootageWarning';
 import { PipelineStepper } from './PipelineStepper';
 import { PlanModal } from './PlanModal';
+import { platformShort } from '../../lib/platforms';
 import { cardReviews } from '../../lib/review';
 import { ReviewBadge } from './ReviewBadge';
 import { ReviewPanel } from './ReviewPanel';
@@ -240,9 +241,10 @@ function PipelineJobs({ jobs, onRetry }: { jobs: PipelineJobInfo[]; onRetry: (jo
       <ul className="divide-y divide-slate-800/70">
         {jobs.map((j) => (
           <li key={j.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-xs">
-            <span className="w-24 font-medium text-slate-200">
+            <span className="w-32 font-medium text-slate-200">
               {KIND_LABEL[j.kind] ?? j.kind}
               {j.draft ? ` ${j.draft}` : ''}
+              {j.platform ? ` · ${platformShort(j.platform)}` : ''}
             </span>
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[j.status].cls}`}>
               {STATUS_LABEL[j.status].label}

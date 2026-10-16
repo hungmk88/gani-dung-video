@@ -1,6 +1,7 @@
 /** Review of a delivered final video (T-F): the data the queue badge needs. Pure functions. */
 import type { ApiJob, ApiReview } from '../types/api';
 import type { ReviewInfo } from '../types/rules';
+import { platformOrder, platformShort } from './platforms.ts';
 
 export function toReview(r: ApiReview | null | undefined, jobId: number | string): ReviewInfo | null {
   if (!r) return null;
@@ -68,23 +69,36 @@ export interface ReviewItem {
  */
 export function cardReviews(job: {
   draft?: string;
+  platform?: string;
   review?: ReviewInfo | null;
-  jobs?: { kind: string; draft: string; review?: ReviewInfo | null }[];
+  jobs?: { kind: string; draft: string; platform?: string; review?: ReviewInfo | null }[];
 }): ReviewItem[] {
   const chain = (job.jobs ?? []).filter((j) => j.kind === 'render' && j.review);
   if (chain.length > 0) {
-    const newest = new Map<string, ReviewInfo>();
+    // One decision per draft AND platform: the TikTok and the Reels file are reviewed apart.
+    const newest = new Map<string, { draft: string; platform: string; review: ReviewInfo }>();
     for (const j of chain) {
-      const seen = newest.get(j.draft);
-      if (!seen || Number(j.review!.jobId) > Number(seen.jobId)) newest.set(j.draft, j.review!);
+      const key = `${j.draft}|${j.platform ?? ''}`;
+      const seen = newest.get(key);
+      if (!seen || Number(j.review!.jobId) > Number(seen.review.jobId)) {
+        newest.set(key, { draft: j.draft, platform: j.platform ?? '', review: j.review! });
+      }
     }
-    return [...newest.entries()]
-      .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([draft, review]) => ({ label: `Bản cuối ${draft}`.trim(), review }));
+    const order = platformOrder([...newest.values()].map((v) => v.platform));
+    return [...newest.values()]
+      .sort((a, b) =>
+        a.draft === b.draft ? order.indexOf(a.platform) - order.indexOf(b.platform) : a.draft < b.draft ? -1 : 1,
+      )
+      .map(({ draft, platform, review }) => ({ label: finalLabel(draft, platform), review }));
   }
   if (!job.review) return [];
-  const draft = job.draft && job.draft !== 'all' ? ` ${job.draft}` : '';
-  return [{ label: `Bản cuối${draft}`, review: job.review }];
+  const draft = job.draft && job.draft !== 'all' ? job.draft : '';
+  return [{ label: finalLabel(draft, job.platform ?? ''), review: job.review }];
+}
+
+function finalLabel(draft: string, platform: string): string {
+  const p = platformShort(platform);
+  return ['Bản cuối', draft, p ? `· ${p}` : ''].filter(Boolean).join(' ');
 }
 
 /** Why a decision cannot be sent yet (Vietnamese), or null. Same rules as the server. */
