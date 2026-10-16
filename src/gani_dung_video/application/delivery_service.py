@@ -62,7 +62,9 @@ def _brand_texts(e: Edl, rules: Rules) -> list[tuple[str, str]]:
     """(text, font family) of the text logo and the end card, which are drawn on every video."""
     r = rules["render"]
     brand = r["brand"]
-    texts = [(str(brand["zalo"]), e.font), (str(brand["footer"]), e.font)]
+    texts = [(str(brand["footer"]), e.font)]
+    if e.end_card_zalo:
+        texts.insert(0, (str(brand["zalo"]), e.font))
     if brand.get("logo_image"):  # a picture: no glyph to check
         return texts
     return [(str(brand["logo_text"]), str(r["fonts"]["default"])), *texts]
@@ -144,7 +146,7 @@ def build_manifest(
     listened = e.mode == "speech" and not preview  # T8 ran: Whisper was a model of this video
     made = datetime.now(UTC)
     return Manifest(
-        created_at=made.isoformat(timespec="seconds"), video=video.name,
+        created_at=made.isoformat(timespec="seconds"), video=video.name, platform=e.platform,
         delivered_as=delivered_as, draft=letter, label=label, resolution=f"{e.width}x{e.height}",
         deviation_vs_chosen=report.deviation_vs_chosen, deviation_vs_plan=report.deviation_vs_plan,
         options=plan.options, plan_sha256=sha256_of(plan_bytes),
@@ -175,7 +177,8 @@ def export_name(
     product, warning = product_of(target.product, rules)
     opts = plan.options
     parts = NameParts(product=product, style=str(opts["style"]), purpose=str(opts["purpose"]),
-                      duration_sec=int(opts["duration"]), day=_today(target))  # fmt: skip
+                      duration_sec=int(opts["duration"]), day=_today(target),
+                      platform=e.platform)  # fmt: skip
     # `final/` counts too: an approved video leaves `drafts/`, and its version number must not
     # be handed out again (the next video would overwrite it when it is approved).
     taken = {p.name for sub_dir in ("drafts", "final") for p in (root / sub_dir).glob("*.mp4")}

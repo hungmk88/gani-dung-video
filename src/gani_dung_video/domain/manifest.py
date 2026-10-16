@@ -50,6 +50,7 @@ class Manifest(BaseModel):
     video: str  # the working file in edit/render/<draft>/
     delivered_as: str | None  # E3 name in delivery/<campaign>/drafts, None when blocked
     draft: str
+    platform: str = ""  # tiktok | facebook (14/10/2026); "" = rendered without a profile
     label: str
     resolution: str  # "1080x1920" or the 540p preview
     # Seconds the content length (file minus end card) is off the chosen length / the plan's

@@ -13,6 +13,7 @@ from pathlib import Path
 from gani_dung_video.domain.delivery_checks import E1Item, E1Report
 from gani_dung_video.domain.jobs import Job
 from gani_dung_video.domain.manifest import CostFacts, Manifest
+from gani_dung_video.domain.platforms import render_dir_name
 from gani_dung_video.domain.review import ReviewBlock, stamp
 from gani_dung_video.infrastructure.config_files import load_rules
 from gani_dung_video.infrastructure.queue_db import NewJob, QueueDb
@@ -29,6 +30,7 @@ class Tree:
     folder: Path
     root: Path
     job: Job
+    platform: str = ""
 
     @property
     def meta(self) -> Path:
@@ -36,7 +38,9 @@ class Tree:
 
     @property
     def working(self) -> Path:
-        return self.folder / "edit" / "render" / "A" / "manifest.json"
+        return (
+            self.folder / "edit" / "render" / render_dir_name("A", self.platform) / "manifest.json"
+        )
 
     def read(self, path: Path | None = None) -> Manifest:
         return Manifest.model_validate_json((path or self.meta).read_text(encoding="utf-8"))
@@ -67,18 +71,20 @@ def manifest(
 
 def build(tmp_path: Path, *, final: bool = True, review: ReviewBlock | str | None = "pending",
           resolution: str = "1080x1920", extra: list[E1Item] | None = None,
-          with_file: bool = True, delivered_as: str | None = NAME) -> Tree:  # fmt: skip
+          with_file: bool = True, delivered_as: str | None = NAME,
+          platform: str = "") -> Tree:  # fmt: skip
     folder = tmp_path / "xuong"
     root = folder / "edit" / "delivery" / "xuong"
     for d in ("raw", "drafts", "final", "metadata"):
         (root / d).mkdir(parents=True)
-    (folder / "edit" / "render" / "A").mkdir(parents=True)
+    out = folder / "edit" / "render" / render_dir_name("A", platform)
+    out.mkdir(parents=True)
     if review == "pending":
         review = ReviewBlock(status="pending", requested_at=stamp(T_RENDER))
     m = manifest(resolution=resolution, review=review if isinstance(review, ReviewBlock) else None,
                  extra=extra, delivered_as=delivered_as)  # fmt: skip
     text = m.model_dump_json(indent=1)
-    (folder / "edit" / "render" / "A" / "manifest.json").write_text(text, encoding="utf-8")
+    (out / "manifest.json").write_text(text, encoding="utf-8")
     if delivered_as:
         (root / "metadata" / f"{Path(delivered_as).stem}.manifest.json").write_text(
             text, encoding="utf-8")  # fmt: skip
@@ -87,13 +93,13 @@ def build(tmp_path: Path, *, final: bool = True, review: ReviewBlock | str | Non
     db = QueueDb(tmp_path / "q" / "queue.db")
     t = T_RENDER.timestamp()
     jid = db.enqueue(NewJob(kind="render", project_dir=str(folder), options_file="o", draft="A",
-                            final=final, max_attempts=1), t - 100)  # fmt: skip
+                            final=final, max_attempts=1, platform=platform), t - 100)  # fmt: skip
     claimed = db.claim(t - 60, 1)
     assert claimed is not None and claimed.id == jid
     db.finish(jid, t + 1, "completed", "passed", 0, None, None)
     job = db.get(jid)
     assert job is not None
-    return Tree(db, folder, root, job)
+    return Tree(db, folder, root, job, platform)
 
 
 def now_s(minutes: float = 10) -> float:

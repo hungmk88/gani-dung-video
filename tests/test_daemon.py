@@ -171,6 +171,12 @@ def test_render_argv_for_a_preview_and_a_final_without_asr(folder: Path) -> None
     assert b == ["py", "render", str(folder), "--ban", "A", "--no-asr"]
 
 
+def test_render_argv_passes_the_platform(folder: Path) -> None:
+    job = job_stub(folder, final=True, no_asr=False).model_copy(update={"platform": "tiktok"})
+    assert render_argv(job, ["py"]) == ["py", "render", str(folder), "--ban", "A", "--nen-tang",
+                                        "tiktok"]  # fmt: skip
+
+
 def job_stub(folder: Path, final: bool, no_asr: bool) -> Job:
     return Job(id=1, kind="render", project_dir=str(folder), options_file="o.md", draft="A",
                final=final, no_asr=no_asr, status="processing", attempts=1, max_attempts=2,

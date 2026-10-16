@@ -1,8 +1,9 @@
 """E3 — file names and folder tree of a delivered video (Dev Package 03, T-E). Pure code.
 
-GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_v{n}_{ngay}.mp4, every field lower
-case, hyphen-separated and without Vietnamese marks. The template and the allowed products live
-in rules.json → delivery.naming.
+GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_v{n}_{ngay}.mp4, every field
+lower case, hyphen-separated and without Vietnamese marks. The template and the allowed products
+live in rules.json → delivery.naming. A video rendered without a platform profile has no
+{nen-tang} part (and no separator around it): its name is the one from before 14/10/2026.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from datetime import date
 
 from gani_dung_video.domain.preflight import Rules
 
-_FIELDS = ("san-pham", "phong-cach", "muc-dich", "do-dai", "ty-le", "n", "ngay")
+_FIELDS = ("san-pham", "phong-cach", "muc-dich", "do-dai", "ty-le", "nen-tang", "n", "ngay")
 
 
 def slug(text: str) -> str:
@@ -51,6 +52,7 @@ class NameParts:
     purpose: str
     duration_sec: int
     day: date
+    platform: str = ""  # tiktok | facebook; "" = no platform part in the name
 
 
 def file_name(parts: NameParts, version: int, rules: Rules) -> str:
@@ -62,10 +64,13 @@ def file_name(parts: NameParts, version: int, rules: Rules) -> str:
         "muc-dich": slug(parts.purpose),
         "do-dai": str(parts.duration_sec),
         "ty-le": str(cfg["ratio"]),
+        "nen-tang": slug(parts.platform),
         "n": str(version),
         "ngay": parts.day.strftime(str(cfg["date_format"])),
     }
     name = str(cfg["template"])
+    if not values["nen-tang"]:  # no platform: drop the field with one of its separators
+        name = name.replace("_{nen-tang}", "").replace("{nen-tang}_", "")
     for key in _FIELDS:
         name = name.replace("{" + key + "}", values[key])
     return name

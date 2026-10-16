@@ -42,6 +42,7 @@ from gani_dung_video.domain.jobs import (
     stage_of,
 )
 from gani_dung_video.domain.options import VideoOptions
+from gani_dung_video.domain.platforms import render_dir_name
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.yeu_cau import YeuCauFormatError
 from gani_dung_video.infrastructure.config_files import (
@@ -89,6 +90,8 @@ def render_argv(
         argv.append("--preview")
     if job.no_asr:
         argv.append("--no-asr")
+    if job.platform:
+        argv += ["--nen-tang", job.platform]
     if options is not None:
         if options.san_pham:
             argv += ["--san-pham", options.san_pham]
@@ -270,7 +273,7 @@ class Daemon:
             self._fail(job, problem)  # nothing here fixes itself: no retry
             return
         folder = Path(job.project_dir)
-        out = folder / EDIT_DIR / RENDER_DIR / job.draft
+        out = folder / EDIT_DIR / RENDER_DIR / render_dir_name(job.draft, job.platform)
         video = out / _video_name(job.draft, preview=not job.final)
         started = job.started_at if job.started_at is not None else self._clock()
         wall_start = time.time()  # file times are wall-clock: compared with this, not the clock

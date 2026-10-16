@@ -12,7 +12,7 @@ import contextlib
 import json
 import os
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 from gani_dung_video.application.preflight_service import check_options_file
 from gani_dung_video.domain.jobs import ApprovalError, BudgetState, Job, validate_approval
 from gani_dung_video.domain.plan import Plan
+from gani_dung_video.domain.platforms import PlatformError, profile
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.infrastructure.config_files import (
     CONFIG_DIR,
@@ -79,6 +80,7 @@ class EnqueueResult(BaseModel):
     job_id: int
     draft: str
     duplicate: bool  # True: an identical render was already waiting or running
+    platform: str = ""  # tiktok | facebook; "" = no platform profile
 
 
 def allowed_roots(settings: Settings) -> list[Path]:
@@ -258,14 +260,33 @@ def retry_job(db: QueueDb, job_id: int, *, rules: Rules | None = None,
     return ok
 
 
+def _platforms(platforms: Sequence[str] | None, rules: Rules) -> list[str]:
+    """The platforms to render for, checked against rules.json; None or empty = [""] (one
+    render without a platform profile, the behaviour before 14/10/2026).
+
+    Raises:
+        ConfigError: an unknown platform id, or one given twice.
+    """
+    chosen = list(platforms or [""])
+    for p in chosen:
+        try:
+            profile(rules, p)
+        except PlatformError as e:
+            raise ConfigError(str(e)) from e
+    if len(set(chosen)) != len(chosen) or ("" in chosen and len(chosen) > 1):
+        raise ConfigError(f"Danh sách nền tảng không hợp lệ: {chosen}.")
+    return chosen
+
+
 def enqueue_project_render(
     project: Path, db: QueueDb, *, draft: str = "all", final: bool = False,
     no_asr: bool = False, rules: Rules | None = None, settings: Settings | None = None,
-    now: float | None = None, after: int | None = None,
+    now: float | None = None, after: int | None = None, platforms: Sequence[str] | None = None,
 ) -> list[EnqueueResult]:  # fmt: skip
     """Queue renders of a project that is already planned and drafted (the web API's path).
 
-    The options are the ones plan.json was compiled from, so nothing is asked twice.
+    The options are the ones plan.json was compiled from, so nothing is asked twice. One render
+    per draft letter and per platform (`platforms`, None = one render without a profile).
 
     Raises:
         ConfigError: no allow-list, project outside it or missing, or a draft letter the plan
@@ -302,6 +323,7 @@ def enqueue_project_render(
     else:
         raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=draft.upper(), count=count,
                                                          letters=", ".join(letters)))  # fmt: skip
+    targets = _platforms(platforms, rules)
     _need_dependency(db, after, msgs)
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
@@ -309,16 +331,20 @@ def enqueue_project_render(
         with _folder(db, folder, rules, stamp):
             db.check_no_pipeline(str(folder))  # not even a duplicate of one of its renders
             for letter in chosen:
-                existing = db.find_active("render", str(folder), letter, final)
-                if existing is not None:
-                    out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True))
-                    continue
-                jid = db.enqueue(
-                    NewJob(kind="render", project_dir=str(folder), options_file=str(plan_path),
-                           draft=letter, final=final, no_asr=no_asr, depends_on=after,
-                           max_attempts=int(rules["queue"]["max_attempts"])), stamp,
-                    guard_pipeline=True)  # fmt: skip
-                out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
+                for platform in targets:
+                    existing = db.find_active("render", str(folder), letter, final, platform)
+                    if existing is not None:
+                        out.append(EnqueueResult(job_id=existing, draft=letter, duplicate=True,
+                                                 platform=platform))  # fmt: skip
+                        continue
+                    jid = db.enqueue(
+                        NewJob(kind="render", project_dir=str(folder),
+                               options_file=str(plan_path), draft=letter, final=final,
+                               no_asr=no_asr, depends_on=after, platform=platform,
+                               max_attempts=int(rules["queue"]["max_attempts"])), stamp,
+                        guard_pipeline=True)  # fmt: skip
+                    out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False,
+                                             platform=platform))  # fmt: skip
     except FolderBusyError as e:
         raise _pipeline_busy(e, folder, msgs) from e
     return out
@@ -428,12 +454,14 @@ def enqueue_pipeline(
     options: Mapping[str, Any], folder: Path, db: QueueDb, *, draft: str = "all",
     final: bool = False, no_asr: bool = False, force_analyze: bool = False,
     rules: Rules | None = None, settings: Settings | None = None, now: float | None = None,
+    platforms: Sequence[str] | None = None,
 ) -> PipelineResult:  # fmt: skip
     """Queue a whole build: analyse the footage, write the drafts, render them, in that order.
 
     The options are judged by preflight first (nothing is written or queued if they block),
     saved as <folder>/edit/options.json, and the chain analyze → draft → one render per draft
-    letter is created in one transaction. The draft job stops at a cost approval; the renders
+    letter and per platform (`platforms`, None = one render without a profile) is created in
+    one transaction. The draft job stops at a cost approval; the renders
     wait for it. A project with any waiting or running job refuses a new pipeline, so options
     of a running one are never overwritten.
 
@@ -467,6 +495,7 @@ def enqueue_pipeline(
     else:
         raise ConfigError(msgs["QUEUE_BAD_DRAFT"].format(draft=draft.upper(), count=count,
                                                          letters=", ".join(letters)))  # fmt: skip
+    targets = _platforms(platforms, rules)
     where, tries = str(project), int(rules["queue"]["max_attempts"])
     saved = str(project / "edit" / "options.json")
     steps: list[tuple[NewJob, int | None]] = [
@@ -475,7 +504,8 @@ def enqueue_pipeline(
         (NewJob(kind="draft", project_dir=where, options_file=saved, draft="",
                 max_attempts=1), 0),  # one chance: code never retries a paid job
         *((NewJob(kind="render", project_dir=where, options_file=saved, draft=letter,
-                  final=final, no_asr=no_asr, max_attempts=tries), 1) for letter in chosen),
+                  final=final, no_asr=no_asr, max_attempts=tries, platform=platform), 1)
+          for letter in chosen for platform in targets),
     ]  # fmt: skip
     stamp = now if now is not None else time.time()
     took = False

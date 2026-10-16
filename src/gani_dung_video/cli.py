@@ -181,10 +181,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     rd.add_argument("--san-pham", help="Sản phẩm trong tên file giao (mặc định: chung)")
     rd.add_argument("--chien-dich", help="Tên chiến dịch = thư mục giao (mặc định: tên thư mục)")
+    rd.add_argument(
+        "--nen-tang",
+        default="",
+        help="Nền tảng đăng (rules.json → platforms, ví dụ tiktok, facebook): đổi câu kêu gọi, "
+        "khung kết và tên file; bỏ trống = không theo nền tảng",
+    )
     qc = sub.add_parser("qc", help="Soát kỹ thuật lại một video đã dựng (không dựng lại)")
     qc.add_argument("folder", type=Path, help="Thư mục footage đã chạy render")
     qc.add_argument("--ban", required=True, help="Bản nháp cần soát (A, B hoặc C)")
     qc.add_argument("--final", action="store_true", help="Soát bản 1080×1920 thay vì nháp")
+    qc.add_argument("--nen-tang", default="", help="Nền tảng của bản cần soát (như lệnh render)")
     qc.add_argument(
         "--no-asr", action="store_true", help="Bỏ hậu kiểm Whisper (T8) ở bản cuối chế độ lời"
     )
@@ -544,10 +551,12 @@ def _run_render(
     asr: bool = True,
     product: str | None = None,
     campaign: str | None = None,
+    platform: str = "",
 ) -> int:
     results = build_render(
-        folder, draft=draft, preview=preview, asr=asr, product=product, campaign=campaign
-    )
+        folder, draft=draft, preview=preview, asr=asr, product=product, campaign=campaign,
+        platform=platform,
+    )  # fmt: skip
     lines: list[str] = []
     for r in results:
         verdict = "QC: ĐẠT" if r.qc_passed else "QC: KHÔNG ĐẠT — không giao bản này"
@@ -557,8 +566,8 @@ def _run_render(
     return 0 if all(r.qc_passed for r in results) else 1
 
 
-def _run_qc(folder: Path, draft: str, final: bool, asr: bool = True) -> int:
-    found = recheck(folder, draft, preview=not final, asr=asr)
+def _run_qc(folder: Path, draft: str, final: bool, asr: bool = True, platform: str = "") -> int:
+    found = recheck(folder, draft, preview=not final, asr=asr, platform=platform)
     bad = [f for f in found if not f.startswith("WARN")]
     lines = ["QC: ĐẠT" if not bad else "QC: KHÔNG ĐẠT", *[f"  {f}" for f in found]]
     sys.stdout.write("\n".join(lines) + "\n")
@@ -784,11 +793,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "semantics":
             return _run_semantics(args.folder)
         if args.cmd == "qc":
-            return _run_qc(args.folder, args.ban, args.final, not args.no_asr)
+            return _run_qc(args.folder, args.ban, args.final, not args.no_asr, args.nen_tang)
         if args.cmd == "render":
-            return _run_render(
-                args.folder, args.preview, args.ban, not args.no_asr, args.san_pham, args.chien_dich
-            )
+            return _run_render(args.folder, args.preview, args.ban, not args.no_asr, args.san_pham,
+                               args.chien_dich, args.nen_tang)  # fmt: skip
         if args.cmd == "draft":
             return _run_draft(args.file, args.folder, args.dry_run, args.json, args.max_vnd)
         if args.cmd == "pick":

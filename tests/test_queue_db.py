@@ -45,7 +45,7 @@ def alive_all(pid: int) -> bool:
 
 
 def test_schema_is_created_with_wal_and_a_version(db: QueueDb, tmp_path: Path) -> None:
-    assert db.schema_version() == 3
+    assert db.schema_version() == 4
     con = sqlite3.connect(tmp_path / "jobs" / "queue.db")
     try:
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -476,7 +476,7 @@ def test_a_v1_database_is_upgraded_to_the_newest_schema_with_everything_kept(
     path = tmp_path / "queue.db"
     make_v1(path)
     db = QueueDb(path)
-    assert db.schema_version() == 3
+    assert db.schema_version() == 4
     done, running = db.get(1), db.get(2)
     assert done is not None and running is not None
     assert (done.status, done.result, done.final, done.output_path) == ("completed", "passed", True,
@@ -552,7 +552,7 @@ def test_two_processes_opening_an_old_file_upgrade_it_once(tmp_path: Path) -> No
         th.join(timeout=60)
     assert errors == []
     db = QueueDb(path)
-    assert db.schema_version() == 3 and len(db.list_jobs()) == 2
+    assert db.schema_version() == 4 and len(db.list_jobs()) == 2
 
 
 def test_a_fresh_database_starts_at_the_newest_version_without_any_backup(tmp_path: Path) -> None:
@@ -778,7 +778,7 @@ def test_a_v2_database_gets_the_deadline_column_and_keeps_everything(tmp_path: P
     path = tmp_path / "queue.db"
     make_v2(path)
     db = QueueDb(path)
-    assert db.schema_version() == 3
+    assert db.schema_version() == 4
     job = db.get(1)
     assert job is not None
     assert (job.status, job.phase, job.stages_done, job.cost_worst_call_vnd) == (
@@ -837,7 +837,72 @@ def test_two_processes_opening_a_v2_file_upgrade_it_once(tmp_path: Path) -> None
         th.start()
     for th in threads:
         th.join(timeout=60)
-    assert errors == [] and QueueDb(path).schema_version() == 3
+    assert errors == [] and QueueDb(path).schema_version() == 4
+
+
+# ─────────────── 14/10/2026: schema v4 (platform of a render) ───────────────
+
+
+def make_v3(path: Path) -> None:
+    make_v2(path)
+    con = sqlite3.connect(path)
+    con.execute("ALTER TABLE jobs ADD COLUMN approval_expires_at REAL")
+    con.execute("PRAGMA user_version = 3")
+    con.commit()
+    con.close()
+
+
+def columns(path: Path) -> list[str]:
+    con = sqlite3.connect(path)
+    try:
+        return [r[1] for r in con.execute("PRAGMA table_info(jobs)")]
+    finally:
+        con.close()
+
+
+def test_a_v3_database_gets_the_platform_column_and_old_rows_read_no_platform(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "queue.db"
+    make_v3(path)
+    db = QueueDb(path)
+    assert db.schema_version() == 4 and columns(path).count("platform") == 1
+    job = db.get(1)
+    assert job is not None and job.platform == "" and job.status == "awaiting_approval"
+    assert (tmp_path / "queue.db.v3.bak").is_file()
+
+
+def test_a_v2_database_passes_through_v3_and_gets_both_new_columns(tmp_path: Path) -> None:
+    # Before 14/10/2026 the 2 → 3 step stamped the newest version itself: a v2 file would have
+    # skipped every later step. Each step now stamps its own number.
+    path = tmp_path / "queue.db"
+    make_v2(path)
+    QueueDb(path)
+    cols = columns(path)
+    assert "approval_expires_at" in cols and "platform" in cols
+
+
+def test_a_new_database_and_a_v1_one_have_the_platform_column(tmp_path: Path) -> None:
+    QueueDb(tmp_path / "new.db")
+    assert "platform" in columns(tmp_path / "new.db")
+    make_v1(tmp_path / "old.db")
+    QueueDb(tmp_path / "old.db")
+    assert "platform" in columns(tmp_path / "old.db")
+
+
+def test_the_tiktok_and_the_facebook_render_of_one_draft_are_not_duplicates(
+    db: QueueDb,
+) -> None:
+    def render(platform: str) -> NewJob:
+        return NewJob(kind="render", project_dir="E:/a", options_file="o", draft="A",
+                      final=True, platform=platform)  # fmt: skip
+
+    tiktok = db.enqueue(render("tiktok"), 1.0)
+    assert db.find_active("render", "E:/a", "A", True, "tiktok") == tiktok
+    assert db.find_active("render", "E:/a", "A", True, "facebook") is None
+    assert db.find_active("render", "E:/a", "A", True) is None  # "" = no platform
+    facebook = db.enqueue(render("facebook"), 2.0)
+    assert {db.get(tiktok).platform, db.get(facebook).platform} == {"tiktok", "facebook"}  # type: ignore[union-attr]
 
 
 # ─────────────── 6c-2: holding a draft job for approval ───────────────
