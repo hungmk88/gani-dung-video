@@ -233,6 +233,9 @@ def test_words_that_only_share_a_syllable_are_never_a_claim(word: str) -> None:
         ("Mã số 100 phần trăm", False),
         ("100% tự nhiên", True),  # already caught through the phrase "100%"
         ("sản phẩm đạt 100 phần trăm theo kiểm nghiệm", False),
+        ("giò 100 phần trăm nguyên chất", False),  # NVH 17/10/2026: not a banned claim
+        ("một trăm phần trăm nguyên chất", False),
+        ("100% nguyên chất", True),  # the figure "100%" stays banned
     ],
 )  # fmt: skip
 def test_100_phan_tram_is_a_claim_only_next_to_tu_nhien_or_thien_nhien(
