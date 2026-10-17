@@ -586,6 +586,7 @@
   "PROJECT_LOCKED": "Dự án '{folder}' đang được một hàng đợi khác dùng{detail}. Chờ nó xong hoặc hủy các job ở hàng đợi đó rồi thử lại.",
   "PIPELINE_BUSY": "Dự án '{folder}' đang có job #{job} chạy hoặc chờ{pipeline}. Chờ nó xong hoặc hủy nó rồi tạo lại.",
   "QUEUE_BAD_DRAFT": "Bản nháp '{draft}' không hợp lệ: yêu cầu có {count} bản ({letters}).",
+  "QUEUE_MUSIC_CLASH": "Bản {draft}{platform} đang chờ hoặc đang dựng {have} (job #{job}); bản {want} dùng cùng thư mục làm việc nên không xếp thêm. Chờ job #{job} xong (hoặc hủy nó) rồi gửi lại.",
   "SPEECH_DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON."
  }
 }

@@ -174,6 +174,17 @@ def test_the_same_render_is_not_queued_twice(db: QueueDb, opt: Path, root: Path)
     assert not other_size[0].duplicate and len(db.list_jobs()) == 2
 
 
+def test_queue_add_without_music_does_not_pass_the_music_render_off_as_a_duplicate(
+    db: QueueDb, opt: Path, root: Path
+) -> None:
+    first = add(db, opt, root / "footage", root, ban="A")
+    with pytest.raises(
+        ConfigError, match=rf"Bản A đang chờ hoặc đang dựng bản có nhạc \(job #{first[0].job_id}\)"
+    ):
+        add(db, opt, root / "footage", root, ban="A", no_music=True)
+    assert len(db.list_jobs()) == 1
+
+
 # ─────────────── cancel / retry ───────────────
 
 
@@ -290,6 +301,20 @@ def test_project_render_is_not_queued_twice(db: QueueDb, root: Path) -> None:
     folder = ready_project(root)
     by_project(db, folder, root, draft="A")
     assert by_project(db, folder, root, draft="A")[0].duplicate
+
+
+def test_a_render_without_music_is_refused_while_the_same_render_with_music_is_active(
+    db: QueueDb, root: Path
+) -> None:
+    # 16/10/2026: both write edit/render/A-tiktok; the old job must not pass for the new request.
+    folder = ready_project(root)
+    [first] = by_project(db, folder, root, draft="A", platforms=["tiktok"])
+    with pytest.raises(ConfigError, match=rf"job #{first.job_id}.*không nhạc"):
+        by_project(db, folder, root, platforms=["tiktok", "facebook"], no_music=True)
+    assert [j.id for j in db.list_jobs()] == [first.job_id]  # B and facebook were not queued
+    assert by_project(db, folder, root, draft="A", platforms=["facebook"], no_music=True)[0]
+    again = by_project(db, folder, root, draft="A", platforms=["tiktok"])
+    assert again[0].duplicate and again[0].job_id == first.job_id  # same music: a duplicate
 
 
 def test_a_project_without_a_plan_or_drafts_is_not_ready(db: QueueDb, root: Path) -> None:

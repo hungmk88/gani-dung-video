@@ -268,6 +268,9 @@ thì thời gian dựng gấp đôi nhưng **không tốn thêm tiền AI**.
     `render_log.json` có `"no_music": true`.
   - Áp cho mọi bản của lần gửi; dựng lại một bản có nhạc thì bản mới thay bản cũ trong cùng thư
     mục làm việc (bản đã giao vẫn nằm ở thư mục giao với tên riêng).
+  - Bản có nhạc và bản không nhạc của cùng một bản nháp, cùng nền tảng, dùng chung thư mục làm
+    việc: khi một bản còn đang chờ hoặc đang dựng, gửi bản kia sẽ bị từ chối kèm số job (không xếp
+    gì thêm). Chờ job đó xong hoặc hủy nó rồi gửi lại.
   - Dòng lệnh: `render … --khong-nhac`, `qc … --khong-nhac`, `queue add … --khong-nhac`.
 
 ## 7. Nhãn QC T8 (chế độ lời)

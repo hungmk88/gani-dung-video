@@ -160,6 +160,23 @@ def _need_dependency(db: QueueDb, after: int | None, msgs: Mapping[str, Any]) ->
         raise ConfigError(msgs["QUEUE_NO_DEPENDENCY"].format(job=after))
 
 
+def _refuse_music_clash(db: QueueDb, job_id: int, draft: str, platform: str, no_music: bool,
+                        msgs: Mapping[str, Any]) -> None:  # fmt: skip
+    """An active render of the same draft and platform writes to the same folder: it is the
+    same render only when it also embeds (or leaves out) the music the same way.
+
+    Raises:
+        ConfigError: the active job and the request disagree on the music.
+    """
+    job = db.get(job_id)
+    if job is None or job.no_music == no_music:
+        return
+    label = {True: "không nhạc", False: "có nhạc"}
+    raise ConfigError(msgs["QUEUE_MUSIC_CLASH"].format(
+        draft=draft, platform=f" ({platform})" if platform else "", job=job_id,
+        have=f"bản {label[job.no_music]}", want=label[no_music]))  # fmt: skip
+
+
 def enqueue_render(
     options_file: Path, folder: Path, db: QueueDb, *, ban: str | None = None,
     final: bool = False, no_asr: bool = False, rules: Rules | None = None,
@@ -205,6 +222,10 @@ def enqueue_render(
     stamp = now if now is not None else time.time()
     out: list[EnqueueResult] = []
     with _folder(db, project, rules, stamp):
+        for letter in chosen:  # nothing is queued when one draft clashes on the music
+            found = db.find_active("render", str(project), letter, final)
+            if found is not None:
+                _refuse_music_clash(db, found, letter, "", no_music, msgs)
         for letter in chosen:
             existing = db.find_active("render", str(project), letter, final)
             if existing is not None:
@@ -335,6 +356,11 @@ def enqueue_project_render(
     try:
         with _folder(db, folder, rules, stamp):
             db.check_no_pipeline(str(folder))  # not even a duplicate of one of its renders
+            for letter in chosen:  # nothing is queued when one render clashes on the music
+                for platform in targets:
+                    found = db.find_active("render", str(folder), letter, final, platform)
+                    if found is not None:
+                        _refuse_music_clash(db, found, letter, platform, no_music, msgs)
             for letter in chosen:
                 for platform in targets:
                     existing = db.find_active("render", str(folder), letter, final, platform)
