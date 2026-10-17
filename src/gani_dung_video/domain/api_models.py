@@ -588,6 +588,7 @@ _QA_LABELS = {
     "T6": "Chữ chồng nhau",
     "T7": "Chữ quá dài",
     "T8": "Whisper nghe lại thành phẩm",
+    "E1-NEN-TANG": "Từ ngữ rủi ro theo nền tảng",
 }
 
 
@@ -643,6 +644,8 @@ def qa_checks(findings: Sequence[Finding], rounds: int, lufs: float | None,
     codes = [f"T{i}" for i in range(1, 8)]
     if t8 is not None or any(f.code == "T8" for f in findings):
         codes.append("T8")
+    if any(f.code == "E1-NEN-TANG" for f in findings):  # platform words: only when there are any
+        codes.append("E1-NEN-TANG")
     out = []
     for code in codes:
         mine = [f for f in findings if f.code == code]

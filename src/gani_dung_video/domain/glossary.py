@@ -242,6 +242,26 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
     return found
 
 
+def find_phrases(text: str, phrases: Sequence[str]) -> list[str]:
+    """The phrases that appear in text as whole syllables next to each other, tone marks KEPT.
+
+    For the platform risk words (14/10/2026): with the marks folded away "máu" (blood) would
+    match "màu" (colour) and "chết" would match "chết"'s unmarked cousins, so these warnings
+    compare the text as written. Case and punctuation are ignored.
+
+    Example:
+        >>> find_phrases("Màu đỏ tươi, nhắn tin ngay", ["máu", "nhắn tin"])
+        ['nhắn tin']
+    """
+    toks = tokens(text)
+    found: list[str] = []
+    for phrase in phrases:
+        pat = tokens(phrase)
+        if pat and any(_match_at(toks, i, pat) for i in range(len(toks))):
+            found.append(phrase)
+    return found
+
+
 def _inside_word(toks: Sequence[str], i: int, pattern: Sequence[str]) -> bool:
     """The match at toks[i] starts on the second syllable of a listed word ("trị" of "giá
     trị"), so it is that word, not a claim. toks[i] may hold more syllables ("trịbệnh")."""

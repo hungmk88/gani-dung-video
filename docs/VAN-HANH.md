@@ -247,6 +247,13 @@ thì thời gian dựng gấp đôi nhưng **không tốn thêm tiền AI**.
 - Trang chi tiết video có nút chuyển **"Bản A · TikTok / Bản A · Reels"**; khung "Duyệt video
   cuối" có một dòng cho từng bản, duyệt riêng. Thư mục làm việc: `edit/render/A-tiktok/`,
   `edit/render/A-facebook/`.
+- **Cảnh báo từ ngữ rủi ro** (mục "Từ ngữ rủi ro theo nền tảng" trong khung soát chất lượng,
+  biểu tượng vàng): chữ trên màn hình hoặc lời nói có từ nền tảng đó hay hạn chế, ví dụ bản TikTok
+  có "nhắn tin", "Zalo", "giá sỉ", "giảm giá"; bản nào cũng tránh "máu", "chết", "ngộ độc", nhắc sàn
+  khác. **Chỉ cảnh báo, không chặn giao hay duyệt**; người duyệt quyết định. Danh sách nằm ở
+  `config/glossary.json` → `platform_risk_words` (so theo âm tiết, giữ dấu: "màu" không bị nhầm là
+  "máu"), tách khỏi danh sách cụm cấm của NVH. Đây là kinh nghiệm của người làm nội dung, không
+  phải chính sách công bố của TikTok hay Meta.
 - Dòng lệnh: `render <thư mục> --nen-tang tiktok` (bỏ `--nen-tang` = không theo nền tảng, như
   trước); `qc … --nen-tang tiktok` để soát lại đúng bản đó.
 

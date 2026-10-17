@@ -234,6 +234,13 @@ def test_errors_fail_their_check_and_warnings_do_not() -> None:
     assert got["T5"].passed and "Cảnh báo" in got["T5"].detail
 
 
+def test_platform_words_get_a_row_only_when_there_are_any_and_never_fail() -> None:
+    assert "E1-NEN-TANG" not in {c.code for c in qa_checks([], 1, -14.0, -2.0)}
+    found = [Finding(code="E1-NEN-TANG", level="warn", msg="Bản tiktok: có từ 'zalo'")]
+    row = {c.code: c for c in qa_checks(found, 1, -14.0, -2.0)}["E1-NEN-TANG"]
+    assert row.passed and row.detail.startswith("Cảnh báo") and "zalo" in row.detail
+
+
 def test_a_report_that_never_rendered_has_no_checks() -> None:
     assert qa_checks([Finding(code="T7", level="error", msg="chữ dài")], rounds=0, lufs=None,
                      true_peak_db=None) == []  # fmt: skip

@@ -75,3 +75,17 @@ test('T8 labels never change the overall verdict', () => {
   assert.equal(toQaReport(qa({ t8: 'skipped_draft' })).overall_pass, true);
   assert.equal(toQaReport(qa({ passed: false, t8: 'skipped_draft' })).overall_pass, false);
 });
+
+test('platform risk words sit with the text checks, as a passed row with a warning', () => {
+  const report = toQaReport(
+    qa({
+      checks: [
+        ...qa().checks,
+        { code: 'E1-NEN-TANG', label: 'Từ ngữ rủi ro theo nền tảng', passed: true, detail: 'Cảnh báo: zalo' },
+      ],
+    }),
+  );
+  const row = group(report)?.checks.find((c) => c.code === 'E1-NEN-TANG');
+  assert.ok(row?.passed);
+  assert.equal(report.groups.some((g) => g.title === 'Khác'), false);
+});
