@@ -2,8 +2,14 @@
 
 ## Git: không bao giờ đẩy thẳng lên `main`
 
-`main` chưa bật branch protection trên GitHub (chủ quyết định 16/10/2026), nên quy ước dưới đây là
-hàng rào duy nhất. Mọi agent (Claude Code trên máy dựng, phiên cloud, …) đều phải theo.
+Từ 17/10/2026 (repo đã công khai), `main` bật branch protection trên GitHub. GitHub chặn:
+đẩy thẳng lên `main`, merge PR khi một trong hai job CI chưa xanh, force-push, và xóa `main`.
+Luật áp cho cả quản trị viên. PR không cần người khác duyệt: chủ repo tự mở PR (qua agent) và
+tự merge.
+
+GitHub chỉ chặn được phần trên; các quy ước dưới đây (khi nào được merge, cách đặt nhánh, cách
+viết PR) vẫn do agent tự giữ. Mọi agent (Claude Code trên máy dựng, phiên cloud, …) đều phải
+theo.
 
 1. Làm trên **nhánh riêng** tách từ `main` mới nhất (`fix/...`, `feat/...`, `docs/...`, hoặc nhánh
    được giao). Không commit trên `main`, không `git push origin main`.
@@ -15,6 +21,8 @@ hàng rào duy nhất. Mọi agent (Claude Code trên máy dựng, phiên cloud,
    Cần cập nhật từ `main` thì merge `main` vào nhánh.
 5. Một PR làm một việc; mô tả PR ghi vì sao, thay đổi gì, đã kiểm tra gì và **chưa** kiểm tra gì.
 6. PR merge xong, việc tiếp theo bắt đầu từ `main` mới, không chồng commit lên nhánh đã merge.
+7. PR xếp chồng (base là nhánh của PR khác): merge từ dưới lên, mỗi lần merge xong thì đổi base
+   của PR kế tiếp sang `main`.
 
 ## Kiểm tra trước khi push
 
