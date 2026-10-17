@@ -418,6 +418,9 @@ bấm duyệt tiền. Không chặn gì.
   `tight` = `scenes_available < warn_below`. Cảnh báo vàng, người dùng vẫn duyệt được.
 - Mỗi khối: `candidates` (cảnh chào riêng cho khối), `max_fill` (số phách tối đa các cảnh đó mang
   được), `scenes_min` / `scenes_max`, và `tight` riêng của khối.
+- Video 3 phút: các tiểu khối của một chương (`<chương>#<k>`) gộp thành **một dòng**, `role` là id
+  chương (ví dụ `quy_trinh`), vì chúng chia nhau một bảng xếp hạng cảnh không lặp; số liệu là
+  tổng của các tiểu khối. Mở đầu và kêu gọi giữ dòng riêng. Tổng của cả plan không đổi.
 - `footage` là `null` khi: job không phải `draft` hoặc không còn chờ duyệt; phong cách dẫn lời
   (không có khối cảnh); `plan.json` / `candidates.json` thiếu, hỏng hoặc cũ hơn lần chạy của
   job (hai tệp dùng chung theo dự án, cùng luật với `qc_report.json`).

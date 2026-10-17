@@ -94,11 +94,33 @@ def test_the_search_is_fast_with_eighteen_blocks() -> None:
 def test_footage_fit_counts_scenes_over_the_whole_plan() -> None:
     p = plan180()
     fit = footage_fit(p, picked(p, 28), RULES)
-    assert fit is not None and len(fit.blocks) == len(p.blocks)
+    assert fit is not None
     assert fit.scenes_available <= 28 * 3  # at most 3 per clip
     assert fit.scenes_needed_min <= fit.scenes_needed_max
     starved = footage_fit(p, picked(p, 9), RULES)
     assert starved is not None and starved.tight is True
+
+
+def test_footage_fit_reports_one_row_per_chapter_not_per_sub_block() -> None:
+    p = plan180()
+    fit = footage_fit(p, picked(p, 28), RULES)
+    assert fit is not None
+    hook, cta = p.blocks[0].role, p.blocks[-1].role
+    assert [r.role for r in fit.blocks] == [hook, *(c.id for c in p.chapters), cta]
+    for c in p.chapters:
+        row = next(r for r in fit.blocks if r.role == c.id)
+        subs = [b for b in p.blocks if b.chapter == c.id]
+        assert row.beats_needed == sum(b.beats for b in subs)
+    assert fit.scenes_needed_min == sum(r.scenes_min for r in fit.blocks)  # totals unchanged
+    assert fit.scenes_needed_max == sum(r.scenes_max for r in fit.blocks)
+
+
+def test_a_starved_chapter_shows_up_as_that_chapter() -> None:
+    p = plan180()
+    mid = next(c for c in p.chapters if c.id == "quy_trinh")
+    fit = footage_fit(p, starve(picked(p, 28), mid.blocks, 1), RULES)
+    assert fit is not None
+    assert [r.role for r in fit.blocks if r.tight] == ["quy_trinh"]
 
 
 # ─────────────── a starved chapter is found and named ───────────────
