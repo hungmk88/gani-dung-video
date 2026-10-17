@@ -1,10 +1,15 @@
 # GANI FOODS AI Studio — frontend (GĐ6 UI prototype)
 
 Bảng điều khiển (Studio Wizard + Job Queue) cho pipeline dựng video tự động
-`gani-dung-video`. Đây là **bản mockup phương án B**: giao diện + logic Preflight Validator
-chạy thật trên trình duyệt và bám 100% vào `config/rules.json`/`domain/preflight.py` của
-repo Python (không phải dữ liệu bịa), nhưng hàng đợi/daemon (GĐ6 thật, SQLite + REST/WS ở
-`127.0.0.1:8765`) chưa tồn tại — `src/services/mockApi.ts` mô phỏng nó.
+`gani-dung-video`. Giao diện và logic Preflight Validator chạy trên trình duyệt, bám vào
+`config/rules.json`/`domain/preflight.py` của repo Python. Có hai bản:
+
+- **Bản thật** (`npm run build:real`, chạy từ `serve`): nói chuyện với hàng đợi và daemon ở
+  `127.0.0.1:8765` (xem `docs/api-jobs.md`).
+- **Bản mô phỏng** (`npm run dev`, `npm run build`): `src/services/mockApi.ts` giả lập hàng đợi để
+  xem thử giao diện mà không cần máy dựng, gồm cả duyệt chi phí, duyệt video cuối, tab "Bản A ·
+  TikTok / Bản A · Reels" theo nền tảng chọn ở bước "Đăng lên" và ô "Không nhúng nhạc". Mọi bản
+  dùng chung một clip mẫu; số đo và cảnh báo trong khung soát chất lượng là ví dụ, không phải đo thật.
 
 ## Chạy thử
 

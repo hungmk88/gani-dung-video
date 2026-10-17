@@ -87,7 +87,26 @@ function stepDetail(id: PipelineStepId, options: VideoOptions, footage: FootageF
 
 const RULES_QC_MAX_ROUNDS = 3;
 
-function buildQaReport(): QaReport {
+/** Demo QA of one output. `platform` and `noMusic` mirror what the real server reports: a
+ *  TikTok render gets the platform-word warning row, a render without music says so under T3. */
+function buildQaReport(platform = '', noMusic = false): QaReport {
+  const platformGroup =
+    platform === 'tiktok'
+      ? [
+          {
+            title: 'Từ ngữ theo nền tảng (glossary.json → platform_risk_words, chỉ cảnh báo)',
+            checks: [
+              {
+                code: 'E1-NEN-TANG',
+                label: 'Từ ngữ rủi ro theo nền tảng',
+                passed: true,
+                detail:
+                  "Cảnh báo: Bản tiktok: lời nói 'Hôm nay giảm giá' có từ 'giảm giá' mà nền tảng hay hạn chế (dễ bị giảm phân phối). Cân nhắc đổi câu ở bản nháp. (mô phỏng)",
+              },
+            ],
+          },
+        ]
+      : [];
   return {
     fixes: [],
     groups: [
@@ -118,7 +137,11 @@ function buildQaReport(): QaReport {
           { code: 'T3', label: 'Độ to trung bình (LUFS)', passed: true, detail: 'Đo được −13,9 LUFS, mục tiêu −14,0 ±1,0 LU (qc.lufs_tolerance).' },
           { code: 'T3', label: 'Đỉnh thật (dBTP)', passed: true, detail: 'Đo được −2,0 dBTP, trần qc.max_true_peak_db = −1,0 dBTP.' },
         ],
+        ...(noMusic
+          ? { note: 'Bản không nhúng nhạc: chỉ còn lời và tiếng hiện trường, nhạc chèn trên app khi đăng.' }
+          : {}),
       },
+      ...platformGroup,
     ],
     rounds_used: 1,
     max_rounds: RULES_QC_MAX_ROUNDS,
@@ -132,6 +155,9 @@ interface JobRecord {
   footage: SubmitRequest['footage'];
   /** Set once a person approved the (simulated) Claude cost. */
   approved: boolean;
+  /** Ticked platforms (tiktok, facebook): one demo output each; empty = one plain output. */
+  platforms: string[];
+  noMusic: boolean;
 }
 
 // Reference sample from a real dry run (docs/api-jobs.md §4b): 1.678 input tokens, worst
@@ -154,7 +180,7 @@ function notify(id: string): void {
 function advance(id: string): void {
   const rec = store.get(id);
   if (!rec) return;
-  const { job, footage } = rec;
+  const { job, footage, platforms, noMusic } = rec;
   const runningIdx = job.steps.findIndex((s) => s.status === 'running');
   if (runningIdx === -1) return;
 
@@ -173,7 +199,17 @@ function advance(id: string): void {
     job.status = 'done';
     job.etaSec = 0;
     job.finalUrl = job.previewUrl; // demo: reuse the same real render as the "final" clip
-    job.qa = buildQaReport();
+    job.qa = buildQaReport(platforms[0], noMusic);
+    if (platforms.length > 0) {
+      // demo: the same clip stands in for every platform's render; tabs and QA differ as on the server
+      job.outputs = platforms.map((platform) => ({
+        draft: 'A',
+        platform,
+        previewUrl: job.previewUrl,
+        finalUrl: job.finalUrl,
+        qa: buildQaReport(platform, noMusic),
+      }));
+    }
     // demo: a delivered final video waits for its reviewer (T-F); the real API sets this from the manifest
     job.review = { jobId: id, status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
     job.logLines.push(log('info', 'Hoàn tất pipeline — soát kỹ thuật ĐẠT ở vòng 1/3.'));
@@ -239,13 +275,13 @@ export const mockApi: StudioApi = {
     return runPreflight({ options, footage });
   },
 
-  async submitJob({ options, footage }: SubmitRequest): Promise<RenderJob> {
+  async submitJob({ options, footage, platforms = [], noMusic = false }: SubmitRequest): Promise<RenderJob> {
     const id = makeId();
     const style = RULES.styles[options.phong_cach as keyof typeof RULES.styles];
     const purpose = RULES.purposes[options.muc_dich as keyof typeof RULES.purposes];
     const job: RenderJob = {
       id,
-      title: `${style.name} · ${purpose.name} · ${options.do_dai_giay}s`,
+      title: `${style.name} · ${purpose.name} · ${options.do_dai_giay}s${noMusic ? ' · không nhạc' : ''}`,
       options,
       status: 'queued',
       createdAt: nowIso(),
@@ -255,8 +291,10 @@ export const mockApi: StudioApi = {
       previewUrl: null,
       finalUrl: null,
       qa: null,
+      ...(platforms.length > 0 ? { platforms: [...platforms] } : {}),
+      ...(noMusic ? { noMusic: true } : {}),
     };
-    const rec: JobRecord = { job, timer: null, footage, approved: false };
+    const rec: JobRecord = { job, timer: null, footage, approved: false, platforms: [...platforms], noMusic };
     store.set(id, rec);
     rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
     return job;
@@ -331,6 +369,11 @@ export const mockApi: StudioApi = {
 
   async rerender(job: RenderJob): Promise<RenderJob> {
     const footage = store.get(job.id)?.footage ?? [];
-    return mockApi.submitJob({ options: job.options, footage });
+    return mockApi.submitJob({
+      options: job.options,
+      footage,
+      platforms: job.platforms ?? [],
+      noMusic: job.noMusic ?? false,
+    });
   },
 };
