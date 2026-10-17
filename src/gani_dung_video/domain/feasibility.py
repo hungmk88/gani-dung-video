@@ -203,7 +203,7 @@ def _variety(plan: Plan, cands: dict[str, list[Candidate]], rules: Rules, drafts
 class BlockFit:
     """One block: what it can draw on, what it needs, and whether that is barely enough."""
 
-    role: str
+    role: str  # the block's role, or the chapter id for the sub-blocks of a chapter (180 s)
     candidates: int  # different scenes offered to this block
     beats_needed: int
     max_fill: int  # most beats those scenes can carry (each once, at most N per clip)
@@ -266,6 +266,10 @@ def footage_fit(plan: Plan, pick: PickFile, rules: Rules) -> FootageFit | None:
     A block needs between `scenes_min` and `scenes_max` scenes (sums of the allowed scene sizes
     that make its planned beats); the plan needs the sums over its blocks. The footage is `tight`
     when its usable different scenes fall below `scenes_needed_max x pick.footage_warn_ratio`.
+
+    The sub-blocks of a chapter (180 s) draw on one ranking of the chapter's scenes, dealt out
+    without repeats, so they are reported as one row named by the chapter id, like the
+    feasibility gate names "chương 'x'".
     """
     if plan.driver == "speech":
         return None
@@ -273,17 +277,23 @@ def footage_fit(plan: Plan, pick: PickFile, rules: Rules) -> FootageFit | None:
     per_clip = int(rules["vision"]["max_segments_per_clip"])
     allowed = plan.beats_per_scene_allowed
     by_role = {b.role: b for b in pick.blocks}
-    rows: list[BlockFit] = []
+    groups: dict[str, list[PlanBlock]] = {}  # row name -> its blocks, in plan order
     for block in plan.blocks:
-        cands = list(by_role[block.role].candidates) if block.role in by_role else []
-        counts = scene_counts(block.beats, allowed)
-        if counts is None:  # not a sum of allowed sizes: bound it by the extremes instead
-            counts = (math.ceil(block.beats / max(allowed)), block.beats // min(allowed))
+        groups.setdefault(block.chapter or block.role, []).append(block)
+    rows: list[BlockFit] = []
+    for name, blocks in groups.items():
+        cands = [c for b in blocks if b.role in by_role for c in by_role[b.role].candidates]
+        lo = hi = 0
+        for b in blocks:
+            counts = scene_counts(b.beats, allowed)
+            if counts is None:  # not a sum of allowed sizes: bound it by the extremes instead
+                counts = (math.ceil(b.beats / max(allowed)), b.beats // min(allowed))
+            lo, hi = lo + counts[0], hi + counts[1]
         have = len(_distinct(cands))
         rows.append(BlockFit(
-            role=block.role, candidates=have, beats_needed=block.beats,
-            max_fill=_supply(cands, per_clip), scenes_min=counts[0], scenes_max=counts[1],
-            tight=have < _warn_level(counts[1], ratio),
+            role=name, candidates=have, beats_needed=sum(b.beats for b in blocks),
+            max_fill=_supply(cands, per_clip), scenes_min=lo, scenes_max=hi,
+            tight=have < _warn_level(hi, ratio),
         ))  # fmt: skip
     need_min = sum(r.scenes_min for r in rows)
     need_max = sum(r.scenes_max for r in rows)

@@ -245,7 +245,7 @@ Cho đến khi anh chốt Q1–Q4, em không mở nhánh hay viết code GĐ7.
 - **Trần tổng:** `pick.max_total_candidates = 160` (mỗi ứng viên ≈ 94 token vào). Vượt thì các khối giảm đều nhưng không dưới số cảnh tối thiểu của khối; trần không thể đáp ứng thì bỏ qua thay vì bỏ đói khối. Giới hạn cứng 20/khối giữ nguyên vì tiểu khối ~20 phách chỉ cần ~10.
 - **Cổng khả thi theo cụm chương:** thử từng khối, rồi mọi tập con *bên trong* một chương, rồi mọi tập con các chương gộp lại (chỉ cả kế hoạch khi có hơn 12 cụm). Vẫn chỉ là điều kiện cần (không từ chối kế hoạch dựng được; test vét cạn ngẫu nhiên có chương). Thông báo gọi tên "chương 'x'" thay vì liệt kê tiểu khối.
 - **Footage giả:** `tests/mock_footage.py` tạo 28 clip × 3 đoạn (không có video), dùng cho test 7b và các pha sau; 28 clip đủ cho kế hoạch 180s 2 bản, 9 clip thì bị cổng chặn.
-- **Chưa làm ở 7b:** `footage_fit` vẫn liệt kê từng tiểu khối (API/UI chưa gộp theo chương); prompt/schema/luật V để 7c.
+- **Chưa làm ở 7b:** prompt/schema/luật V để 7c. `footage_fit` gộp theo chương làm sau (17/10/2026): một dòng cho mỗi chương, `role` là id chương, như cổng khả thi gọi tên "chương 'x'".
 
 ### Ghi chú triển khai 7c
 
