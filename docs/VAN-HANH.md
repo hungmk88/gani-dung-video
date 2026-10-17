@@ -451,9 +451,11 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
   (`trămm`, `nhấtt`), chữ Cyrillic hoặc Hy Lạp trông giống chữ Latin (`sо 1` với "о" Cyrillic),
   chữ số gõ cách nhau ngay trước dấu % hoặc "phần trăm" (`1 0 0 %`).
 - Biến thể chưa bắt (theo dõi, bổ sung nếu gặp thực tế):
-  · `100 phần trăm nguyên chất` và các tuyên bố tương đương khác: cần NVH thêm cụm vào
-    `banned_claims` (danh sách đã chốt, app không tự thêm)
   · `100 percent natural` (tiếng Anh — ngoài phạm vi bộ lọc tiếng Việt)
+  · Các tuyên bố tương đương khác chỉ bị chặn khi NVH thêm cụm vào `banned_claims` (danh sách đã
+    chốt, app không tự thêm).
+- Không chặn theo quyết định của NVH (17/10/2026): `100 phần trăm nguyên chất`. Lưu ý dạng viết số
+  `100% nguyên chất` vẫn bị chặn vì chứa cụm `100%`.
 - Không coi là cụm cấm (14/10/2026): cụm bắt đầu ở âm tiết thứ hai của một từ có sẵn trong
   danh sách `_WORD_BEFORE` (`domain/glossary.py`: giá trị, quản trị, chính trị, cai trị, thống
   trị, văn phòng, sửa chữa), nên "giá trị bệnh nhân" không bị bắt là "trị bệnh"; số có dấu thập
