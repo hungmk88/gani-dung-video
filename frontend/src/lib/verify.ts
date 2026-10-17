@@ -6,11 +6,12 @@
 
 import type { FootageInfo, VerifyReport, VerifyStatus } from '../types/rules.ts';
 import { formatVnd } from './format.ts';
+import { chapterName } from './structure.ts';
 
 export interface FootageWarning {
   headline: string;
   body: string;
-  /** Roles of the blocks that are tight on their own. */
+  /** Vietnamese names of the blocks (or chapters) that are tight on their own. */
   tightBlocks: string[];
 }
 
@@ -23,7 +24,7 @@ export function footageWarning(f: FootageInfo): FootageWarning | null {
     body:
       `Có ${f.available} cảnh khác nhau, kịch bản cần ${needed} cảnh (nên có ít nhất ${f.warnBelow}). ` +
       'Claude dễ dùng lặp cảnh (V4) và phải sửa nhiều vòng, mỗi vòng tốn tiền. Bạn vẫn duyệt được.',
-    tightBlocks: f.blocks.filter((b) => b.tight).map((b) => b.role),
+    tightBlocks: f.blocks.filter((b) => b.tight).map((b) => chapterName(b.role)),
   };
 }
 

@@ -19,14 +19,23 @@ const NAMES: Record<string, string> = {
   bang_chung: 'Bằng chứng',
   nhu_cau: 'Nhu cầu',
   san_pham: 'Sản phẩm',
+  con_nguoi: 'Con người',
   con_nguoi_1: 'Con người (1)',
   con_nguoi_2: 'Con người (2)',
   gia_tri: 'Giá trị',
+  // Khuyến mãi (rules.json → purposes.khuyen_mai.blocks)
+  hook_uu_dai: 'Mở đầu ưu đãi',
+  chi_tiet_uu_dai: 'Chi tiết ưu đãi',
+  cta_gap: 'Kêu gọi gấp',
 };
 
-/** Vietnamese name of a chapter / hook / CTA id; an unknown id reads as its words. */
+/** Vietnamese name of a block / chapter id (rules.json → purposes.*.blocks, durations.180
+ *  chapters); a sub-block "quy_trinh#2" reads "Quy trình (đoạn 2)"; an unknown id reads as its
+ *  words. */
 export function chapterName(id: string): string {
-  return NAMES[id] ?? id.replace(/_/g, ' ');
+  const [base, part] = id.split('#');
+  const name = NAMES[base] ?? base.replace(/_/g, ' ');
+  return part ? `${name} (đoạn ${part})` : name;
 }
 
 /** m:ss, rounded down like a video player. */

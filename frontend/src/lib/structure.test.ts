@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ApiHealth, ApiJob, ApiPipeline, ApiQa, ApiStructure } from '../types/api.ts';
 import { toHealthInfo, toPipelineCard, toQaReport, toStructure } from '../services/mappers.ts';
+import { RULES } from '../data/rules.ts';
 import {
   chapterName,
   clock,
@@ -149,6 +150,15 @@ test('chapterName speaks Vietnamese and falls back to the id', () => {
   assert.equal(chapterName('hook'), 'Mở đầu');
   assert.equal(chapterName('cta'), 'Kêu gọi');
   assert.equal(chapterName('mot_khoi_moi'), 'mot khoi moi');
+  assert.equal(chapterName('quy_trinh#2'), 'Quy trình (đoạn 2)'); // a sub-block of a chapter
+});
+
+test('every block of every purpose in rules.json has a Vietnamese name', () => {
+  for (const purpose of Object.values(RULES.purposes)) {
+    for (const [role] of purpose.blocks) {
+      assert.notEqual(chapterName(role), role.replace(/_/g, ' '), `${purpose.id}: ${role}`);
+    }
+  }
 });
 
 test('the title lane lists only the chapters that have a title, at their start', () => {

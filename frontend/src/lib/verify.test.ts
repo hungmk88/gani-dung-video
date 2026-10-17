@@ -64,7 +64,7 @@ test('footageWarning: nothing when the footage has room, numbers when it is tigh
   assert.match(w.body, /9 cảnh/);
   assert.match(w.body, /8–9/); // the plan needs 8–9 scenes
   assert.match(w.body, /12/); // and the room the server asks for
-  assert.deepEqual(w.tightBlocks, ['quy_trinh']);
+  assert.deepEqual(w.tightBlocks, ['Quy trình']); // the Vietnamese name, not the rules.json id
 });
 
 test('footageWarning shows a single number when min equals max', () => {
