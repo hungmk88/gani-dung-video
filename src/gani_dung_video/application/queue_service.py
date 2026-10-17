@@ -164,8 +164,10 @@ def enqueue_render(
     options_file: Path, folder: Path, db: QueueDb, *, ban: str | None = None,
     final: bool = False, no_asr: bool = False, rules: Rules | None = None,
     settings: Settings | None = None, now: float | None = None, after: int | None = None,
+    no_music: bool = False,
 ) -> list[EnqueueResult]:  # fmt: skip
     """Queue the render of one draft (`ban`), or of every draft the request asks for.
+    `no_music`: the videos leave the plan's music out (music is added in the app).
 
     Raises:
         ConfigError: no allow-list configured, folder outside it or missing, options file
@@ -211,6 +213,7 @@ def enqueue_render(
             jid = db.enqueue(
                 NewJob(kind="render", project_dir=str(project), options_file=str(options),
                        draft=letter, final=final, no_asr=no_asr, depends_on=after,
+                       no_music=no_music,
                        max_attempts=int(rules["queue"]["max_attempts"])), stamp)  # fmt: skip
             out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False))
     return out
@@ -282,11 +285,13 @@ def enqueue_project_render(
     project: Path, db: QueueDb, *, draft: str = "all", final: bool = False,
     no_asr: bool = False, rules: Rules | None = None, settings: Settings | None = None,
     now: float | None = None, after: int | None = None, platforms: Sequence[str] | None = None,
+    no_music: bool = False,
 ) -> list[EnqueueResult]:  # fmt: skip
     """Queue renders of a project that is already planned and drafted (the web API's path).
 
     The options are the ones plan.json was compiled from, so nothing is asked twice. One render
-    per draft letter and per platform (`platforms`, None = one render without a profile).
+    per draft letter and per platform (`platforms`, None = one render without a profile);
+    `no_music` leaves the plan's music out of every one of them.
 
     Raises:
         ConfigError: no allow-list, project outside it or missing, or a draft letter the plan
@@ -341,6 +346,7 @@ def enqueue_project_render(
                         NewJob(kind="render", project_dir=str(folder),
                                options_file=str(plan_path), draft=letter, final=final,
                                no_asr=no_asr, depends_on=after, platform=platform,
+                               no_music=no_music,
                                max_attempts=int(rules["queue"]["max_attempts"])), stamp,
                         guard_pipeline=True)  # fmt: skip
                     out.append(EnqueueResult(job_id=jid, draft=letter, duplicate=False,
@@ -454,16 +460,16 @@ def enqueue_pipeline(
     options: Mapping[str, Any], folder: Path, db: QueueDb, *, draft: str = "all",
     final: bool = False, no_asr: bool = False, force_analyze: bool = False,
     rules: Rules | None = None, settings: Settings | None = None, now: float | None = None,
-    platforms: Sequence[str] | None = None,
+    platforms: Sequence[str] | None = None, no_music: bool = False,
 ) -> PipelineResult:  # fmt: skip
     """Queue a whole build: analyse the footage, write the drafts, render them, in that order.
 
     The options are judged by preflight first (nothing is written or queued if they block),
     saved as <folder>/edit/options.json, and the chain analyze → draft → one render per draft
-    letter and per platform (`platforms`, None = one render without a profile) is created in
-    one transaction. The draft job stops at a cost approval; the renders
-    wait for it. A project with any waiting or running job refuses a new pipeline, so options
-    of a running one are never overwritten.
+    letter and per platform (`platforms`, None = one render without a profile; `no_music`
+    leaves the plan's music out of the renders) is created in one transaction. The draft job
+    stops at a cost approval; the renders wait for it. A project with any waiting or running
+    job refuses a new pipeline, so options of a running one are never overwritten.
 
     Raises:
         ConfigError: no allow-list, folder outside it or missing, options blocked by preflight,
@@ -504,7 +510,8 @@ def enqueue_pipeline(
         (NewJob(kind="draft", project_dir=where, options_file=saved, draft="",
                 max_attempts=1), 0),  # one chance: code never retries a paid job
         *((NewJob(kind="render", project_dir=where, options_file=saved, draft=letter,
-                  final=final, no_asr=no_asr, max_attempts=tries, platform=platform), 1)
+                  final=final, no_asr=no_asr, max_attempts=tries, platform=platform,
+                  no_music=no_music), 1)
           for letter in chosen for platform in targets),
     ]  # fmt: skip
     stamp = now if now is not None else time.time()

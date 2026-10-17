@@ -259,6 +259,7 @@ test('pipelineBody sends the preflight-shaped options plus the run switches', ()
   assert.equal(body.draft, 'A');
   assert.equal(body.final, true);
   assert.equal(body.force_analyze, true);
+  assert.equal(body.no_music, false);
   assert.equal(options.nhac_file, '124bpm-tvc-cat-nhanh.m4a');
   assert.equal('pacing' in options, false);
 });
@@ -281,9 +282,9 @@ test('toHealthInfo carries the API key flag and the daily budget', () => {
 
 test('toPipelineCard keeps what the chain renders so "Render lại" asks the same again', () => {
   const one = toPipelineCard(chain([ANALYZE, { ...RENDER_A, no_asr: true }, { ...RENDER_A, id: 5, size: 'final', no_asr: true }]));
-  assert.deepEqual(rerenderBody(one), { project_id: '0/Xuong GANI', draft: 'A', final: true, no_asr: true, platforms: [] });
+  assert.deepEqual(rerenderBody(one), { project_id: '0/Xuong GANI', draft: 'A', final: true, no_asr: true, platforms: [], no_music: false });
   const two = toPipelineCard(chain([ANALYZE, DRAFT, RENDER_A, RENDER_B]));
-  assert.deepEqual(rerenderBody(two), { project_id: '0/Xuong GANI', draft: 'all', final: false, no_asr: false, platforms: [] });
+  assert.deepEqual(rerenderBody(two), { project_id: '0/Xuong GANI', draft: 'all', final: false, no_asr: false, platforms: [], no_music: false });
 });
 
 test('a chain for TikTok and Reels has one output per draft and platform, in rules order', () => {
@@ -304,4 +305,18 @@ test('a chain for TikTok and Reels has one output per draft and platform, in rul
   assert.deepEqual(card.platforms, ['tiktok', 'facebook']);
   assert.deepEqual(rerenderBody(card).platforms, ['tiktok', 'facebook']);
   assert.equal(card.jobs?.find((j) => j.id === '4')?.platform, 'tiktok');
+});
+
+test('a chain rendered without music says so and "Dựng lại" keeps the music out (16/10/2026)', () => {
+  const card = toPipelineCard(
+    chain([ANALYZE, DRAFT, { ...RENDER_A, id: 3, platform: 'tiktok', no_music: true }]),
+  );
+  assert.equal(card.noMusic, true);
+  assert.equal(rerenderBody(card).no_music, true);
+  assert.equal(card.jobs?.find((j) => j.id === '3')?.noMusic, true);
+  assert.equal(card.jobs?.find((j) => j.kind === 'draft')?.noMusic, undefined);
+  const body = pipelineBody(OPTS, {
+    projectId: 'p', draft: 'all', final: false, noAsr: false, forceAnalyze: false, noMusic: true,
+  });
+  assert.equal(body.no_music, true);
 });

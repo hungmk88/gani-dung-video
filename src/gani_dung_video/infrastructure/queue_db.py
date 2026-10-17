@@ -30,7 +30,7 @@ from gani_dung_video.domain.jobs import (
     parse_stages,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 STOP_MODES = ("graceful", "now")
 
 _STATUS_LIST = "'queued', 'processing', 'awaiting_approval', 'completed', 'failed', 'cancelled'"
@@ -83,7 +83,8 @@ def _jobs_ddl(name: str) -> str:
   approved_at REAL,
   spent_vnd REAL,
   approval_expires_at REAL,
-  platform TEXT NOT NULL DEFAULT ''
+  platform TEXT NOT NULL DEFAULT '',
+  no_music INTEGER NOT NULL DEFAULT 0
 )"""
 
 
@@ -110,7 +111,7 @@ _OTHER_TABLES = [
 )""",
 ]
 
-_BOOLS = ("final", "no_asr", "cancel_requested", "force")
+_BOOLS = ("final", "no_asr", "cancel_requested", "force", "no_music")
 
 
 class QueueDbError(RuntimeError):
@@ -134,6 +135,7 @@ class NewJob(BaseModel):
     depends_on: int | None = None  # job that must complete (passed) first
     force: bool = False  # analyze: ignore the analysis stamp
     platform: str = ""  # render: tiktok | facebook (rules.platforms); "" = no platform profile
+    no_music: bool = False  # render: leave the plan's music out (music added in the app)
 
 
 class FolderBusyError(QueueDbError):
@@ -259,8 +261,12 @@ class QueueDb:
             elif version == 2:
                 self._migrate_2_to_3()
                 self._migrate_3_to_4()
+                self._migrate_4_to_5()
             elif version == 3:
                 self._migrate_3_to_4()
+                self._migrate_4_to_5()
+            elif version == 4:
+                self._migrate_4_to_5()
         except sqlite3.DatabaseError as e:
             raise QueueDbError(f"{hint} ({e})") from e
 
@@ -349,7 +355,28 @@ class QueueDb:
                     return
                 self.backup(self.path.with_name(self.path.name + ".v3.bak"))
                 con.execute("ALTER TABLE jobs ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
-                con.execute("PRAGMA user_version = 4")
+                con.execute("PRAGMA user_version = 4")  # 4 → 5 runs next
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+        finally:
+            con.close()
+
+    def _migrate_4_to_5(self) -> None:
+        """16/10/2026: a render may leave the music out (it is added in the TikTok / Facebook
+        app). One ADD COLUMN with a default, so old rows read 0 (music embedded, as before)."""
+        con = sqlite3.connect(self.path, timeout=self._busy_ms / 1000, isolation_level=None)
+        try:
+            con.execute(f"PRAGMA busy_timeout = {int(self._busy_ms)}")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                if int(con.execute("PRAGMA user_version").fetchone()[0]) != 4:
+                    con.execute("ROLLBACK")  # another process already upgraded it
+                    return
+                self.backup(self.path.with_name(self.path.name + ".v4.bak"))
+                con.execute("ALTER TABLE jobs ADD COLUMN no_music INTEGER NOT NULL DEFAULT 0")
+                con.execute("PRAGMA user_version = 5")
             except BaseException:
                 con.execute("ROLLBACK")
                 raise
@@ -372,11 +399,11 @@ class QueueDb:
             raise QueueDbError(f"Job phụ thuộc #{dep} không tồn tại.")
         cur = con.execute(
             "INSERT INTO jobs (kind, project_dir, options_file, draft, final, no_asr, "
-            "max_attempts, priority, created_at, pipeline_id, depends_on, force, platform) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "max_attempts, priority, created_at, pipeline_id, depends_on, force, platform, "
+            "no_music) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (job.kind, job.project_dir, job.options_file, job.draft, int(job.final),
              int(job.no_asr), job.max_attempts, priority, now, job.pipeline_id,
-             job.depends_on, int(job.force), job.platform),
+             job.depends_on, int(job.force), job.platform, int(job.no_music)),
         )  # fmt: skip
         return int(cur.lastrowid or 0)
 

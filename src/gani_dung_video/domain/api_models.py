@@ -66,6 +66,7 @@ class JobCreate(BaseModel):
     # 14/10/2026: one render per platform (rules.json → platforms), e.g. ["tiktok", "facebook"];
     # empty = one render without a platform profile (the behaviour before).
     platforms: list[str] = []
+    no_music: bool = False  # 16/10/2026: leave the plan's music out (added in the app)
 
     @field_validator("project_id")
     @classmethod
@@ -95,6 +96,7 @@ class PipelineCreate(BaseModel):
     no_asr: bool = False
     force_analyze: bool = False  # analyse the footage again even if it looks unchanged
     platforms: list[str] = []  # as JobCreate.platforms
+    no_music: bool = False  # as JobCreate.no_music
 
     @field_validator("project_id")
     @classmethod
@@ -308,6 +310,7 @@ class JobView(BaseModel):
     kind: str
     draft: str
     platform: str = ""  # render jobs: tiktok | facebook; "" = rendered without a platform profile
+    no_music: bool = False  # render jobs: the plan's music left out (added in the app)
     size: Literal["preview", "final"]
     status: str
     result: str | None

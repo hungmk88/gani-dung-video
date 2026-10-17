@@ -151,6 +151,7 @@ def build_manifest(
     made = datetime.now(UTC)
     return Manifest(
         created_at=made.isoformat(timespec="seconds"), video=video.name, platform=e.platform,
+        no_music=e.no_music,
         delivered_as=delivered_as, draft=letter, label=label, resolution=f"{e.width}x{e.height}",
         deviation_vs_chosen=report.deviation_vs_chosen, deviation_vs_plan=report.deviation_vs_plan,
         options=plan.options, plan_sha256=sha256_of(plan_bytes),
@@ -182,7 +183,7 @@ def export_name(
     opts = plan.options
     parts = NameParts(product=product, style=str(opts["style"]), purpose=str(opts["purpose"]),
                       duration_sec=int(opts["duration"]), day=_today(target),
-                      platform=e.platform)  # fmt: skip
+                      platform=e.platform, no_music=e.no_music)  # fmt: skip
     # `final/` counts too: an approved video leaves `drafts/`, and its version number must not
     # be handed out again (the next video would overwrite it when it is approved).
     taken = {p.name for sub_dir in ("drafts", "final") for p in (root / sub_dir).glob("*.mp4")}

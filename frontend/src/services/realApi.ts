@@ -106,6 +106,7 @@ export const realApi: StudioApi = {
           noAsr: req.noAsr ?? false,
           forceAnalyze: req.forceAnalyze ?? false,
           platforms: req.platforms ?? [],
+          noMusic: req.noMusic ?? false,
         }),
       );
       return toPipelineCard(p);
@@ -116,6 +117,7 @@ export const realApi: StudioApi = {
       final: req.final ?? false,
       no_asr: req.noAsr ?? false,
       platforms: req.platforms ?? [],
+      no_music: req.noMusic ?? false,
     });
     return toRenderJob(jobs[0], jobs);
   },

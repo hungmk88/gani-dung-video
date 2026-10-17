@@ -21,7 +21,7 @@ from gani_dung_video.domain.drafts import SnappedDraft
 from gani_dung_video.domain.edl import BrollPlacement, SpeechDraft, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.options import VideoOptions
-from gani_dung_video.domain.plan import Plan, beats_of, compile_plan
+from gani_dung_video.domain.plan import Plan, PlanMusic, beats_of, compile_plan
 from gani_dung_video.domain.speech import RawTranscript, SpokenWord
 from gani_dung_video.domain.speech_edit import Overlay, SpeechCut
 from gani_dung_video.infrastructure.config_files import ConfigError, GlossaryFile, load_rules
@@ -151,6 +151,68 @@ def test_the_tiktok_and_the_facebook_render_of_one_draft_live_side_by_side(folde
     assert (t_man["platform"], f_man["platform"]) == ("tiktok", "facebook")
     if t_man["delivered_as"]:  # a passing preview is delivered under its platform name
         assert "_tiktok_v" in t_man["delivered_as"] and "_facebook_v" in f_man["delivered_as"]
+
+
+def with_music(src: Path, dst: Path, music_file: Path | None) -> Path:
+    """A copy of the music-mode project whose plan.json picked a track (`music_file`, None = the
+    file was chosen but is gone from the music folder)."""
+    shutil.copytree(src, dst)
+    plan_path = dst / "edit" / "plan.json"
+    plan = Plan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    track = PlanMusic(track="nen.m4a", bpm=120, effective_bpm=120, fold="giu_nguyen",
+                      first_beat_sec=0.0, audio_in_sec=0.0, duration_sec=30.0, source="test",
+                      path=str(music_file or dst / "khong-con.m4a"))  # fmt: skip
+    plan_path.write_text(plan.model_copy(update={"music": track}).model_dump_json(),
+                         encoding="utf-8")  # fmt: skip
+    return dst
+
+
+@needs_render_ffmpeg
+def test_a_render_without_music_leaves_the_plan_track_out(folder: Path, tmp_path: Path) -> None:
+    # 16/10/2026: the music is added in the TikTok / Facebook app (ads need the platform's
+    # licensed music). tvc_cat_nhanh mutes the camera, so the plain video is the music alone.
+    song = tmp_path / "nen.m4a"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=30", "-c:a", "aac", str(song)], check=True,
+                   timeout=60)  # fmt: skip
+    project = with_music(folder, tmp_path / "du-an", song)
+    out = project / "edit" / "render" / "A-tiktok"
+
+    [plain] = build_render(project, preview=True, rules=RULES, platform="tiktok")
+    loud = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    assert loud["no_music"] is False
+    assert next(i for i in loud["e1"]["items"] if i["code"] == "E1-LOUD")["value"] is not None
+
+    [quiet] = build_render(project, preview=True, rules=RULES, platform="tiktok", no_music=True)
+    assert quiet.video == plain.video and quiet.qc_passed, quiet.qc_notes  # same folder, replaced
+    man = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    log = json.loads((out / "render_log.json").read_text(encoding="utf-8"))
+    assert man["no_music"] is True and log["no_music"] is True and log["music"] is None
+    assert "nen.m4a" not in man["source_files"]
+    loud_item = next(i for i in man["e1"]["items"] if i["code"] == "E1-LOUD")
+    assert loud_item["passed"] and "không nhúng nhạc" in loud_item["detail"]
+    if man["delivered_as"]:
+        assert "_tiktok_khong-nhac_v" in man["delivered_as"]
+    again = recheck(project, "A", rules=RULES, platform="tiktok", no_music=True)
+    assert not [f for f in again if not f.startswith("WARN")], again  # silence is planned
+
+
+def test_a_render_without_music_does_not_need_the_track_file(folder: Path, tmp_path: Path) -> None:
+    project = with_music(folder, tmp_path / "mat-nhac", None)
+    with pytest.raises(ConfigError, match=r"nen\.m4a"):
+        build_render(project, preview=True, rules=RULES)
+    calls: list[Path | None] = []
+
+    def fake_render_one(e: Any, letter: str, label: str, model: str, cost: float, folder: Path,
+                        edit: Path, music: Path | None, *rest: Any) -> Any:  # fmt: skip
+        calls.append(music)
+        assert e.music is None and e.no_music
+        return None
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(render_service, "_render_one", fake_render_one)
+        build_render(project, preview=True, rules=RULES, no_music=True)
+    assert calls == [None]
 
 
 def test_an_unknown_platform_stops_before_anything_is_rendered(folder: Path) -> None:

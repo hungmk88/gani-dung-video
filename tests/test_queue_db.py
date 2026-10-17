@@ -45,7 +45,7 @@ def alive_all(pid: int) -> bool:
 
 
 def test_schema_is_created_with_wal_and_a_version(db: QueueDb, tmp_path: Path) -> None:
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     con = sqlite3.connect(tmp_path / "jobs" / "queue.db")
     try:
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -476,7 +476,7 @@ def test_a_v1_database_is_upgraded_to_the_newest_schema_with_everything_kept(
     path = tmp_path / "queue.db"
     make_v1(path)
     db = QueueDb(path)
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     done, running = db.get(1), db.get(2)
     assert done is not None and running is not None
     assert (done.status, done.result, done.final, done.output_path) == ("completed", "passed", True,
@@ -552,7 +552,7 @@ def test_two_processes_opening_an_old_file_upgrade_it_once(tmp_path: Path) -> No
         th.join(timeout=60)
     assert errors == []
     db = QueueDb(path)
-    assert db.schema_version() == 4 and len(db.list_jobs()) == 2
+    assert db.schema_version() == 5 and len(db.list_jobs()) == 2
 
 
 def test_a_fresh_database_starts_at_the_newest_version_without_any_backup(tmp_path: Path) -> None:
@@ -778,7 +778,7 @@ def test_a_v2_database_gets_the_deadline_column_and_keeps_everything(tmp_path: P
     path = tmp_path / "queue.db"
     make_v2(path)
     db = QueueDb(path)
-    assert db.schema_version() == 4
+    assert db.schema_version() == 5
     job = db.get(1)
     assert job is not None
     assert (job.status, job.phase, job.stages_done, job.cost_worst_call_vnd) == (
@@ -837,7 +837,7 @@ def test_two_processes_opening_a_v2_file_upgrade_it_once(tmp_path: Path) -> None
         th.start()
     for th in threads:
         th.join(timeout=60)
-    assert errors == [] and QueueDb(path).schema_version() == 4
+    assert errors == [] and QueueDb(path).schema_version() == 5
 
 
 # ─────────────── 14/10/2026: schema v4 (platform of a render) ───────────────
@@ -866,7 +866,7 @@ def test_a_v3_database_gets_the_platform_column_and_old_rows_read_no_platform(
     path = tmp_path / "queue.db"
     make_v3(path)
     db = QueueDb(path)
-    assert db.schema_version() == 4 and columns(path).count("platform") == 1
+    assert db.schema_version() == 5 and columns(path).count("platform") == 1
     job = db.get(1)
     assert job is not None and job.platform == "" and job.status == "awaiting_approval"
     assert (tmp_path / "queue.db.v3.bak").is_file()
@@ -1272,3 +1272,43 @@ def test_the_jobs_of_a_pipeline_come_back_in_creation_order(db: QueueDb) -> None
     db.enqueue_chain(chain_jobs("E:/other"), T0)
     assert [j.id for j in db.jobs_of_pipeline(pid)] == ids
     assert db.jobs_of_pipeline(999) == []
+
+
+# ─────────────── 16/10/2026: schema v5 (render without music) ───────────────
+
+
+def make_v4(path: Path) -> None:
+    make_v3(path)
+    con = sqlite3.connect(path)
+    con.execute("ALTER TABLE jobs ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+    con.execute("PRAGMA user_version = 4")
+    con.commit()
+    con.close()
+
+
+def test_a_v4_database_gets_the_no_music_column_and_old_rows_keep_their_music(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "queue.db"
+    make_v4(path)
+    db = QueueDb(path)
+    assert db.schema_version() == 5 and columns(path).count("no_music") == 1
+    job = db.get(1)
+    assert job is not None and job.no_music is False and job.status == "awaiting_approval"
+    assert (tmp_path / "queue.db.v4.bak").is_file()
+
+
+def test_every_older_database_ends_with_the_no_music_column(tmp_path: Path) -> None:
+    for name, make in (("v1.db", make_v1), ("v2.db", make_v2), ("v3.db", make_v3)):
+        make(tmp_path / name)
+        assert QueueDb(tmp_path / name).schema_version() == 5
+        assert {"platform", "no_music"} <= set(columns(tmp_path / name)), name
+    QueueDb(tmp_path / "new.db")
+    assert "no_music" in columns(tmp_path / "new.db")
+
+
+def test_a_render_without_music_is_stored_and_read_back(db: QueueDb) -> None:
+    job_id = db.enqueue(NewJob(kind="render", project_dir="E:/a", options_file="o", draft="A",
+                               final=True, platform="tiktok", no_music=True), 1.0)  # fmt: skip
+    job = db.get(job_id)
+    assert job is not None and job.no_music is True and job.platform == "tiktok"

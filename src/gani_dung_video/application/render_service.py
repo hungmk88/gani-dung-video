@@ -94,9 +94,10 @@ def _log(e: Edl, plan: Plan, model: str, cost_vnd: float, letter: str, label: st
     brand = rules["render"]["brand"]
     return {
         "time": datetime.now(UTC).isoformat(timespec="seconds"), "draft": letter, "label": label,
-        "platform": e.platform,
+        "platform": e.platform, "no_music": e.no_music,
         "video": video.name, "rules_version": plan.rules_version, "options": plan.options,
-        "music": plan.music.model_dump(exclude={"path"}) if plan.music else None,
+        "music": plan.music.model_dump(exclude={"path"}) if plan.music and not e.no_music
+        else None,
         "ai_model": model, "ai_cost_vnd": cost_vnd,
         "brand_placeholders": [k for k in ("logo", "zalo") if brand[f"{k}_placeholder"]],
         "shots": [s.model_dump() for s in e.shots],
@@ -147,9 +148,10 @@ _NO_SPEECH_DRAFTS = ("Chưa có edit/speech_drafts.json — dựng ghép tay (5c
 
 def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None = None,
             asr: bool = True, transcribe: Transcriber | None = None,
-            platform: str = "") -> list[str]:  # fmt: skip
+            platform: str = "", no_music: bool = False) -> list[str]:  # fmt: skip
     """Re-run T1–T6 on an existing video (no re-render), plus T8 (Whisper) on a final
-    speech-mode video unless `asr` is False. Returns findings, Vietnamese.
+    speech-mode video unless `asr` is False. `platform` and `no_music` say how the video was
+    rendered (as for build_render). Returns findings, Vietnamese.
 
     Raises:
         ConfigError: inputs missing or the video was not rendered yet.
@@ -173,7 +175,7 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
         if d is None:
             raise ConfigError(f"Không có bản nháp '{draft}' trong drafts.json.")
         e = build_edl(d, plan, clips, rules, preview=preview)
-    e = _for_platform(e, plan, rules, platform)
+    e = _as_posted(e, plan, rules, platform, no_music)
     out = folder / EDIT_DIR / RENDER_DIR / render_dir_name(draft, platform)
     video = out / _video_name(draft, preview)
     if not video.is_file():
@@ -188,16 +190,18 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
 
 
-def _for_platform(e: Edl, plan: Plan, rules: Rules, platform: str) -> Edl:
-    """The EDL as posted on `platform` (CTA, end card), "" = unchanged.
+def _as_posted(e: Edl, plan: Plan, rules: Rules, platform: str, no_music: bool) -> Edl:
+    """The EDL as posted on `platform` (CTA, end card), "" = unchanged; with `no_music` the
+    plan's music is left out (cuts and lengths stay as planned, music is added in the app).
 
     Raises:
         ConfigError: unknown platform or unusable profile in rules.json.
     """
     try:
-        return apply_platform(e, rules, str(plan.options["purpose"]), platform)
+        e = apply_platform(e, rules, str(plan.options["purpose"]), platform)
     except PlatformError as err:
         raise ConfigError(str(err)) from err
+    return e.model_copy(update={"music": None, "no_music": True}) if no_music else e
 
 
 def _claims_gate(e: Edl) -> Edl:
@@ -297,7 +301,7 @@ def _render_one(
 def build_render(
     folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None,
     asr: bool = True, transcribe: Transcriber | None = None, product: str | None = None,
-    campaign: str | None = None, platform: str = "",
+    campaign: str | None = None, platform: str = "", no_music: bool = False,
 ) -> list[RenderResult]:  # fmt: skip
     """Render every draft (or only `draft`) of the style's drafts file.
 
@@ -311,7 +315,9 @@ def build_render(
     feed that name and folder (defaults: rules' default product, the footage folder's name).
     `platform` (rules.json → platforms, e.g. "tiktok") sets the CTA, the end card, the render
     folder edit/render/<draft>-<platform> and the platform part of the delivered name; "" =
-    no profile (the behaviour from before 14/10/2026).
+    no profile (the behaviour from before 14/10/2026). `no_music` leaves the plan's music out
+    (the video keeps the voice / camera sound; music is added in the TikTok / Facebook app), and
+    the delivered name gets rules.delivery.naming.no_music_tag.
 
     Raises:
         ConfigError: drafts/plan/inventory missing or corrupt, unknown draft, music gone.
@@ -321,7 +327,7 @@ def build_render(
     folder = folder.expanduser().resolve()
     edit = folder / EDIT_DIR
     plan, inv = _read_plan_and_inventory(folder, rules)
-    music = _music_file(plan)
+    music = None if no_music else _music_file(plan)  # a missing track does not matter then
     clips = {c.file: c for c in inv.clips}
     metrics = FontMetrics()
     target = DeliveryTarget(product=product, campaign=campaign)
@@ -334,8 +340,9 @@ def build_render(
             have = ", ".join(x.draft for x in sd.drafts)
             raise ConfigError(f"Không có bản nháp '{draft}'; speech_drafts.json có: {have}.")
         return [
-            _render_one(_for_platform(build_speech_edl(x.cuts, x.broll, plan, clips, rules,
-                                                       preview=preview), plan, rules, platform),
+            _render_one(_as_posted(build_speech_edl(x.cuts, x.broll, plan, clips, rules,
+                                                    preview=preview), plan, rules, platform,
+                                   no_music),
                        x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
                        preview, metrics, plan, t8, target)
             for x in speech_chosen
@@ -347,8 +354,8 @@ def build_render(
         have = ", ".join(x.draft for x in drafts.drafts)
         raise ConfigError(f"Không có bản nháp '{draft}'; drafts.json có: {have}.")
     return [
-        _render_one(_for_platform(build_edl(x, plan, clips, rules, preview=preview), plan, rules,
-                                  platform), x.draft, x.label,
+        _render_one(_as_posted(build_edl(x, plan, clips, rules, preview=preview), plan, rules,
+                               platform, no_music), x.draft, x.label,
                    drafts.model, drafts.cost_vnd, folder, edit, music, rules, preview, metrics,
                    plan, None, target)
         for x in chosen

@@ -83,6 +83,7 @@ class Job(BaseModel):
     spent_vnd: float | None = None
     approval_expires_at: float | None = None  # awaiting_approval: the window closes at this time
     platform: str = ""  # render: tiktok | facebook (14/10/2026); "" = no platform profile
+    no_music: bool = False  # render: music left out, added in the app (16/10/2026)
 
 
 class Verdict(BaseModel):

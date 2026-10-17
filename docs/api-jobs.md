@@ -552,6 +552,11 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
 - Khác nhau giữa hai bản (cùng footage, kịch bản, nhịp cắt): câu kêu gọi
   (`profiles.<id>.cta.<mục đích>`; thiếu thì giữ câu của mục đích), dòng Zalo ở khung kết
   (`zalo_on_end_card`), phần `{nen-tang}` trong tên file giao. `manifest.json` có trường `platform`.
+- `no_music` (từ 16/10/2026, mặc định `false`) trên `POST /api/pipelines` và `POST /api/jobs`:
+  mọi job `render` của lần gửi bỏ nhạc của kế hoạch (nhạc chèn trên app khi đăng). Nhịp cắt và độ
+  dài không đổi. `JobView.no_music` cho biết job dựng không nhạc (tiêu đề có thêm "không nhạc");
+  `manifest.json` có `"no_music": true`, tên file giao có phần `{nhac}` = `khong-nhac`
+  (`rules.delivery.naming.no_music_tag`). Thư mục làm việc giữ nguyên `edit/render/<bản>-<nền tảng>/`.
 
 ### 4c. Duyệt video cuối (T-F)
 

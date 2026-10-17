@@ -724,6 +724,13 @@ def test_a_pipeline_without_platforms_renders_once_per_draft_without_a_profile(
     assert [j.platform for j in renders] == ["", ""]
 
 
+def test_a_pipeline_without_music_marks_only_its_renders(db: QueueDb, root: Path) -> None:
+    r = pipe(db, root, platforms=["tiktok", "facebook"], no_music=True)
+    jobs = db.jobs_of_pipeline(r.pipeline_id)
+    assert [(j.kind, j.no_music) for j in jobs] == [
+        ("analyze", False), ("draft", False), *[("render", True)] * 4]  # fmt: skip
+
+
 @pytest.mark.parametrize("platforms", [["youtube"], ["tiktok", "tiktok"], ["", "tiktok"]])
 def test_a_bad_platform_list_queues_nothing(db: QueueDb, root: Path, platforms: list[str]) -> None:
     with pytest.raises(ConfigError):

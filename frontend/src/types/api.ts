@@ -195,6 +195,8 @@ export interface ApiJob {
   finished_at: string | null;
   error_msg: string | null;
   no_asr: boolean;
+  /** Render jobs: the plan's music left out, added in the app (absent on older servers). */
+  no_music?: boolean;
   /** plan.json → options, English keys (style, purpose, duration, drafts, music). */
   options: Record<string, unknown>;
   video_url: string | null;

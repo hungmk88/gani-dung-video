@@ -64,6 +64,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const [platformList, setPlatformList] = useState<PlatformInfo[]>([]);
   const [pickedPlatforms, setPickedPlatforms] = useState<string[] | null>(null);
   const platforms = pickedPlatforms ?? defaultPlatforms(platformList);
+  const [noMusic, setNoMusic] = useState(false);
 
   // An earlier "Vẫn dùng bài này" belongs to one style + length + track: any change drops it.
   function patch(p: Partial<VideoOptions>) {
@@ -168,6 +169,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         noAsr: choice.noAsr,
         forceAnalyze: choice.forceAnalyze,
         platforms,
+        noMusic,
       });
       onJobCreated(job.id);
     } catch (e) {
@@ -211,7 +213,13 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
 
         {platformList.length > 0 && (
           <Panel title={renderOnly ? '2. Đăng lên' : '4. Đăng lên'} id="chon-nen-tang">
-            <PlatformPicker platforms={platformList} chosen={platforms} onChange={setPickedPlatforms} />
+            <PlatformPicker
+              platforms={platformList}
+              chosen={platforms}
+              onChange={setPickedPlatforms}
+              noMusic={noMusic}
+              onNoMusic={setNoMusic}
+            />
           </Panel>
         )}
 

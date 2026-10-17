@@ -139,3 +139,16 @@ def test_the_delivered_name_carries_the_platform() -> None:
 def test_without_a_platform_the_name_is_the_one_from_before() -> None:
     assert file_name(parts(""), 1, RULES) == (
         "GANI_gio-lua_tvc-cat-nhanh_ban-hang_15s_9x16_v1_20261016.mp4")  # fmt: skip
+
+
+def test_a_video_without_music_says_so_in_its_name() -> None:
+    # 16/10/2026: the music is added in the app; the file must not pass for the full mix.
+    quiet = NameParts(product="gio-lua", style="tvc_cat_nhanh", purpose="ban_hang",
+                      duration_sec=15, day=date(2026, 10, 16), platform="tiktok",
+                      no_music=True)  # fmt: skip
+    want = "GANI_gio-lua_tvc-cat-nhanh_ban-hang_15s_9x16_tiktok_khong-nhac_v1_20261016.mp4"
+    assert file_name(quiet, 1, RULES) == want
+    bare = NameParts(product="gio-lua", style="tvc_cat_nhanh", purpose="ban_hang",
+                     duration_sec=15, day=date(2026, 10, 16), no_music=True)  # fmt: skip
+    assert file_name(bare, 1, RULES) == (
+        "GANI_gio-lua_tvc-cat-nhanh_ban-hang_15s_9x16_khong-nhac_v1_20261016.mp4")  # fmt: skip

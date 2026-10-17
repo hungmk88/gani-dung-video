@@ -177,6 +177,13 @@ def test_render_argv_passes_the_platform(folder: Path) -> None:
                                         "tiktok"]  # fmt: skip
 
 
+def test_render_argv_passes_no_music(folder: Path) -> None:
+    job = job_stub(folder, final=True, no_asr=False).model_copy(
+        update={"platform": "tiktok", "no_music": True})  # fmt: skip
+    assert render_argv(job, ["py"])[-3:] == ["--nen-tang", "tiktok", "--khong-nhac"]
+    assert "--khong-nhac" not in render_argv(job_stub(folder, final=True, no_asr=False), ["py"])
+
+
 def job_stub(folder: Path, final: bool, no_asr: bool) -> Job:
     return Job(id=1, kind="render", project_dir=str(folder), options_file="o.md", draft="A",
                final=final, no_asr=no_asr, status="processing", attempts=1, max_attempts=2,

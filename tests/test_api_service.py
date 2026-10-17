@@ -670,6 +670,13 @@ def test_an_unknown_platform_is_a_bad_request_and_nothing_is_queued(
     assert ctx.db.list_jobs() == []
 
 
+def test_a_pipeline_without_music_says_so_on_its_render_jobs(ctx: ApiContext, root: Path) -> None:
+    view = start(ctx, root, platforms=["tiktok"], no_music=True)
+    renders = [j for j in view.jobs if j.kind == "render"]
+    assert [j.no_music for j in renders] == [True, True]
+    assert "không nhạc" in renders[0].title and not view.jobs[0].no_music
+
+
 def test_health_lists_the_platforms_with_their_defaults(ctx: ApiContext) -> None:
     got = [(p.id, p.short, p.zalo_on_end_card, p.default) for p in health(ctx).features.platforms]
     assert got == [("tiktok", "TikTok", False, True), ("facebook", "Reels", True, True)]

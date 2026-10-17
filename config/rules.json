@@ -384,14 +384,15 @@
   "dirs": ["raw", "drafts", "final", "metadata"],
   "root_dir": "delivery",
   "naming": {
-   "template": "GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_v{n}_{ngay}.mp4",
+   "template": "GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_{nhac}_v{n}_{ngay}.mp4",
+   "no_music_tag": "khong-nhac",
    "ratio": "9x16",
    "date_format": "%Y%m%d",
    "default_product": "chung",
    "products": ["gio-lua", "cha-lua", "cha-bo", "nem-chua", "bo-vien", "chung"]
   }
  },
-  "_ghi_chu_platforms": "Nền tảng đăng (chủ chốt 16/10/2026: GANI đăng TikTok và Facebook Reels, có chạy quảng cáo, không gắn giỏ hàng). Mỗi bản nháp được dựng riêng cho từng nền tảng chọn ở Wizard (mặc định: default), cùng footage, kịch bản và nhịp cắt; profiles chỉ đổi: cta theo mục đích (thiếu mục đích nào thì giữ câu của purposes; không dùng ô [ngày]), zalo_on_end_card (TikTok: không ghi số Zalo ở khung kết, khách liên hệ bằng bình luận, tin nhắn TikTok, link trong hồ sơ), tên file giao có phần {nen-tang} và thư mục dựng edit/render/<bản>-<nền tảng>. Câu CTA của TikTok tránh từ điều hướng ra ngoài (nhắn tin, inbox, Zalo, sỉ…); sửa ở đây nếu chủ muốn câu khác.",
+  "_ghi_chu_platforms": "Nền tảng đăng (chủ chốt 16/10/2026: GANI đăng TikTok và Facebook Reels, có chạy quảng cáo, không gắn giỏ hàng). Mỗi bản nháp được dựng riêng cho từng nền tảng chọn ở Wizard (mặc định: default), cùng footage, kịch bản và nhịp cắt; profiles chỉ đổi: cta theo mục đích (thiếu mục đích nào thì giữ câu của purposes; không dùng ô [ngày]), zalo_on_end_card (TikTok: không ghi số Zalo ở khung kết, khách liên hệ bằng bình luận, tin nhắn TikTok, link trong hồ sơ), tên file giao có phần {nen-tang} và thư mục dựng edit/render/<bản>-<nền tảng>. Câu CTA của TikTok tránh từ điều hướng ra ngoài (nhắn tin, inbox, Zalo, sỉ…); sửa ở đây nếu chủ muốn câu khác. Không nhúng nhạc (16/10/2026, ô ở Wizard, render --khong-nhac): bỏ nhạc của kế hoạch khỏi file, nhịp cắt giữ nguyên, nhạc chèn trên app khi đăng; tên file giao có thêm phần {nhac} = delivery.naming.no_music_tag.",
  "platforms": {
   "default": ["tiktok", "facebook"],
   "profiles": {
