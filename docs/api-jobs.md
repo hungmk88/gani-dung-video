@@ -557,6 +557,9 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
   dài không đổi. `JobView.no_music` cho biết job dựng không nhạc (tiêu đề có thêm "không nhạc");
   `manifest.json` có `"no_music": true`, tên file giao có phần `{nhac}` = `khong-nhac`
   (`rules.delivery.naming.no_music_tag`). Thư mục làm việc giữ nguyên `edit/render/<bản>-<nền tảng>/`.
+  `POST /api/jobs` khi bản đó (cùng bản nháp, nền tảng, kích thước) đang có job chờ hoặc chạy với
+  lựa chọn nhạc ngược lại → `400 bad_request` nêu số job, không tạo job nào; cùng lựa chọn nhạc thì
+  trả job sẵn có như trước.
 
 ### 4c. Duyệt video cuối (T-F)
 
