@@ -67,6 +67,18 @@ test('the lengths offered are the keys of durations in rules.json', () => {
   assert.deepEqual([...RULES.durations], Object.keys(rules.durations).map(Number));
 });
 
+test('the platforms are the backend ones, same order and defaults', () => {
+  const profiles = rules.platforms.profiles as Record<string, { name: string; short: string; zalo_on_end_card: boolean }>;
+  const want = Object.entries(profiles).map(([id, p]) => ({
+    id,
+    name: p.name,
+    short: p.short,
+    zaloOnEndCard: p.zalo_on_end_card,
+    default: (rules.platforms.default as string[]).includes(id),
+  }));
+  assert.deepEqual(RULES.platforms.map((p) => ({ ...p })), want);
+});
+
 test('the product catalogue of the delivery names is the backend one', () => {
   assert.deepEqual([...RULES.deliveryProducts], rules.delivery.naming.products);
 });

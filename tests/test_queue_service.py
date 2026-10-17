@@ -706,6 +706,31 @@ def test_a_pipeline_queues_analyze_then_draft_then_one_render_per_draft(
     assert all(j.project_dir == str((root / "footage").resolve()) for j in jobs)
 
 
+def test_a_pipeline_for_two_platforms_queues_one_render_per_draft_and_platform(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root, platforms=["tiktok", "facebook"])
+    renders = [j for j in db.jobs_of_pipeline(r.pipeline_id) if j.kind == "render"]
+    assert [(j.draft, j.platform) for j in renders] == [
+        ("A", "tiktok"), ("A", "facebook"), ("B", "tiktok"), ("B", "facebook")]  # fmt: skip
+    assert all(j.depends_on == r.draft_id for j in renders)
+
+
+def test_a_pipeline_without_platforms_renders_once_per_draft_without_a_profile(
+    db: QueueDb, root: Path
+) -> None:
+    r = pipe(db, root)
+    renders = [j for j in db.jobs_of_pipeline(r.pipeline_id) if j.kind == "render"]
+    assert [j.platform for j in renders] == ["", ""]
+
+
+@pytest.mark.parametrize("platforms", [["youtube"], ["tiktok", "tiktok"], ["", "tiktok"]])
+def test_a_bad_platform_list_queues_nothing(db: QueueDb, root: Path, platforms: list[str]) -> None:
+    with pytest.raises(ConfigError):
+        pipe(db, root, platforms=platforms)
+    assert db.list_jobs() == []
+
+
 def test_the_draft_job_never_retries_but_the_others_use_the_normal_limit(
     db: QueueDb, root: Path
 ) -> None:

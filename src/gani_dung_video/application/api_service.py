@@ -57,6 +57,7 @@ from gani_dung_video.domain.api_models import (
     MusicTrackView,
     PipelineCreate,
     PipelineView,
+    PlatformView,
     PreflightRequest,
     ProjectView,
     QaView,
@@ -85,6 +86,7 @@ from gani_dung_video.domain.feasibility import footage_fit
 from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, planned_sec
+from gani_dung_video.domain.platforms import render_dir_name
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
 from gani_dung_video.infrastructure.config_files import CONFIG_DIR, ConfigError
@@ -165,7 +167,16 @@ def health(ctx: ApiContext) -> HealthView:
                       budget=BudgetView(limit_vnd=float(limit) if limit is not None else None,
                                         spent_24h_vnd=spent, reserved_vnd=reserved),
                       features=FeaturesView(long_video=bool(
-                          ctx.rules["durations"]["180"].get("enabled", False))))  # fmt: skip
+                          ctx.rules["durations"]["180"].get("enabled", False)),
+                          platforms=_platform_views(ctx.rules)))  # fmt: skip
+
+
+def _platform_views(rules: Rules) -> list[PlatformView]:
+    default = set(rules["platforms"]["default"])
+    return [PlatformView(id=k, name=str(v["name"]), short=str(v.get("short", v["name"])),
+                         zalo_on_end_card=bool(v.get("zalo_on_end_card", True)),
+                         default=k in default)
+            for k, v in rules["platforms"]["profiles"].items()]  # fmt: skip
 
 
 def _flags(folder: Path) -> tuple[bool, bool, bool]:
@@ -457,7 +468,7 @@ def _media_path(ctx: ApiContext, job: Job, kind: str) -> Path | None:
     folder = Path(job.project_dir).resolve()
     if not any(_inside(folder, r) for r in roots):
         return None
-    out = (folder / EDIT_DIR / "render" / job.draft).resolve()
+    out = (folder / EDIT_DIR / "render" / render_dir_name(job.draft, job.platform)).resolve()
     path = (out / name).resolve()
     if path.parent != out or not any(_inside(path, r) for r in roots) or not path.is_file():
         return None
@@ -497,17 +508,19 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
         inventory=inv, scenes=(edit / "scenes.json").is_file(),
         speech=(edit / "speech.json").is_file(), plan=plan,
         pick=(edit / "candidates.json").is_file() or (edit / "phrases.json").is_file(),
-        drafts=drafts, preview_video=(edit / "render" / job.draft / f"nhap_{job.draft}_540p.mp4"
-                                      ).is_file(),
+        drafts=drafts, preview_video=(edit / "render" / render_dir_name(job.draft, job.platform)
+                                      / f"nhap_{job.draft}_540p.mp4").is_file(),
     )  # fmt: skip
     error = _scrub(ctx, job.project_dir, job.error_msg)
     run = RunInfo(size=size, status=job.status, result=job.result, stage=job.stage,
                   error_msg=error, kind=job.kind)  # fmt: skip
     urls = {k: (f"/media/{job.id}/{k}" if _media_path(ctx, job, k) else None)
             for k in ("video", "cover", "srt")}  # fmt: skip
-    report = _read_qc(folder / EDIT_DIR / "render" / job.draft, job) if urls["video"] else None
+    render_dir = folder / EDIT_DIR / "render" / render_dir_name(job.draft, job.platform)
+    report = _read_qc(render_dir, job) if urls["video"] else None
     label = "cuối" if job.final else "nháp"
-    what = _KIND_TITLE.get(job.kind) or f"bản {job.draft} ({label})"
+    on = f", {job.platform}" if job.platform else ""
+    what = _KIND_TITLE.get(job.kind) or f"bản {job.draft} ({label}{on})"
     return JobView(
         id=job.id, pipeline_id=job.pipeline_id, depends_on=job.depends_on,
         needs_approval=job.kind == "draft" and job.status == "awaiting_approval",
@@ -515,7 +528,7 @@ def _view(ctx: ApiContext, job: Job) -> JobView:
                              if job.approval_expires_at is not None else None),
         cost=_cost_view(job),
         project_id=_project_id_of(ctx, folder), project_name=folder.name,
-        title=f"{folder.name} — {what}", kind=job.kind, draft=job.draft,
+        title=f"{folder.name} — {what}", kind=job.kind, draft=job.draft, platform=job.platform,
         size=size, status=job.status, result=job.result,
         frontend_status=frontend_status(job.status, job.result), attempts=job.attempts,
         max_attempts=job.max_attempts, progress_pct=job.progress_pct, stage=job.stage,
@@ -648,7 +661,8 @@ def create_jobs(ctx: ApiContext, req: JobCreate) -> list[JobView]:
     try:
         queued = enqueue_project_render(folder, ctx.db, draft=req.draft, final=req.final,
                                         no_asr=req.no_asr, rules=ctx.rules,
-                                        settings=ctx.settings, now=ctx.clock())  # fmt: skip
+                                        settings=ctx.settings, now=ctx.clock(),
+                                        platforms=req.platforms)  # fmt: skip
     except NotReadyError as e:
         raise ApiError(409, "not_ready", str(e)) from e
     except PipelineBusyError as e:
@@ -737,7 +751,7 @@ def create_pipeline(ctx: ApiContext, req: PipelineCreate) -> PipelineView:
         result = enqueue_pipeline(
             req.options, folder, ctx.db, draft=req.draft, final=req.final, no_asr=req.no_asr,
             force_analyze=req.force_analyze, rules=ctx.rules, settings=ctx.settings,
-            now=ctx.clock())  # fmt: skip
+            now=ctx.clock(), platforms=req.platforms)  # fmt: skip
     except PipelineBusyError as e:
         raise _busy(e) from e
     except ProjectLockedError as e:

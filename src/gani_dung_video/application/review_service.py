@@ -29,6 +29,7 @@ from pathlib import Path
 
 from gani_dung_video.domain.jobs import Job
 from gani_dung_video.domain.manifest import Manifest
+from gani_dung_video.domain.platforms import render_dir_name
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.review import (
     ReviewAction,
@@ -125,7 +126,9 @@ def locate(job: Job, rules: Rules) -> Delivered:
     if job.status != "completed" or job.finished_at is None or job.started_at is None:
         raise ReviewRefused("not_delivered", f"Job #{job.id} chưa dựng xong.")
     folder = Path(job.project_dir)
-    working = folder / EDIT_DIR / "render" / job.draft / "manifest.json"
+    working = (
+        folder / EDIT_DIR / "render" / render_dir_name(job.draft, job.platform) / "manifest.json"
+    )
     wm = _read(working)
     if wm is None:
         raise ReviewRefused("not_delivered", f"Job #{job.id} không có manifest đọc được.")
@@ -133,7 +136,8 @@ def locate(job: Job, rules: Rules) -> Delivered:
     if not (job.started_at - _SLACK_SEC <= made <= job.finished_at + _SLACK_SEC):
         raise ReviewRefused(
             "not_delivered",
-            f"Video của job #{job.id} đã bị bản dựng mới hơn của bản {job.draft} thay thế: "
+            f"Video của job #{job.id} đã bị bản dựng mới hơn của bản {job.draft}"
+            f"{f' ({job.platform})' if job.platform else ''} thay thế: "
             "duyệt job mới nhất.",
         )
     if wm.delivered_as is None:

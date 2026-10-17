@@ -222,6 +222,7 @@ export const mockApi: StudioApi = {
       allowedRootsConfigured: true,
       aiKeyConfigured: true,
       longVideo: true,
+      platforms: [...RULES.platforms],
       budget: { limitVnd: null, spent24hVnd: 0, reservedVnd: 0 },
     };
   },

@@ -18,9 +18,19 @@ export interface ApiProject {
   ready_to_render: boolean;
 }
 
+export interface ApiPlatform {
+  id: string;
+  name: string;
+  short: string;
+  zalo_on_end_card: boolean;
+  default: boolean;
+}
+
 export interface ApiFeatures {
   /** 3-minute videos are open (switched on after the real acceptance run, phase 7e). */
   long_video: boolean;
+  /** Platforms the server renders for (14/10/2026); absent on older servers. */
+  platforms?: ApiPlatform[];
 }
 
 export interface ApiHealth {
@@ -169,6 +179,8 @@ export interface ApiJob {
   title: string;
   kind: string;
   draft: string;
+  /** Render jobs: tiktok | facebook; "" (or absent on older servers) = no platform profile. */
+  platform?: string;
   size: 'preview' | 'final';
   status: string;
   result: string | null;

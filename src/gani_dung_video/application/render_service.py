@@ -30,6 +30,7 @@ from gani_dung_video.domain.compliance import check_edl_claims
 from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
+from gani_dung_video.domain.platforms import PlatformError, apply_platform, render_dir_name
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import Finding, check_captions, fit_keys
 from gani_dung_video.domain.subtitles import ass_document, srt_document
@@ -93,6 +94,7 @@ def _log(e: Edl, plan: Plan, model: str, cost_vnd: float, letter: str, label: st
     brand = rules["render"]["brand"]
     return {
         "time": datetime.now(UTC).isoformat(timespec="seconds"), "draft": letter, "label": label,
+        "platform": e.platform,
         "video": video.name, "rules_version": plan.rules_version, "options": plan.options,
         "music": plan.music.model_dump(exclude={"path"}) if plan.music else None,
         "ai_model": model, "ai_cost_vnd": cost_vnd,
@@ -144,7 +146,8 @@ _NO_SPEECH_DRAFTS = ("Chưa có edit/speech_drafts.json — dựng ghép tay (5c
 
 
 def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None = None,
-            asr: bool = True, transcribe: Transcriber | None = None) -> list[str]:  # fmt: skip
+            asr: bool = True, transcribe: Transcriber | None = None,
+            platform: str = "") -> list[str]:  # fmt: skip
     """Re-run T1–T6 on an existing video (no re-render), plus T8 (Whisper) on a final
     speech-mode video unless `asr` is False. Returns findings, Vietnamese.
 
@@ -170,10 +173,12 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
         if d is None:
             raise ConfigError(f"Không có bản nháp '{draft}' trong drafts.json.")
         e = build_edl(d, plan, clips, rules, preview=preview)
-    video = folder / EDIT_DIR / RENDER_DIR / draft / _video_name(draft, preview)
+    e = _for_platform(e, plan, rules, platform)
+    out = folder / EDIT_DIR / RENDER_DIR / render_dir_name(draft, platform)
+    video = out / _video_name(draft, preview)
     if not video.is_file():
         raise ConfigError(f"Chưa có {video.name} — chạy lệnh `render` trước.")
-    report = folder / EDIT_DIR / RENDER_DIR / draft / "qc_report.json"
+    report = out / "qc_report.json"
     px = {k: int(v) for k, v in rules["render"]["font_px"].items() if k in fit_keys(e)}
     if report.is_file():  # sizes the render actually used (may be lowered by T7)
         px = {**px, **QcReport.model_validate_json(report.read_text(encoding="utf-8")).font_px}
@@ -181,6 +186,18 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     if asr and not preview and e.mode == "speech":
         found += _t8_hook(folder, rules, transcribe)(e, video, video.parent)[0]
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
+
+
+def _for_platform(e: Edl, plan: Plan, rules: Rules, platform: str) -> Edl:
+    """The EDL as posted on `platform` (CTA, end card), "" = unchanged.
+
+    Raises:
+        ConfigError: unknown platform or unusable profile in rules.json.
+    """
+    try:
+        return apply_platform(e, rules, str(plan.options["purpose"]), platform)
+    except PlatformError as err:
+        raise ConfigError(str(err)) from err
 
 
 def _claims_gate(e: Edl) -> Edl:
@@ -218,7 +235,7 @@ def _render_one(
     target: DeliveryTarget | None = None,
 ) -> RenderResult:
     e = _claims_gate(e)  # before any file is written or ffmpeg started
-    out = edit / RENDER_DIR / letter
+    out = edit / RENDER_DIR / render_dir_name(letter, e.platform)
     out.mkdir(parents=True, exist_ok=True)
     ass, video = out / "sub.ass", out / _video_name(letter, preview)
     (out / "phude.srt").write_text(srt_document(e), encoding="utf-8")
@@ -280,7 +297,7 @@ def _render_one(
 def build_render(
     folder: Path, draft: str | None = None, preview: bool = True, rules: Rules | None = None,
     asr: bool = True, transcribe: Transcriber | None = None, product: str | None = None,
-    campaign: str | None = None,
+    campaign: str | None = None, platform: str = "",
 ) -> list[RenderResult]:  # fmt: skip
     """Render every draft (or only `draft`) of the style's drafts file.
 
@@ -292,6 +309,9 @@ def build_render(
     Every video gets E1 checks and a manifest.json; one that passes is also copied to
     edit/delivery/<campaign>/drafts under its E3 name (T-E). `product` and `campaign` only
     feed that name and folder (defaults: rules' default product, the footage folder's name).
+    `platform` (rules.json → platforms, e.g. "tiktok") sets the CTA, the end card, the render
+    folder edit/render/<draft>-<platform> and the platform part of the delivered name; "" =
+    no profile (the behaviour from before 14/10/2026).
 
     Raises:
         ConfigError: drafts/plan/inventory missing or corrupt, unknown draft, music gone.
@@ -314,7 +334,8 @@ def build_render(
             have = ", ".join(x.draft for x in sd.drafts)
             raise ConfigError(f"Không có bản nháp '{draft}'; speech_drafts.json có: {have}.")
         return [
-            _render_one(build_speech_edl(x.cuts, x.broll, plan, clips, rules, preview=preview),
+            _render_one(_for_platform(build_speech_edl(x.cuts, x.broll, plan, clips, rules,
+                                                       preview=preview), plan, rules, platform),
                        x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
                        preview, metrics, plan, t8, target)
             for x in speech_chosen
@@ -326,7 +347,8 @@ def build_render(
         have = ", ".join(x.draft for x in drafts.drafts)
         raise ConfigError(f"Không có bản nháp '{draft}'; drafts.json có: {have}.")
     return [
-        _render_one(build_edl(x, plan, clips, rules, preview=preview), x.draft, x.label,
+        _render_one(_for_platform(build_edl(x, plan, clips, rules, preview=preview), plan, rules,
+                                  platform), x.draft, x.label,
                    drafts.model, drafts.cost_vnd, folder, edit, music, rules, preview, metrics,
                    plan, None, target)
         for x in chosen

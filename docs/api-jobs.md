@@ -185,6 +185,11 @@ xếp gì: bản dựng lẻ sẽ ghi đè tệp của pipeline. Job dựng lẻ
 `features.long_video`: video 3 phút đã mở chưa (`rules.durations.180.enabled`; bật ở pha 7e sau khi
 nghiệm thu thật). Giao diện khóa nút 3 phút khi là `false`; máy chủ cũ không có trường này.
 
+`features.platforms` (từ 14/10/2026): các nền tảng máy chủ dựng được, theo thứ tự trong
+`rules.platforms.profiles`: `[{"id": "tiktok", "name": "TikTok", "short": "TikTok",
+"zalo_on_end_card": false, "default": true}, {"id": "facebook", …}]`. Máy chủ cũ không có trường
+này: giao diện không hiện bước chọn nền tảng.
+
 `GET /api/jobs/1` cho một job đã xong (rút gọn `steps`):
 
 ```json
@@ -530,6 +535,23 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
   `detail = "Chờ duyệt chi phí"`.
 - `GET /api/health` có thêm `ai_key_configured` và `budget`: `limit_vnd` (`null` = không giới hạn
   ngày), `spent_24h_vnd`, `reserved_vnd` (đã duyệt nhưng chưa tiêu).
+
+### 4b-2. Nền tảng đăng: TikTok và Facebook Reels (từ 14/10/2026)
+
+- `POST /api/pipelines` và `POST /api/jobs` nhận thêm `platforms` (mảng id trong
+  `rules.platforms.profiles`, ví dụ `["tiktok", "facebook"]`). Máy chủ tạo **một job `render` cho mỗi
+  bản nháp × mỗi nền tảng**, theo thứ tự bản rồi nền tảng (A·tiktok, A·facebook, B·tiktok, …).
+  Bỏ trống hoặc `[]` = một job mỗi bản, không theo nền tảng (như trước). Id lạ, trùng, hoặc trộn
+  `""` với id thật → `400 bad_request`, không tạo job nào.
+- `JobView.platform`: `"tiktok"` / `"facebook"` cho job dựng theo nền tảng, `""` cho job khác. Tiêu
+  đề job có thêm tên nền tảng (`… — bản A (cuối, tiktok)`).
+- Mỗi nền tảng một thư mục làm việc: `edit/render/<bản>-<nền tảng>/` (ví dụ `A-tiktok`); job không
+  theo nền tảng giữ `edit/render/<bản>/`. `/media/{id}/…`, báo cáo QC và duyệt video (mục 4c) đọc
+  đúng thư mục của job, nên bản TikTok và bản Reels của cùng một bản nháp không ghi đè nhau và
+  được duyệt riêng.
+- Khác nhau giữa hai bản (cùng footage, kịch bản, nhịp cắt): câu kêu gọi
+  (`profiles.<id>.cta.<mục đích>`; thiếu thì giữ câu của mục đích), dòng Zalo ở khung kết
+  (`zalo_on_end_card`), phần `{nen-tang}` trong tên file giao. `manifest.json` có trường `platform`.
 
 ### 4c. Duyệt video cuối (T-F)
 

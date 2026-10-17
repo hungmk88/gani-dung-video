@@ -281,7 +281,27 @@ test('toHealthInfo carries the API key flag and the daily budget', () => {
 
 test('toPipelineCard keeps what the chain renders so "Render lại" asks the same again', () => {
   const one = toPipelineCard(chain([ANALYZE, { ...RENDER_A, no_asr: true }, { ...RENDER_A, id: 5, size: 'final', no_asr: true }]));
-  assert.deepEqual(rerenderBody(one), { project_id: '0/Xuong GANI', draft: 'A', final: true, no_asr: true });
+  assert.deepEqual(rerenderBody(one), { project_id: '0/Xuong GANI', draft: 'A', final: true, no_asr: true, platforms: [] });
   const two = toPipelineCard(chain([ANALYZE, DRAFT, RENDER_A, RENDER_B]));
-  assert.deepEqual(rerenderBody(two), { project_id: '0/Xuong GANI', draft: 'all', final: false, no_asr: false });
+  assert.deepEqual(rerenderBody(two), { project_id: '0/Xuong GANI', draft: 'all', final: false, no_asr: false, platforms: [] });
+});
+
+test('a chain for TikTok and Reels has one output per draft and platform, in rules order', () => {
+  const card = toPipelineCard(
+    chain([
+      ANALYZE,
+      DRAFT,
+      { ...RENDER_A, id: 3, platform: 'facebook' },
+      { ...RENDER_A, id: 4, platform: 'tiktok' },
+      { ...RENDER_B, id: 5, platform: 'tiktok' },
+      { ...RENDER_B, id: 6, platform: 'facebook' },
+    ]),
+  );
+  assert.deepEqual(
+    card.outputs?.map((o) => `${o.draft}|${o.platform}`),
+    ['A|tiktok', 'A|facebook', 'B|tiktok', 'B|facebook'],
+  );
+  assert.deepEqual(card.platforms, ['tiktok', 'facebook']);
+  assert.deepEqual(rerenderBody(card).platforms, ['tiktok', 'facebook']);
+  assert.equal(card.jobs?.find((j) => j.id === '4')?.platform, 'tiktok');
 });

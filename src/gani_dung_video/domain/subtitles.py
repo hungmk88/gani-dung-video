@@ -103,11 +103,12 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
     if text_logo:
         out.append(_dialogue(t0, t1, "EndCardLogo",
                              rf"{{\pos({cx},820)}}" + escape_ass(brand["logo_text"])))  # fmt: skip
-    out += [
-        _dialogue(t0, t1, "EndCardText", rf"{{\pos({cx},1020)}}" + escape_ass(brand["zalo"])),
-        _dialogue(t0, t1, "EndCardText", rf"{{\pos({cx},1140)\fs44}}"
-                  + escape_ass(brand["footer"])),
-    ]  # fmt: skip
+    if edl.end_card_zalo:  # a platform profile may leave it out (TikTok, 14/10/2026)
+        out.append(_dialogue(t0, t1, "EndCardText",
+                             rf"{{\pos({cx},1020)}}" + escape_ass(brand["zalo"])))  # fmt: skip
+    footer_y = 1140 if edl.end_card_zalo else 1040  # no empty gap under the logo
+    out.append(_dialogue(t0, t1, "EndCardText", rf"{{\pos({cx},{footer_y})\fs44}}"
+                         + escape_ass(brand["footer"])))  # fmt: skip
     return out
 
 

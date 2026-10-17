@@ -30,7 +30,7 @@ from gani_dung_video.domain.jobs import (
     parse_stages,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 STOP_MODES = ("graceful", "now")
 
 _STATUS_LIST = "'queued', 'processing', 'awaiting_approval', 'completed', 'failed', 'cancelled'"
@@ -82,7 +82,8 @@ def _jobs_ddl(name: str) -> str:
   approved_vnd REAL,
   approved_at REAL,
   spent_vnd REAL,
-  approval_expires_at REAL
+  approval_expires_at REAL,
+  platform TEXT NOT NULL DEFAULT ''
 )"""
 
 
@@ -132,6 +133,7 @@ class NewJob(BaseModel):
     pipeline_id: int | None = None
     depends_on: int | None = None  # job that must complete (passed) first
     force: bool = False  # analyze: ignore the analysis stamp
+    platform: str = ""  # render: tiktok | facebook (rules.platforms); "" = no platform profile
 
 
 class FolderBusyError(QueueDbError):
@@ -256,6 +258,9 @@ class QueueDb:
                 self._migrate_from_v1()
             elif version == 2:
                 self._migrate_2_to_3()
+                self._migrate_3_to_4()
+            elif version == 3:
+                self._migrate_3_to_4()
         except sqlite3.DatabaseError as e:
             raise QueueDbError(f"{hint} ({e})") from e
 
@@ -323,7 +328,28 @@ class QueueDb:
                     return
                 self.backup(self.path.with_name(self.path.name + ".v2.bak"))
                 con.execute("ALTER TABLE jobs ADD COLUMN approval_expires_at REAL")
-                con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                con.execute("PRAGMA user_version = 3")  # 3 → 4 runs next (_open_or_create)
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+        finally:
+            con.close()
+
+    def _migrate_3_to_4(self) -> None:
+        """14/10/2026: render jobs target a platform (TikTok / Facebook Reels). One ADD COLUMN
+        with a default, so old rows read "" (no platform profile, the behaviour before)."""
+        con = sqlite3.connect(self.path, timeout=self._busy_ms / 1000, isolation_level=None)
+        try:
+            con.execute(f"PRAGMA busy_timeout = {int(self._busy_ms)}")
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                if int(con.execute("PRAGMA user_version").fetchone()[0]) != 3:
+                    con.execute("ROLLBACK")  # another process already upgraded it
+                    return
+                self.backup(self.path.with_name(self.path.name + ".v3.bak"))
+                con.execute("ALTER TABLE jobs ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+                con.execute("PRAGMA user_version = 4")
             except BaseException:
                 con.execute("ROLLBACK")
                 raise
@@ -346,11 +372,11 @@ class QueueDb:
             raise QueueDbError(f"Job phụ thuộc #{dep} không tồn tại.")
         cur = con.execute(
             "INSERT INTO jobs (kind, project_dir, options_file, draft, final, no_asr, "
-            "max_attempts, priority, created_at, pipeline_id, depends_on, force) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "max_attempts, priority, created_at, pipeline_id, depends_on, force, platform) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (job.kind, job.project_dir, job.options_file, job.draft, int(job.final),
              int(job.no_asr), job.max_attempts, priority, now, job.pipeline_id,
-             job.depends_on, int(job.force)),
+             job.depends_on, int(job.force), job.platform),
         )  # fmt: skip
         return int(cur.lastrowid or 0)
 
@@ -432,14 +458,17 @@ class QueueDb:
             return int(con.execute("SELECT COALESCE(MAX(pipeline_id), 0) + 1 FROM jobs"
                                    ).fetchone()[0])  # fmt: skip
 
-    def find_active(self, kind: str, project_dir: str, draft: str, final: bool) -> int | None:
-        """Id of a waiting or running job for the same render, if any (no duplicates)."""
+    def find_active(self, kind: str, project_dir: str, draft: str, final: bool,
+                    platform: str = "") -> int | None:  # fmt: skip
+        """Id of a waiting or running job for the same render, if any (no duplicates). The
+        TikTok and the Facebook render of one draft are different renders."""
         with self._conn() as con:
             row = con.execute(
                 "SELECT id FROM jobs WHERE kind = ? AND project_dir = ? AND draft = ? "
-                "AND final = ? AND status IN ('queued', 'processing', 'awaiting_approval') "
+                "AND final = ? AND platform = ? "
+                "AND status IN ('queued', 'processing', 'awaiting_approval') "
                 "ORDER BY id LIMIT 1",
-                (kind, project_dir, draft, int(final))).fetchone()  # fmt: skip
+                (kind, project_dir, draft, int(final), platform)).fetchone()  # fmt: skip
         return int(row["id"]) if row else None
 
     def get(self, job_id: int) -> Job | None:

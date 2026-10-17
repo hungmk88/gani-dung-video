@@ -63,6 +63,9 @@ class JobCreate(BaseModel):
     draft: str = "all"  # A | B | C | all
     final: bool = False
     no_asr: bool = False
+    # 14/10/2026: one render per platform (rules.json → platforms), e.g. ["tiktok", "facebook"];
+    # empty = one render without a platform profile (the behaviour before).
+    platforms: list[str] = []
 
     @field_validator("project_id")
     @classmethod
@@ -91,6 +94,7 @@ class PipelineCreate(BaseModel):
     final: bool = False
     no_asr: bool = False
     force_analyze: bool = False  # analyse the footage again even if it looks unchanged
+    platforms: list[str] = []  # as JobCreate.platforms
 
     @field_validator("project_id")
     @classmethod
@@ -303,6 +307,7 @@ class JobView(BaseModel):
     title: str
     kind: str
     draft: str
+    platform: str = ""  # render jobs: tiktok | facebook; "" = rendered without a platform profile
     size: Literal["preview", "final"]
     status: str
     result: str | None
@@ -374,11 +379,22 @@ class BudgetView(BaseModel):
     reserved_vnd: float  # approved but not yet spent by jobs that are waiting or running
 
 
+class PlatformView(BaseModel):
+    """A platform the server renders for (rules.json → platforms.profiles)."""
+
+    id: str
+    name: str
+    short: str
+    zalo_on_end_card: bool
+    default: bool  # ticked when the wizard opens
+
+
 class FeaturesView(BaseModel):
     """What this server lets the UI offer. `long_video`: 3-minute videos are open (phase 7e
     switches `durations.180.enabled` on after the real acceptance run)."""
 
     long_video: bool
+    platforms: list[PlatformView] = []
 
 
 class HealthView(BaseModel):

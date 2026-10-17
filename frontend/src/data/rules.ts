@@ -324,6 +324,13 @@ export const RULES: RulesBundle = {
     'chung',
   ],
 
+  // config/rules.json → platforms (14/10/2026): profiles in order, `default` = ticked at start.
+  // src/data/rules.test.ts fails when this copy drifts.
+  platforms: [
+    { id: 'tiktok', name: 'TikTok', short: 'TikTok', zaloOnEndCard: false, default: true },
+    { id: 'facebook', name: 'Facebook Reels', short: 'Reels', zaloOnEndCard: true, default: true },
+  ],
+
   // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
   pickTagNames: {
     nguoi_thao_tac: 'Công nhân thao tác',

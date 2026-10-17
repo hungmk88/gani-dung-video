@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { isOptionsComplete } from '../../lib/preflight';
 import { api } from '../../services/api';
-import type { FootageFile, PreflightResult, VideoOptions } from '../../types/rules';
+import type { FootageFile, PlatformInfo, PreflightResult, VideoOptions } from '../../types/rules';
 import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
 import { DeliveryFields } from './DeliveryFields';
+import { PlatformPicker } from './PlatformPicker';
+import { defaultPlatforms } from '../../lib/platforms';
 import { MusicPicker } from './MusicPicker';
 import { PreflightValidator, type MissingChoice } from './PreflightValidator';
 import { useMusicTracks } from './useMusicTracks';
@@ -57,6 +59,11 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [longVideo, setLongVideo] = useState<boolean | null>(null);
+  // Platforms the server renders for (empty until it answers, or on an older server) and the ticked
+  // ones; null = not touched yet, so the server's defaults are used.
+  const [platformList, setPlatformList] = useState<PlatformInfo[]>([]);
+  const [pickedPlatforms, setPickedPlatforms] = useState<string[] | null>(null);
+  const platforms = pickedPlatforms ?? defaultPlatforms(platformList);
 
   // An earlier "Vẫn dùng bài này" belongs to one style + length + track: any change drops it.
   function patch(p: Partial<VideoOptions>) {
@@ -97,7 +104,10 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
     api
       .health()
       .then((h) => {
-        if (!cancelled) setLongVideo(h.longVideo);
+        if (!cancelled) {
+          setLongVideo(h.longVideo);
+          setPlatformList(h.platforms);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -128,14 +138,17 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
 
   const needsProject = isReal && choice.projectId === null;
   // What is still to choose, in page order, each with the place on the page to jump to.
-  const missing: MissingChoice[] = renderOnly
-    ? []
-    : [
-        { done: Boolean(options.phong_cach), label: 'phong cách', target: 'chon-phong-cach' },
-        { done: Boolean(options.muc_dich), label: 'mục đích', target: 'chon-muc-dich' },
-        { done: Boolean(options.do_dai_giay), label: 'thời lượng', target: 'chon-thoi-luong' },
-        { done: Boolean(options.nhac), label: 'nhạc nền', target: 'chon-nhac' },
-      ].filter((m) => !m.done);
+  const missing: MissingChoice[] = [
+    ...(renderOnly
+      ? []
+      : [
+          { done: Boolean(options.phong_cach), label: 'phong cách', target: 'chon-phong-cach' },
+          { done: Boolean(options.muc_dich), label: 'mục đích', target: 'chon-muc-dich' },
+          { done: Boolean(options.do_dai_giay), label: 'thời lượng', target: 'chon-thoi-luong' },
+          { done: Boolean(options.nhac), label: 'nhạc nền', target: 'chon-nhac' },
+        ]),
+    { done: platformList.length === 0 || platforms.length > 0, label: 'nền tảng đăng', target: 'chon-nen-tang' },
+  ].filter((m) => !m.done);
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -154,6 +167,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         final: choice.final,
         noAsr: choice.noAsr,
         forceAnalyze: choice.forceAnalyze,
+        platforms,
       });
       onJobCreated(job.id);
     } catch (e) {
@@ -192,11 +206,19 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
                 <BpmWarning options={options} onChange={patch} tracks={musicTracks} />
               </div>
             </Panel>
-
-            <Panel title="4. Tên file giao" id="chon-giao-hang">
-              <DeliveryFields options={options} onChange={patch} />
-            </Panel>
           </>
+        )}
+
+        {platformList.length > 0 && (
+          <Panel title={renderOnly ? '2. Đăng lên' : '4. Đăng lên'} id="chon-nen-tang">
+            <PlatformPicker platforms={platformList} chosen={platforms} onChange={setPickedPlatforms} />
+          </Panel>
+        )}
+
+        {!renderOnly && (
+          <Panel title={platformList.length > 0 ? '5. Tên file giao' : '4. Tên file giao'} id="chon-giao-hang">
+            <DeliveryFields options={options} onChange={patch} />
+          </Panel>
         )}
       </div>
 

@@ -651,6 +651,30 @@ def test_a_pipeline_request_creates_the_whole_chain_and_returns_it(
     assert (root / "footage" / "edit" / "options.json").is_file()
 
 
+def test_a_pipeline_for_tiktok_and_reels_has_one_render_per_draft_and_platform(
+    ctx: ApiContext, root: Path
+) -> None:
+    view = start(ctx, root, platforms=["tiktok", "facebook"])
+    renders = [j for j in view.jobs if j.kind == "render"]
+    assert [(j.draft, j.platform) for j in renders] == [
+        ("A", "tiktok"), ("A", "facebook"), ("B", "tiktok"), ("B", "facebook")]  # fmt: skip
+    assert "tiktok" in renders[0].title and all(j.platform == "" for j in view.jobs[:2])
+
+
+def test_an_unknown_platform_is_a_bad_request_and_nothing_is_queued(
+    ctx: ApiContext, root: Path
+) -> None:
+    with pytest.raises(ApiError) as caught:
+        start(ctx, root, platforms=["youtube"])
+    assert caught.value.status == 400 and "youtube" in str(caught.value)
+    assert ctx.db.list_jobs() == []
+
+
+def test_health_lists_the_platforms_with_their_defaults(ctx: ApiContext) -> None:
+    got = [(p.id, p.short, p.zalo_on_end_card, p.default) for p in health(ctx).features.platforms]
+    assert got == [("tiktok", "TikTok", False, True), ("facebook", "Reels", True, True)]
+
+
 def test_pipeline_options_are_judged_by_preflight_before_anything_is_written(
     ctx: ApiContext, root: Path
 ) -> None:

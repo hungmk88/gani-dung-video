@@ -129,6 +129,37 @@ def duration(path: Path) -> float:
 
 
 @needs_render_ffmpeg
+def test_the_tiktok_and_the_facebook_render_of_one_draft_live_side_by_side(folder: Path) -> None:
+    # 14/10/2026: one draft, two platforms; each its own folder, CTA, end card and file name.
+    [tiktok] = build_render(folder, preview=True, rules=RULES, platform="tiktok")
+    [facebook] = build_render(folder, preview=True, rules=RULES, platform="facebook")
+    t_out, f_out = (
+        folder / "edit" / "render" / "A-tiktok",
+        folder / "edit" / "render" / "A-facebook",
+    )
+    assert tiktok.video == t_out / "nhap_A_540p.mp4" and facebook.video == f_out / "nhap_A_540p.mp4"
+    assert tiktok.video.is_file() and facebook.video.is_file()
+    t_ass, f_ass = (o.joinpath("sub.ass").read_text(encoding="utf-8") for o in (t_out, f_out))
+    zalo = RULES["render"]["brand"]["zalo"]
+    want = RULES["platforms"]["profiles"]["tiktok"]["cta"]["ban_hang"]
+    assert zalo not in t_ass and want in t_ass and "Nhắn tin đặt hàng" not in t_ass
+    assert zalo in f_ass and "Nhắn tin đặt hàng" in f_ass
+    t_log = json.loads((t_out / "render_log.json").read_text(encoding="utf-8"))
+    assert t_log["platform"] == "tiktok"
+    t_man = json.loads((t_out / "manifest.json").read_text(encoding="utf-8"))
+    f_man = json.loads((f_out / "manifest.json").read_text(encoding="utf-8"))
+    assert (t_man["platform"], f_man["platform"]) == ("tiktok", "facebook")
+    if t_man["delivered_as"]:  # a passing preview is delivered under its platform name
+        assert "_tiktok_v" in t_man["delivered_as"] and "_facebook_v" in f_man["delivered_as"]
+
+
+def test_an_unknown_platform_stops_before_anything_is_rendered(folder: Path) -> None:
+    with pytest.raises(ConfigError, match="youtube"):
+        build_render(folder, preview=True, rules=RULES, platform="youtube")
+    assert not (folder / "edit" / "render" / "A-youtube").exists()
+
+
+@needs_render_ffmpeg
 def test_preview_render_writes_video_subtitles_cover_and_log(folder: Path) -> None:
     [res] = build_render(folder, preview=True, rules=RULES)
     out = folder / "edit" / "render" / "A"

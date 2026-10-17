@@ -98,3 +98,20 @@ test('reviewProblem asks for a name, and a reason only when asking for changes',
   assert.match(reviewProblem('reject', 'Hùng', '  ')!, /lý do/);
   assert.equal(reviewProblem('reject', 'Hùng', 'chữ cuối bị che'), null);
 });
+
+test('cardReviews keeps the TikTok and the Reels file of one draft apart', () => {
+  const r = (jobId: string) => ({ ...toReview(api(), jobId)! });
+  const items = cardReviews({
+    jobs: [
+      { kind: 'render', draft: 'A', platform: 'facebook', review: r('6') },
+      { kind: 'render', draft: 'A', platform: 'tiktok', review: r('5') },
+    ],
+  });
+  assert.deepEqual(
+    items.map((i) => [i.label, i.review.jobId]),
+    [
+      ['Bản cuối A · TikTok', '5'],
+      ['Bản cuối A · Reels', '6'],
+    ],
+  );
+});

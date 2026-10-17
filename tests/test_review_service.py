@@ -35,6 +35,17 @@ def test_approving_moves_the_file_and_records_who_and_when(tmp_path: Path) -> No
     assert any(level == "info" and "Hùng" in text for level, text in t.events())
 
 
+def test_a_platform_render_is_reviewed_from_its_own_folder(tmp_path: Path) -> None:
+    # 14/10/2026: the TikTok render of draft A lives in edit/render/A-tiktok; the plain "A"
+    # folder (another render) must not be what the review reads.
+    t = build(tmp_path, platform="tiktok")
+    assert t.working.parent.name == "A-tiktok"
+    assert not (t.folder / "edit" / "render" / "A").exists()
+    row = rs.approve(t.db, RULES, t.job.id, "NVH", None, now_s())
+    assert row.block.status == "approved" and (t.root / "final" / NAME).is_file()
+    assert t.read(t.working).review == t.read().review
+
+
 def test_pressing_approve_twice_changes_nothing_the_second_time(tmp_path: Path) -> None:
     t = build(tmp_path)
     rs.approve(t.db, RULES, t.job.id, "Hùng", None, now_s())
