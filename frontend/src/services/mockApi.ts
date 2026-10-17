@@ -23,6 +23,7 @@ import type {
   PipelineStepId,
   QaReport,
   RenderJob,
+  ReviewInfo,
   SubmitRequest,
   VideoOptions,
 } from '../types/rules';
@@ -211,7 +212,23 @@ function advance(id: string): void {
       }));
     }
     // demo: a delivered final video waits for its reviewer (T-F); the real API sets this from the manifest
-    job.review = { jobId: id, status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
+    job.review = pendingReview(id);
+    if (platforms.length > 0) {
+      // As on the server: one render job, one delivered file and one decision per platform.
+      job.jobs = platforms.map((platform) => ({
+        id: renderJobId(id, platform),
+        kind: 'render',
+        draft: 'A',
+        platform,
+        ...(noMusic ? { noMusic: true } : {}),
+        status: 'done' as const,
+        errorMsg: null,
+        retryable: false,
+        spentVnd: null,
+        review: pendingReview(renderJobId(id, platform)),
+      }));
+      job.review = job.jobs[0].review;
+    }
     job.logLines.push(log('info', 'Hoàn tất pipeline — soát kỹ thuật ĐẠT ở vòng 1/3.'));
     notify(id);
     return;
@@ -238,6 +255,15 @@ function advance(id: string): void {
   notify(id);
 
   rec.timer = setTimeout(() => advance(id), STEP_TICK_MS);
+}
+
+function pendingReview(jobId: string): ReviewInfo {
+  return { jobId, status: 'pending', reason: null, decidedBy: null, decidedAt: null, overdue: false, failedChecks: [] };
+}
+
+/** Id of a card's demo render job for one platform (what decideReview receives). */
+function renderJobId(cardId: string, platform: string): string {
+  return `${cardId}:${platform}`;
 }
 
 let idCounter = 0;
@@ -348,23 +374,34 @@ export const mockApi: StudioApi = {
   },
 
   async decideReview(jobId, decision, reviewer, reason): Promise<void> {
-    const rec = store.get(jobId);
-    const review = rec?.job.review;
+    // A platform render's id is "<card id>:<platform>"; a plain card is reviewed under its own id.
+    const cardId = jobId.split(':')[0];
+    const rec = store.get(cardId);
+    const render = rec?.job.jobs?.find((j) => j.id === jobId);
+    const review = render ? render.review : rec?.job.review;
     if (!rec || !review) throw new Error('Video này không có gì chờ duyệt.');
     const bad = reviewProblem(decision, reviewer, reason);
     if (bad) throw new Error(bad);
     if (review.status !== 'pending') throw new Error('Video này đã được quyết định rồi, không đổi được nữa.');
-    rec.job.review = {
+    const decided: ReviewInfo = {
       ...review,
       status: decision === 'approve' ? 'approved' : 'changes_requested',
       decidedBy: reviewer.trim(),
       decidedAt: new Date().toISOString(),
       reason: reason.trim() || null,
     };
+    if (render) {
+      render.review = decided;
+      // The card's badge follows the first file still waiting, else the one just decided.
+      rec.job.review = rec.job.jobs?.find((j) => j.review?.status === 'pending')?.review ?? decided;
+    } else {
+      rec.job.review = decided;
+    }
+    const which = render?.platform ? ` (bản ${render.platform})` : '';
     rec.job.logLines.push(log('info', decision === 'approve'
-      ? `Đã duyệt bởi ${reviewer.trim()} (mô phỏng: chuyển sang final/).`
-      : `Yêu cầu sửa (${reviewer.trim()}): ${reason.trim()}`));
-    notify(jobId);
+      ? `Đã duyệt${which} bởi ${reviewer.trim()} (mô phỏng: chuyển sang final/).`
+      : `Yêu cầu sửa${which} (${reviewer.trim()}): ${reason.trim()}`));
+    notify(cardId);
   },
 
   async rerender(job: RenderJob): Promise<RenderJob> {

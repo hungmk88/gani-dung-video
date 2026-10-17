@@ -8,8 +8,9 @@ Bảng điều khiển (Studio Wizard + Job Queue) cho pipeline dựng video t�
   `127.0.0.1:8765` (xem `docs/api-jobs.md`).
 - **Bản mô phỏng** (`npm run dev`, `npm run build`): `src/services/mockApi.ts` giả lập hàng đợi để
   xem thử giao diện mà không cần máy dựng, gồm cả duyệt chi phí, duyệt video cuối, tab "Bản A ·
-  TikTok / Bản A · Reels" theo nền tảng chọn ở bước "Đăng lên" và ô "Không nhúng nhạc". Mọi bản
-  dùng chung một clip mẫu; số đo và cảnh báo trong khung soát chất lượng là ví dụ, không phải đo thật.
+  TikTok / Bản A · Reels" theo nền tảng chọn ở bước "Đăng lên" (mỗi bản duyệt riêng) và ô "Không
+  nhúng nhạc". Mọi bản dùng chung một clip mẫu; số đo và cảnh báo trong khung soát chất lượng là
+  ví dụ, không phải đo thật.
 
 ## Chạy thử
 
