@@ -107,7 +107,8 @@ def test_plan_for_music_driven_style_matches_spec_example() -> None:
 
 def test_missing_required_tags_become_an_x8_warning() -> None:
     p = compile_plan(opts(), RULES, music=music(), available_tags={"nguoi_thao_tac", "thiet_bi"})
-    assert len(p.warnings) == 1 and p.warnings[0].startswith("X8") and "chung_nhan" in p.warnings[0]
+    assert len(p.warnings) == 1 and p.warnings[0].startswith("X8")
+    assert "Giấy chứng nhận" in p.warnings[0] and "chung_nhan" not in p.warnings[0]  # name
 
 
 def test_track_outside_style_range_is_folded_and_beats_follow_the_folded_tempo() -> None:

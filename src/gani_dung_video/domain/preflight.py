@@ -169,7 +169,8 @@ def _check_required_input(rules: Rules, o: VideoOptions) -> list[Issue]:
     fields = rules["purposes"][o.muc_dich].get("required_fields", [])
     missing = [f for f in fields if not str(km.get(f, "")).strip()]
     if missing:
-        out.append(_issue(rules, "X3", missing=", ".join(missing)))
+        names = rules["purposes"][o.muc_dich].get("required_field_names", {})
+        out.append(_issue(rules, "X3", missing=", ".join(str(names.get(f, f)) for f in missing)))
     min_words = rules["styles"][o.phong_cach].get("note_min_words")
     count = len((o.ghi_chu or "").split())
     if min_words and count < min_words:

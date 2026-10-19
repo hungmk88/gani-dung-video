@@ -13,7 +13,7 @@ from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict
 
-from gani_dung_video.domain.beats import beat_grid, fold_bpm, loop_info, other_folds
+from gani_dung_video.domain.beats import FOLD_NAMES, beat_grid, fold_bpm, loop_info, other_folds
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.preflight import Rules
 
@@ -491,15 +491,18 @@ def compile_plan(
                                      float(rules["music"]["bpm_max_deviation"])):  # fmt: skip
             t2, f2 = plan_at(60.0 / eff)
             if gap(f2) < gap(fit) - _EPS:
-                note = (f"Nhạc: đếm phách ở {eff:g} BPM ({mode}) thay vì {pm.effective_bpm:g} BPM "
-                        f"({pm.fold}) để kế hoạch gần {chosen:g}s hơn.")  # fmt: skip
+                note = (f"Nhạc: đếm phách ở {eff:g} BPM ({FOLD_NAMES.get(mode, mode)}) thay vì "
+                        f"{pm.effective_bpm:g} BPM ({FOLD_NAMES.get(pm.fold, pm.fold)}) để kế "
+                        f"hoạch gần {chosen:g}s hơn.")  # fmt: skip
                 target, fit = t2, f2._replace(notes=[note, *f2.notes])
                 pm = pm.model_copy(update={"effective_bpm": eff, "fold": mode})
     blocks, chapters, beat_sec = fit.blocks, fit.chapters, fit.beat_sec
     missing = list(dict.fromkeys(t for b in blocks for t in b.required_tags
                                  if t not in available_tags))  # fmt: skip
     if missing:
-        warnings.append("X8: " + rules["conflicts"]["X8"]["msg"].format(tags=", ".join(missing)))
+        names = rules["pick"]["tag_names"]  # 'nguoi_thao_tac' reads 'Công nhân thao tác'
+        warnings.append("X8: " + rules["conflicts"]["X8"]["msg"].format(
+            tags=", ".join(str(names.get(t, t)) for t in missing)))  # fmt: skip
     natural = sum(b.beats for b in blocks) * beat_sec
     if pm is not None:  # what is rendered: the chosen length when trimmed, else the plan itself
         pm = _with_loop(pm, rules, fit.trim_to_sec if fit.trim_to_sec is not None else natural)

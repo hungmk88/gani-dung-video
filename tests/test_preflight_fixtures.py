@@ -81,4 +81,4 @@ def test_bpm_messages_describe_the_adjustment() -> None:
 
 def test_x3_message_names_only_the_missing_field() -> None:
     r = check_options_file(FIXTURES / "X03-khuyen-mai-thieu-uu-dai.md", RULES)
-    assert "thoi_han" in r["error_msg"] and "uu_dai" not in r["error_msg"]
+    assert "Còn thiếu: thời hạn." in r["error_msg"]  # the field's name, not the id thoi_han

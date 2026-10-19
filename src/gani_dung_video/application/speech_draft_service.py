@@ -119,7 +119,9 @@ def _job(options_file: Path, folder: Path, rules: Rules) -> _Job:
     msgs = rules["input_msgs"]
     plan: Plan = _read(folder / EDIT_DIR / PLAN_FILE, Plan, msgs["PICK_NO_PLAN"])
     if plan.driver != "speech":
-        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=plan.options["style"]))
+        sid = str(plan.options["style"])
+        name = rules["styles"].get(sid, {}).get("name", sid)
+        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=name))
     phrases: PhrasesFile = _read(folder / EDIT_DIR / PHRASES_FILE, PhrasesFile,
                                  msgs["SPEECH_DRAFT_NO_PHRASES"])  # fmt: skip
     pick: PickFile = _read(folder / EDIT_DIR / PICK_FILE, PickFile, msgs["DRAFT_NO_PICK"])

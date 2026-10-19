@@ -117,7 +117,7 @@ def test_track_outside_style_range_reports_the_x12_adjustment(folder: Path, tmp_
 def test_missing_required_tags_are_reported(folder: Path, tmp_path: Path) -> None:
     write_scenes(folder, tags=["thiet_bi"])
     plan, _ = build_plan(write_options(tmp_path / "o.json"), folder, rules=RULES)
-    assert any(w.startswith("X8") and "nguoi_thao_tac" in w for w in plan.warnings)
+    assert any(w.startswith("X8") and "Công nhân thao tác" in w for w in plan.warnings)
 
 
 def test_track_without_a_clear_beat_falls_back_to_the_grid(folder: Path, tmp_path: Path) -> None:
