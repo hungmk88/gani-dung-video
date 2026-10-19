@@ -1,8 +1,8 @@
 /**
  * Mock implementation of StudioApi (see api.ts). Simulates the SQLite queue daemon
  * described in the spec: jobs advance through the 8 pipeline steps on a timer and push
- * updates to subscribers, the same shape a real WebSocket payload from 127.0.0.1:8765
- * would use. Nothing here touches the network or the filesystem.
+ * updates to subscribers, the same RenderJob shape realApi.ts builds by polling the local
+ * server. Nothing here touches the network or the filesystem.
  *
  * The QA numbers in `buildQaReport` are not invented — they are the actual measured
  * results from the phase 5b real render run (docs memory, 29/09/2026): -13.9 LUFS,

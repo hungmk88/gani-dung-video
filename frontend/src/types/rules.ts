@@ -2,8 +2,8 @@
  * Types mirroring the REAL backend schema (config/rules.json, domain/options.py,
  * domain/preflight.py, domain/verify.py, domain/qc.py — repo `gani-dung-video`, rules
  * v2.0). Field names are kept in Vietnamese/snake_case exactly as the Python side uses
- * them so a JSON payload from the future FastAPI server at 127.0.0.1:8765 needs zero
- * remapping — see src/services/config.ts for the swap-over point.
+ * them. The local server (stdlib http.server, infrastructure/http_server.py) sends the wire
+ * types of types/api.ts; services/mappers.ts turns them into these.
  */
 
 export type CompatLevel = 'ok' | 'warn' | 'bad';

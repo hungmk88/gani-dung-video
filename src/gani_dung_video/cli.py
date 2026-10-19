@@ -8,18 +8,24 @@ python -m gani_dung_video transcribe <thu_muc_footage> [--model small]
     exit 0 = xong, 1 = có clip lỗi, 2 = chưa inventory / không nạp được model
 python -m gani_dung_video scenes <thu_muc_footage>
     exit 0 = đã ghi edit/scenes.json, 2 = chưa inventory
-python -m gani_dung_video plan <yeu-cau.md|options.json> <thu_muc_footage> [--nhac-thu-muc DIR]
-    exit 0 = đã ghi edit/plan.json, 1 = bị chặn (preflight) hoặc chưa hỗ trợ, 2 = lỗi file/nhạc
+python -m gani_dung_video plan <yeu-cau.md|options.json> <thu_muc_footage> [--nhac-thu-muc DIR] \
+    [--bpm-override]
+    exit 0 = đã ghi edit/plan.json, 1 = bị chặn (preflight) hoặc chưa hỗ trợ, 2 = lỗi file/nhạc,
+    4 = BPM của bài không dựng được độ dài đã chọn (kế hoạch lệch quá ±10%);
+    --bpm-override: vẫn dùng bài đó (E1-DUR-GAP vẫn chặn khi giao)
 python -m gani_dung_video pick <yeu-cau.md|options.json> <thu_muc_footage>
     exit 0 = đã ghi edit/candidates.json, 2 = chưa chạy plan / plan cũ / lỗi file
-python -m gani_dung_video draft <yeu-cau.md|options.json> <thu_muc_footage> [--dry-run]
+python -m gani_dung_video draft <yeu-cau.md|options.json> <thu_muc_footage> [--dry-run [--json]] \
+    [--max-vnd SỐ_ĐỒNG]
     exit 0 = đã ghi edit/drafts.json (hoặc in ước tính), 1 = hết vòng sửa / chạm trần chi phí,
-    2 = thiếu khóa API, lỗi file, lỗi mạng
+    2 = thiếu khóa API, lỗi file, lỗi mạng, 3 = footage không lấp được kế hoạch (cổng khả thi,
+    chưa gọi Claude); --json: in ước tính một dòng JSON; --max-vnd chỉ hạ được trần cấu hình
 python -m gani_dung_video render <thu_muc_footage> [--preview] [--ban A] [--no-asr] \
-    [--nen-tang tiktok|facebook] [--khong-nhac]
+    [--nen-tang tiktok|facebook] [--khong-nhac] [--san-pham TÊN] [--chien-dich TÊN]
     exit 0 = đã dựng + đạt soát kỹ thuật, 1 = còn lỗi soát, 2 = thiếu drafts.json / lỗi ffmpeg
     (bản cuối chế độ lời còn được Whisper nghe lại — T8; --no-asr để bỏ;
-    --khong-nhac: không nhúng nhạc, chèn nhạc trên app khi đăng)
+    --khong-nhac: không nhúng nhạc, chèn nhạc trên app khi đăng; --san-pham / --chien-dich:
+    tên file giao và thư mục giao, mặc định "chung" / tên thư mục footage)
 python -m gani_dung_video qc <thu_muc_footage> --ban A [--final] [--no-asr] [--nen-tang ...] \
     [--khong-nhac]
     exit 0 = đạt, 1 = còn lỗi, 2 = chưa có video / lỗi file
@@ -27,15 +33,22 @@ python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 python -m gani_dung_video phrases <yeu-cau.md|options.json> <thu_muc_footage>
     exit 0 = đã ghi edit/phrases.json, 2 = phong cách không dẫn nhịp theo lời / chưa transcribe
+python -m gani_dung_video queue analyze <thu_muc_footage> [--force]
+python -m gani_dung_video queue draft <yeu-cau.md|options.json> <thu_muc_footage> [--after ID]
+python -m gani_dung_video queue approve ID --max-vnd SỐ_ĐỒNG --estimate SỐ_ĐỒNG
 python -m gani_dung_video queue add <yeu-cau.md|options.json> <thu_muc_footage> \
-    [--ban A|all] [--final] [--no-asr] [--khong-nhac]
-python -m gani_dung_video review list [--trang-thai pending|approved|changes_requested|tat-ca]
-python -m gani_dung_video review approve ID [--nguoi-duyet TÊN]
+    [--ban A|all] [--final] [--no-asr] [--khong-nhac] [--after ID]
+python -m gani_dung_video queue list [--status TRẠNG_THÁI] [--limit 30]
+python -m gani_dung_video queue show ID | cancel ID | retry ID | stop [--now]
+    hàng đợi dựng (GĐ6a): analyze = phân tích footage; draft = plan, pick, ước tính rồi chờ
+    duyệt chi phí; approve = duyệt chi phí (--estimate lấy từ `queue show`); --after = chỉ chạy
+    sau khi job đó xong; exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
+    sách cho phép, hoặc không có job đó
+python -m gani_dung_video review list [--trang-thai pending|approved|changes_requested|tat-ca] \
+    [--tu-ngay YYYY-MM-DD] [--limit 50]
+python -m gani_dung_video review approve ID [--nguoi-duyet TÊN] [--ghi-chu "..."]
 python -m gani_dung_video review reject ID --ly-do "..." [--nguoi-duyet TÊN]
     duyệt video cuối đã giao (T-F); exit 0 = xong, 2 = bị từ chối (in lý do, danh sách check hỏng)
-python -m gani_dung_video queue list | show ID | cancel ID | retry ID | stop [--now]
-    hàng đợi dựng (GĐ6a); exit 0 = xong, 2 = thiếu GANI_DV_ALLOWED_ROOTS, thư mục ngoài danh
-    sách cho phép, hoặc không có job đó
 python -m gani_dung_video music-check [<thu_muc_nhac>] [--chi-tiet] [--ca-180]
     kiểm thư mục nhạc, CHỈ ĐỌC: BPM từng bài và bài nào dựng được phong cách × độ dài nào;
     mặc định lấy GANI_DV_MUSIC_DIR; exit 0 = xong, 2 = thư mục không có / library.json hỏng
@@ -161,7 +174,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pl = sub.add_parser("plan", help="Biên dịch tùy chọn → số phách từng khối → edit/plan.json")
     pl.add_argument("file", type=Path, help="yeu-cau.md hoặc options.json")
     pl.add_argument("folder", type=Path, help="Thư mục footage đã chạy scenes và semantics")
-    pl.add_argument("--nhac-thu-muc", type=Path, help="Thư mục chứa nhạc (nếu ngoài 2 nơi trên)")
+    pl.add_argument(
+        "--nhac-thu-muc",
+        type=Path,
+        help="Thư mục chứa nhạc, nếu bài không nằm cạnh tệp tùy chọn hay trong thư mục footage",
+    )
     pl.add_argument(
         "--bpm-override",
         action="store_true",

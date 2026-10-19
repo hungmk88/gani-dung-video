@@ -1,10 +1,11 @@
 # API web cục bộ — hợp đồng kỹ thuật (Giai đoạn 6b + 6c)
 
-Tài liệu này là **hợp đồng** giữa backend (`gani-dung-video`) và giao diện (nhánh
-`feature/gd6-frontend-preview`). Backend không sửa gì ở nhánh giao diện; phía giao diện viết
-`realApi` trong `src/services/api.ts` theo tài liệu này, rồi đổi `USE_MOCK`.
+Tài liệu này là **hợp đồng** giữa backend (`src/gani_dung_video`, máy chủ
+`infrastructure/http_server.py`) và giao diện (`frontend/`: `src/services/realApi.ts` gọi API,
+`src/services/mappers.ts` đổi kiểu theo mục 5). Đổi hợp đồng thì sửa cả hai phía và tài liệu này
+trong cùng PR.
 
-Mọi ví dụ JSON bên dưới được **in ra từ chính mã nguồn** (không viết tay).
+Các ví dụ JSON bên dưới lấy từ đầu ra của mã nguồn; chỗ nào rút gọn thì có ghi.
 
 ## 1. Chạy
 
@@ -44,8 +45,8 @@ python -m gani_dung_video serve       # in "Giao diện: mở http://127.0.0.1:8
 
 ## 2. Quy ước chung
 
-- Chỉ nghe ở **127.0.0.1**. Mọi yêu cầu phải có `Host: 127.0.0.1:8765` hoặc
-  `localhost:8765`, nếu không trả 403.
+- Chỉ nghe ở **127.0.0.1**. Mọi yêu cầu phải có `Host: 127.0.0.1:<cổng>` hoặc
+  `localhost:<cổng>` (cổng của `serve`, mặc định 8765), nếu không trả 403.
 - Dữ liệu là JSON UTF-8. Thời gian là ISO 8601 UTC, đuôi `Z` (`2026-09-29T04:56:08Z`).
 - Mã dự án (`project_id`) là chuỗi **mờ** `"<chỉ số thư mục gốc>/<tên thư mục>"`, ví dụ
   `"0/Xuong GANI"` (`"0/."` nếu chính thư mục gốc là dự án). Server không bao giờ trả đường
@@ -74,9 +75,11 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | 409 | `pipeline_active` | `POST /api/pipelines`: dự án đã có job đang chờ/chạy/chờ duyệt; `POST /api/jobs`: dự án có pipeline đang hoạt động (kèm `pipeline_id`, `job_id`) |
 | 409 | `project_locked` | Thư mục dự án đang được **một hàng đợi khác** (`queue.db` khác) dùng (kèm `pipeline_id`, `job_id` của hàng đợi đó nếu biết) |
 | 409 | `approval_refused` | Duyệt chi phí bị từ chối (lệch ước tính, hết hạn, quá hạn mức…) |
+| 404 / 409 / 422 | `already_decided`, `checks_failed`, `reason_required`, `reviewer_required`, … | Duyệt video cuối bị từ chối: bảng mã đầy đủ ở mục 4c |
 | 411 | `can_content_length` | Thân dùng `Transfer-Encoding` (không hỗ trợ) |
 | 413 | `than_qua_lon` | Thân > `api.max_body_bytes` (64KB) |
 | 415 | `content_type_no` | `Content-Type` có mặt nhưng không phải `application/json`, hoặc có thân mà thiếu `Content-Type` |
+| 422 | `music_library_invalid` | `GET /api/music`: `library.json` của thư mục nhạc hỏng (mục 3b) |
 | 500 | `loi_may_chu` | Lỗi không lường trước (chi tiết chỉ nằm ở log của `serve`) |
 | 503 | `unavailable` | Máy dựng chưa đặt `GANI_DV_ALLOWED_ROOTS` |
 | 503 | `may_chu_ban` | Đã có `api.max_concurrent_requests` (32) kết nối cùng lúc; kèm `Retry-After: 1`, kết nối bị đóng ngay |
@@ -87,7 +90,7 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 |---|---|---|
 | `GET /api/health` | Daemon online không (nhịp tim < 15 giây), số job theo trạng thái, có khóa API không, ngân sách ngày | `HealthView` |
 | `GET /api/projects` | Dự án trong allow-list và đã có gì | `ProjectView[]` |
-| `POST /api/preflight` | Chạy đúng `preflight_check` của Python (nguồn sự thật duy nhất) | Kết quả preflight (`valid`, `errors`, `warnings`, `adjustments`, …) |
+| `POST /api/preflight` | Chạy đúng `preflight_check` của Python (nguồn sự thật duy nhất). Thân `{"options": {…}}`: `options` cùng khuôn với `POST /api/pipelines` (khóa tiếng Việt như `yeu-cau.md`); trường khác ngoài `options` → 400 | Kết quả preflight (`valid`, `errors`, `warnings`, `adjustments`, …) |
 | `POST /api/jobs` | Đưa bản dựng vào hàng đợi | `201` + `JobView[]` |
 | `POST /api/pipelines` | Ghi `options.json` + tạo chuỗi `analyze → draft → render` (mục 4b) | `201` + `PipelineView` |
 | `GET /api/pipelines/{id}` | Các job của một pipeline và trạng thái chung | `PipelineView` |
@@ -100,6 +103,9 @@ stack trace. Một số lỗi có thêm trường trong `error` (`pipeline_id`, 
 | `GET\|HEAD /media/{id}/{video\|cover\|srt}` | Thành phẩm của job đã xong, hỗ trợ HTTP **Range** | tệp |
 | `GET /api/music` | Nhạc trong `GANI_DV_MUSIC_DIR` kèm BPM, độ dài, nguồn BPM (mục 3b) | `MusicListView` |
 | `GET\|HEAD /media/music/{tên file}` | Nghe thử một bài nhạc, hỗ trợ HTTP **Range** | tệp âm thanh |
+| `GET /api/reviews?status=&from=` | Video cuối đã giao và trạng thái duyệt (mục 4c) | `ReviewListView` |
+| `POST /api/jobs/{id}/review/approve` | Duyệt video cuối: tệp chuyển sang `final/` (mục 4c) | `ReviewItemView` |
+| `POST /api/jobs/{id}/review/reject` | Yêu cầu sửa, bắt buộc có lý do (mục 4c) | `ReviewItemView` |
 
 ### 3b. Nhạc của máy dựng (`GET /api/music`)
 
@@ -178,19 +184,25 @@ xếp gì: bản dựng lẻ sẽ ghi đè tệp của pipeline. Job dựng lẻ
   "allowed_roots_configured": true,
   "ai_key_configured": false,
   "budget": {"limit_vnd": null, "spent_24h_vnd": 0.0, "reserved_vnd": 0.0},
-  "features": {"long_video": false}
+  "features": {"long_video": false,
+               "platforms": [{"id": "tiktok", "name": "TikTok", "short": "TikTok",
+                              "zalo_on_end_card": false, "default": true},
+                             {"id": "facebook", "name": "Facebook Reels", "short": "Reels",
+                              "zalo_on_end_card": true, "default": true}]}
 }
 ```
 
 `features.long_video`: video 3 phút đã mở chưa (`rules.durations.180.enabled`; bật ở pha 7e sau khi
 nghiệm thu thật). Giao diện khóa nút 3 phút khi là `false`; máy chủ cũ không có trường này.
 
-`features.platforms` (từ 14/10/2026): các nền tảng máy chủ dựng được, theo thứ tự trong
-`rules.platforms.profiles`: `[{"id": "tiktok", "name": "TikTok", "short": "TikTok",
-"zalo_on_end_card": false, "default": true}, {"id": "facebook", …}]`. Máy chủ cũ không có trường
-này: giao diện không hiện bước chọn nền tảng.
+`features.platforms` (từ 16/10/2026): các nền tảng máy chủ dựng được, theo thứ tự trong
+`rules.platforms.profiles`; `default` = được chọn sẵn (`rules.platforms.default`). Máy chủ cũ
+không có trường này: giao diện không hiện bước chọn nền tảng.
 
-`GET /api/jobs/1` cho một job đã xong (rút gọn `steps`):
+`GET /api/jobs/1` cho một job đã xong. Rút gọn: `steps` chỉ giữ 4 trong 8 bước, `qa.checks` chỉ
+giữ T3, và bỏ các trường `pipeline_id`, `depends_on`, `needs_approval`, `approval_expires_at`,
+`cost` (mục 4b), `platform`, `no_music` (mục 4b-2), `footage`, `verify`, `structure` (các mục con
+của 4b) và `review` (mục 4c):
 
 ```json
 {
@@ -220,9 +232,9 @@ này: giao diện không hiện bước chọn nền tảng.
   "cover_url": "/media/1/cover",
   "srt_url": "/media/1/srt",
   "steps": [
-    {"id": "inventory", "label": "Inventory (kiểm kê footage)", "status": "done", "detail": null},
-    {"id": "render_preview", "label": "Dựng bản xem trước (540p)", "status": "done", "detail": null},
-    {"id": "qc_verify", "label": "Soát kỹ thuật (T1–T7)", "status": "done", "detail": null},
+    {"id": "inventory", "label": "Kiểm kê footage", "status": "done", "detail": null},
+    {"id": "render_preview", "label": "Dựng bản xem nhanh (540p)", "status": "done", "detail": null},
+    {"id": "qc_verify", "label": "Soát kỹ thuật", "status": "done", "detail": null},
     {"id": "final_export", "label": "Xuất bản cuối (1080×1920)", "status": "queued", "detail": null}
   ],
   "qa": {
@@ -539,7 +551,7 @@ Job `draft` và `render` của một dự án có plan chia chương (`plan.json
 - `GET /api/health` có thêm `ai_key_configured` và `budget`: `limit_vnd` (`null` = không giới hạn
   ngày), `spent_24h_vnd`, `reserved_vnd` (đã duyệt nhưng chưa tiêu).
 
-### 4b-2. Nền tảng đăng: TikTok và Facebook Reels (từ 14/10/2026)
+### 4b-2. Nền tảng đăng: TikTok và Facebook Reels (từ 16/10/2026)
 
 - `POST /api/pipelines` và `POST /api/jobs` nhận thêm `platforms` (mảng id trong
   `rules.platforms.profiles`, ví dụ `["tiktok", "facebook"]`). Máy chủ tạo **một job `render` cho mỗi
@@ -582,6 +594,9 @@ mọi mục kiểm tra chưa đạt (rỗng khi duyệt được); `overdue` là
 | `GET /api/reviews?status=pending&from=2026-10-01` | `{"items": [{job_id, project_id, project_name, title, video, review}]}`. `status` và `from` (YYYY-MM-DD, UTC) tùy chọn; sai dạng thì `400` |
 | `POST /api/jobs/{id}/review/approve` | thân `{"reviewer": "Tên", "reason": "ghi chú tùy chọn"}`: tệp chuyển sang `final/` |
 | `POST /api/jobs/{id}/review/reject` | thân `{"reviewer": "Tên", "reason": "bắt buộc"}`: tệp ở lại `drafts/` |
+
+Thân `ReviewRequest`: `reviewer` bắt buộc, tối đa 64 ký tự; `reason` tối đa 500 ký tự; không nhận
+trường khác. Vượt giới hạn hoặc sai kiểu → `400 bad_request`.
 
 Cả hai `POST` trả `200` + một phần tử như trong `items`. Lỗi (thân `{"error": {"code", "message", ...}}`):
 
@@ -626,7 +641,7 @@ kiểm tra nào chưa đạt.
 | `etaSec` | `eta_sec` | `null` khi không chạy |
 | `steps: PipelineStep[]` | `steps` | Cùng 8 `id` của `PIPELINE_STEPS`; `status` ∈ `done/running/queued/error` |
 | `logLines: ConsoleLine[]` | `events` (hoặc `GET …/events`) | `ts`, `level` (`info/warn/error`), `text`: cùng hình với `ConsoleLine` |
-| `previewUrl` | `video_url` của job `size = "preview"` | Ghép tiền tố `http://127.0.0.1:8765` khi không dùng proxy |
+| `previewUrl` | `video_url` của job `size = "preview"` | Đường dẫn tương đối (`/media/…`), dùng thẳng: giao diện cùng nguồn gốc với `serve` (khi `npm run dev:real` thì qua proxy của Vite) |
 | `finalUrl` | `video_url` của job `size = "final"` | Giao diện gộp hai job cùng `(project_id, draft)` |
 | `qa: QaReport` | `qa` | Xem dưới |
 
@@ -636,8 +651,14 @@ và `speech.json`), `plan_compile` (← `plan.json`), `pick` (← `candidates.js
 `render_preview`, `qc_verify` (đạt/không đạt theo `result`), `final_export` (chỉ chạy khi job
 là `final`). Bước lỗi kèm `detail` là thông báo lỗi.
 
-**`qa`** (khác `QaReport` của frontend, xem "Khoảng trống"):
-`qa.checks` là T1–T7 với `code`, `label`, `passed`, `detail`;
+**`qa`** (`QaView`, khác `QaReport` của frontend, xem "Khoảng trống"):
+`qa.checks` là T1–T7 với `code`, `label`, `passed`, `detail`, cộng dòng `T8` khi Whisper đã nghe
+lại (bảng `qa.t8` dưới) và dòng `E1-NEN-TANG` ("Từ ngữ rủi ro theo nền tảng") khi bản dựng theo
+nền tảng có từ nền tảng đó hay hạn chế. `E1-NEN-TANG` chỉ là cảnh báo: luôn `passed = true`, không
+chặn giao hay duyệt; `detail` liệt kê từng chỗ.
+`qa.rounds` là số vòng dựng + soát của QC (tối đa `qc.max_rounds`); `qa.fixes` là các câu tiếng
+Việt về việc QC tự sửa ở vòng sau (ví dụ "T3: dựng lại vòng 2 với trần đỉnh …"), giao diện hiện ở
+dòng "Tự chỉnh"; `qa.loudness_two_pass` = có dựng lại với chuẩn hóa âm lượng 2 lượt.
 `qa.lufs`, `qa.true_peak_db` là số đo thật của lần dựng cuối (`null` nếu chưa đo hoặc im lặng).
 Để lấp `pass3_audio` của frontend: dùng các `checks` có `code == "T3"`.
 
@@ -675,9 +696,8 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
    `qa` (báo cáo kỹ thuật T1–T8 của video). Kết quả V/S nay nằm ở `verify` (mục trên) của job
    `draft`; chỉ có từ khi chạy bằng bản có 6i — job cũ có `verify: null`.
 2. **Wizard chạy cả chuỗi** dùng được từ 6c (`POST /api/pipelines`, mục 4b), nhưng footage vẫn
-   phải nằm sẵn trên máy dựng (không tải lên qua HTTP). `frontend_status = "awaiting_approval"` là
-   giá trị **mới** — giao diện phải xử lý (mở hộp thoại duyệt chi phí), backend không sửa nhánh
-   giao diện.
+   phải nằm sẵn trên máy dựng (không tải lên qua HTTP). `frontend_status = "awaiting_approval"`
+   là giá trị riêng của 6c: giao diện mở hộp thoại duyệt chi phí.
 3. `cover.jpg` và `phude.srt` dùng chung một tên cho mọi lần dựng của cùng một bản nháp: nếu
    dựng lại (nháp rồi cuối), chúng là của lần dựng **gần nhất**.
 4. `qc_report.json` cũng dùng chung theo bản nháp: API chỉ trả `qa` nếu tệp được ghi trong
@@ -731,26 +751,14 @@ vẫn đọc bình thường (`qa.t8 = "unavailable"`, không có dòng T8).
   - Bấm vào giao diện từ **trang khác** bị 403 `yeu_cau_cheo_trang`; gõ tay địa chỉ thì bình
     thường (`Sec-Fetch-Site: none`).
 
-## 8. Gợi ý cho `realApi` (phía frontend)
+## 8. Giao diện gọi API thế nào, thử bằng dòng lệnh
 
-`frontend/vite.config.ts` đã proxy cả `/api` lẫn `/media` sang `serve`, nên giao diện dùng URL
-tương đối cho video. Có thể dùng URL tuyệt đối `http://127.0.0.1:8765` (được phép nhờ Referer).
-
-```ts
-// Theo dõi một job bằng polling 1 giây (thay cho WebSocket mô phỏng của mockApi)
-subscribeJob(id, onUpdate) {
-  let after = 0;
-  const timer = setInterval(async () => {
-    const job = await (await fetch(`/api/jobs/${id}`)).json();
-    onUpdate(toRenderJob(job));                  // tự ánh xạ theo mục 5
-    if (['completed', 'failed', 'cancelled'].includes(job.status)) clearInterval(timer);
-  }, 1000);
-  return () => clearInterval(timer);
-}
-// Chỉ lấy dòng log mới: fetch(`/api/jobs/${id}/events?after=${after}`), cập nhật `after` = id cuối.
-// Hủy / thử lại: fetch(`/api/jobs/${id}/cancel`, { method: 'POST',
-//   headers: { 'Content-Type': 'application/json' } })
-```
+`frontend/src/services/realApi.ts` đã cài đặt hợp đồng này: gọi bằng đường dẫn tương đối
+(`services/http.ts`); theo dõi job bằng polling `GET /api/jobs/{id}` (thẻ pipeline:
+`GET /api/pipelines/{id}` rồi chi tiết từng job), chuỗi `setTimeout` để yêu cầu sau chỉ gửi khi
+yêu cầu trước đã xong: 1 giây khi đang chạy, 2 giây khi chờ duyệt, 3 giây khi đã xong; đổi kiểu
+bằng `services/mappers.ts` (mục 5). Khi chạy `npm run dev:real`, `frontend/vite.config.ts` chuyển
+`/api` và `/media` sang `serve` ở `127.0.0.1:8765`.
 
 Thử nhanh bằng dòng lệnh:
 

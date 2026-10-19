@@ -66,8 +66,11 @@ python -m gani_dung_video serve    # máy chủ giao diện + API, chỉ 127.0.0
 python -m gani_dung_video daemon   # người làm việc: lấy job từ hàng đợi và chạy
 ```
 
-Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · daemon BẬT"**. Nếu ghi
-"daemon TẮT", job vẫn xếp hàng nhưng chưa chạy.
+Mở `http://127.0.0.1:8765/`. Ô **"Máy dựng"** trên thanh trên cùng phải ghi **"đang chạy · N video
+chờ/đang dựng"** (xanh; có thêm "· M chờ duyệt chi phí" thì ô chuyển vàng). Ghi **"máy dựng đang
+TẮT — chạy lệnh daemon"**: job vẫn xếp hàng nhưng chưa chạy. Ghi **"không kết nối được máy
+dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nhạc" và, khi `.env` thiếu khóa, ô
+"Khóa Claude: chưa cài".
 
 - Chỉ chạy **một** daemon mỗi hàng đợi (chạy thêm sẽ báo đã có daemon khác).
 - Dừng: `Ctrl+C` = chạy nốt job đang làm rồi dừng; `Ctrl+C` lần hai = dừng ngay, job đang chạy
@@ -76,9 +79,11 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
 - Mất điện / tắt máy đột ngột: khi daemon bật lại, job **phân tích và dựng** đang chạy tự trở lại
   hàng đợi (còn lượt thử). Job **kịch bản có gọi Claude thì không tự thử lại** (tránh tốn tiền
   hai lần): nó báo lỗi, bấm "Thử lại (duyệt lại)" để duyệt chi phí mới.
-- Cổng 8765 bận: giao diện đã build gọi cứng `http://127.0.0.1:8765`. Đổi cổng thì phải build
-  lại giao diện với `VITE_API_BASE=http://127.0.0.1:<cổng>` rồi `serve --port <cổng>`; cách đơn
-  giản hơn là tìm và tắt tiến trình đang giữ cổng 8765.
+- Cổng 8765 bận: cách đơn giản nhất là tìm và tắt tiến trình đang giữ cổng 8765. Muốn dùng cổng
+  khác thì chạy `serve --port <cổng>` rồi mở `http://127.0.0.1:<cổng>/`, không cần build lại:
+  giao diện gọi API theo đường dẫn tương đối nên đi theo cổng của trang. Biểu tượng "GANI Video"
+  (`scripts\chay-gani.bat`) thì ghi cứng cổng 8765, và `npm run dev:real` của giao diện chỉ
+  chuyển `/api`, `/media` tới 8765 (`frontend/vite.config.ts`).
 
 ## 3. Chuẩn bị footage
 
@@ -144,7 +149,8 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
    tốn gì**. Nút "3 phút" bị khóa nếu máy chủ chưa mở video 3 phút.
 2. **Chạy cả chuỗi**: phân tích footage (0đ, chậm: vài chục phút, vì nhận dạng hình và lời trên
    CPU; chạy lại dự án không đổi thì dùng lại kết quả) → kịch bản → dựng.
-3. Khi tới kịch bản, job **dừng chờ duyệt chi phí** (tab Hàng đợi, nút "Xem & duyệt chi phí"):
+3. Khi tới kịch bản, job **dừng chờ duyệt chi phí** (tab **Video đang làm**, nút "Xem & duyệt
+   chi phí"):
    - xem ước tính một lần gọi tệ nhất, trần cho độ dài video, hạn mức ngày còn lại, cảnh báo
      footage;
    - nhập **số tiền tối đa** cho job (gợi ý sẵn, không áp dụng tự động), **tick đồng ý đúng số
@@ -156,8 +162,11 @@ Mở `http://127.0.0.1:8765/`. Thanh trên cùng phải ghi **"Máy chủ OK · 
 4. Dựng bản nháp 540p, soát kỹ thuật T1–T7 tự động (chữ, hình, âm lượng −14 LUFS, đỉnh). Xem
    video, đọc "Soát chất lượng" và dòng **"Tự chỉnh"** (việc QC tự sửa, ví dụ hạ trần đỉnh ở vòng
    2). Bảng **"Kiểm tra kịch bản AI"** cho biết V1–V9 (V10 với video 3 phút) đạt/trượt từng vòng.
-5. Ưng bản nào thì bấm **Render lại** để dựng **bản cuối 1080×1920**. Tải về từ nút "Tải video
-   final". Kèm `cover.jpg` và `phude.srt` cùng thư mục.
+5. Ưng bản nào thì dựng **bản cuối 1080×1920**: tab **Tạo video mới** → chọn dự án → chế độ
+   **Chỉ dựng lại**, chọn đúng bản nháp, tick "Dựng bản cuối 1080×1920" (chế độ này dùng sản
+   phẩm và chiến dịch mặc định, xem mục 9c). Nút **Dựng lại** trên trang video chỉ dựng lại đúng
+   cỡ của video đó, không đổi nháp thành bản cuối. Tải về bằng nút **"Tải bản cuối"**.
+   `cover.jpg` và `phude.srt` nằm cùng thư mục làm việc (mục 9).
 
 ### Chi phí (số thật và trần)
 
@@ -226,7 +235,7 @@ Mọi video mang logo thật của GANI và số **Zalo 0853 9999 77**. Thông s
   `python scripts/tao_logo_video.py` (cần `pdftocairo` và Pillow, chỉ dùng khi tạo lại ảnh).
   Muốn quay về logo chữ thì xóa khóa `logo_image`.
 
-## 6d. Đăng TikTok và Facebook Reels (từ 14/10/2026)
+## 6d. Đăng TikTok và Facebook Reels (từ 16/10/2026)
 
 GANI đăng mỗi video lên **TikTok** và **Facebook Reels** (có chạy quảng cáo, không gắn giỏ hàng).
 Ở bước **"Đăng lên"** của Wizard, hai ô đều được chọn sẵn; bỏ ô nào thì không dựng bản đó. Mỗi
@@ -312,7 +321,7 @@ cho tới khi hàng đợi kia hết job cho dự án đó.
 | `drafts.json` | kịch bản đã kiểm và căn phách (tiêu đề chương nằm ở đây) |
 | `verify_report.json` | kết quả V1–V10 (S1–S6) **theo từng vòng**, kể cả khi trượt |
 | `ai_log.jsonl` | mỗi vòng gọi Claude: token vào/ra, chi phí (không ghi nội dung gửi đi, không ghi khóa) |
-| `render/<A>/nhap_A_540p.mp4`, `video_A_1080x1920.mp4` | video nháp / cuối |
+| `render/<A>/nhap_A_540p.mp4`, `video_A_1080x1920.mp4` | video nháp / cuối; bản theo nền tảng nằm ở `render/<A>-<nền tảng>/` (ví dụ `render/A-tiktok/`, mục 6d), các tệp dưới đây cũng vậy |
 | `render/<A>/cover.jpg`, `phude.srt`, `qc_report.json`, `render_log.json` | ảnh bìa, phụ đề, kết quả QC, nhật ký dựng để dựng lại đúng bản này |
 | `render/<A>/manifest.json` | hồ sơ truy vết của video: tùy chọn, mã băm `plan.json`/`rules.json`/`glossary.json`, model, file nguồn, kết quả E1, chi phí thật (mục 9a) |
 | `delivery/<chiến-dịch>/{raw,drafts,final,metadata}` | bản đã đạt kiểm tra, đặt tên theo quy ước (mục 9a) |
@@ -322,19 +331,21 @@ Nhật ký từng job (khi cần gỡ lỗi): `<GANI_DV_QUEUE_DIR>/logs/<số jo
 ## 9a. Kiểm tra E1, manifest và giao hàng (Dev Package 03, T-E)
 
 Sau mỗi lần dựng, ngoài T1–T8 còn có **E1**: tám mục pass/fail kèm số đo, ghi trong
-`manifest.json` (mỗi mục có `value`, `limit`, `detail`). Mục nào trượt (mức chặn) thì video **không
-được giao** và `qc_passed` là sai, giống một lỗi QC.
+`manifest.json` (mỗi mục có `value`, `limit`, `detail`); bản dựng theo nền tảng có thêm mục thứ
+chín `E1-NEN-TANG`, chỉ cảnh báo. Mục nào trượt (mức chặn) thì video **không được giao** và
+`qc_passed` là sai, giống một lỗi QC.
 
 | Mục | Đo gì | Ngưỡng (`rules.json` → `qc`) |
 |---|---|---|
 | `E1-DUR` | độ dài nội dung (file trừ khung kết) | sai số `duration_tolerance_sec`: ≤ 60 giây ±0,5; 180 giây ±1; đem so với `duration_reference` (`plan` hoặc `chosen`, xem dưới) |
-| `E1-DUR-GAP` | độ dài kế hoạch so với độ dài đã chọn (lỗ chặn của chế độ `plan`) | `duration_plan_gap_pct` = ±10% (15 giây ±1,5s; 180 giây ±18s) |
+| `E1-DUR-GAP` | độ dài kế hoạch (tổng phách, trước khi cắt đuôi) so với độ dài đã chọn; chạy với mọi `duration_reference` | `duration_plan_gap_pct` = ±10% (15 giây ±1,5s; 180 giây ±18s) |
 | `E1-FORMAT` | độ phân giải, tỷ lệ 9:16, codec, số khung hình (T1, T2) | đúng cấu hình |
 | `E1-LOUD` | âm lượng, đỉnh thật, không clip (T3) | −14 ±1 LUFS, đỉnh ≤ trần |
 | `E1-PICTURE` | khung đen (chặn), hình đứng (chỉ cảnh báo) (T4, T5) | `black_min_sec`, `freeze_min_sec` |
 | `E1-SAFE` | chữ nằm trong vùng an toàn 1080×1920 | `safe_zone`: trên 250, dưới 400, trái 60, phải 60 (px) |
 | `E1-GLYPH` | mọi ký tự có glyph trong font (dấu tiếng Việt không thành ô trống) | 0 ký tự thiếu |
 | `C1` | không cụm cấm trên màn hình (cổng C1 trước ffmpeg vẫn chặn trước khi dựng) | `glossary.json` → `banned_claims` |
+| `E1-NEN-TANG` | chỉ ở bản theo nền tảng: từ ngữ nền tảng đó hay hạn chế, trên màn hình hoặc lời nói (mục 6d). **Chỉ cảnh báo**, mục luôn đạt, không chặn giao hay duyệt | `glossary.json` → `platform_risk_words` |
 
 **Độ dài:** video ra **đúng độ dài đã chọn** (15/30/45/60/180 giây; chưa tính khung kết). Quy tắc
 chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi độ dài phách.
@@ -366,10 +377,11 @@ chốt 13/10/2026 ("hướng B"): giữ số phách đã lập, chỉ đổi đ�
   `deviation_vs_plan`, bất kể `duration_reference`.
 
 **Giao hàng:** video đạt cả bộ kiểm tra được chép sang `edit/delivery/<chiến-dịch>/drafts/` với tên
-`GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_v{n}_{YYYYMMDD}.mp4` (chữ thường, gạch
-ngang, không dấu; `v{n}` tăng theo số bản cùng ngày, tính cả `drafts/` lẫn `final/`), manifest sang
-`metadata/`. `final/` chỉ nhận video đã được người duyệt (mục 9b) và `raw/` dành cho footage gốc
-(không chép vào đây).
+`GANI_{sản-phẩm}_{phong-cách}_{mục-đích}_{độ-dài}s_9x16_{nền-tảng}_{nhạc}_v{n}_{YYYYMMDD}.mp4`
+(chữ thường, gạch ngang, không dấu; `{nền-tảng}` chỉ có ở bản theo nền tảng, `{nhạc}` =
+`khong-nhac` chỉ có ở bản không nhúng nhạc, phần trống bị bỏ cùng một dấu `_`; `v{n}` tăng theo
+số bản cùng ngày, tính cả `drafts/` lẫn `final/`), manifest sang `metadata/`. `final/` chỉ nhận
+video đã được người duyệt (mục 9b) và `raw/` dành cho footage gốc (không chép vào đây).
 Đặt sản phẩm và chiến dịch bằng cờ của lệnh dựng: `render <thư mục> --san-pham "Giò lụa"
 --chien-dich "Ra mắt tháng 10"`; không đặt thì sản phẩm là `chung` và chiến dịch là tên thư mục
 footage. Sản phẩm ngoài danh mục `delivery.naming.products` vẫn được nhưng manifest có cảnh báo.
@@ -389,8 +401,8 @@ video" bị khóa khi còn mục kiểm tra hỏng (danh sách hiện ngay trên
 
 | Việc | Lệnh | Kết quả |
 |---|---|---|
-| Xem danh sách chờ | `python -m gani_dung_video review list` (thêm `--trang-thai approved\|changes_requested\|tat-ca`, `--tu-ngay 2026-10-01`) | một dòng mỗi video: số job, trạng thái, tên tệp, "QUÁ HẠN" nếu chờ lâu |
-| Duyệt | `review approve ID --nguoi-duyet "Tên"` | tệp **chuyển** sang `final/`, manifest ghi người và giờ |
+| Xem danh sách chờ | `python -m gani_dung_video review list` (thêm `--trang-thai approved\|changes_requested\|tat-ca`, `--tu-ngay 2026-10-01`, `--limit 50`) | một dòng mỗi video: số job, trạng thái, tên tệp, "QUÁ HẠN" nếu chờ lâu |
+| Duyệt | `review approve ID --nguoi-duyet "Tên"` (thêm `--ghi-chu "..."` nếu muốn ghi chú) | tệp **chuyển** sang `final/`, manifest ghi người và giờ |
 | Yêu cầu sửa | `review reject ID --ly-do "chữ cuối bị che"` | tệp ở lại `drafts/`, lý do ghi vào manifest; **bắt buộc có lý do** |
 
 - `ID` là số job dựng bản cuối (cột `#` của `review list`). Không đặt `--nguoi-duyet` thì dùng tên
@@ -432,8 +444,8 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
     (trước 0,67s), vì một phách lưới = cảnh trung bình 4s chia cho cảnh ngắn nhất.
 - **Hộp cảnh báo BPM chưa được thử tay với nhạc thật của xưởng.** Đã thử trên máy dựng thật
   với bài tổng hợp (ca vừa khít, cắt đuôi, không dựng được, đang đo, không đo được); giao diện
-  chỉ có test tự động cho hàm thuần, không có test component: cần thử tay trước T-F với nhạc
-  thật và `library.json` thật.
+  chỉ có test tự động cho hàm thuần, không có test component: vẫn cần thử tay với nhạc thật và
+  `library.json` thật.
 - Danh sách nhạc không đệ quy thư mục con và tối đa 500 bài. Liên kết tượng trưng ra ngoài
   thư mục nhạc bị bỏ qua (test liên kết bị bỏ qua trên Windows khi không đủ quyền tạo).
 - Bảng chỉ biết BPM nguyên trong 55–180 (làm tròn gần nhất): bài ngoài dải này không được kết luận
@@ -467,7 +479,7 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
 
 | Thấy gì | Nguyên nhân thường gặp → cách xử lý |
 |---|---|
-| "daemon TẮT" | chưa chạy `daemon` hoặc đã dừng → chạy lại |
+| Ô "Máy dựng" ghi "máy dựng đang TẮT" | chưa chạy `daemon` hoặc đã dừng → chạy lại |
 | Job lỗi ngay, tốn 0đ, nói thiếu khóa | `ANTHROPIC_API_KEY` chưa có trong `.env` |
 | "Dừng trước khi gọi Claude (0đ)" (mã 3) | cổng khả thi: footage không đủ cảnh cho kế hoạch → thêm clip, giảm độ dài hoặc số bản |
 | Job kịch bản trượt sau 3 vòng | xem bảng "Kiểm tra kịch bản AI": V4 lặp cảnh thường là thiếu footage; nút "Thử lại (duyệt lại)" yêu cầu duyệt chi phí mới |
@@ -476,7 +488,7 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
 | QC: T4 khung đen / T5 đứng hình | xem cảnh ở giây được báo; thường do clip nguồn hỏng hoặc quá ngắn |
 | Job dựng bị báo "treo" | không có dòng log trong khoảng `stall` (video 3 phút đã nới tự động); xem log job |
 | 409 `project_locked` | xem mục 8 |
-| Cổng 8765 bận | tìm và tắt tiến trình `serve` cũ (đổi cổng cần build lại giao diện, xem mục 2) |
+| Cổng 8765 bận | tìm và tắt tiến trình `serve` cũ, hoặc `serve --port <cổng khác>` (không cần build lại; biểu tượng "GANI Video" chỉ dùng 8765, xem mục 2) |
 | `review approve` báo "đang được người khác duyệt" | tệp khóa `.review.lock` còn từ lần trước; quá 2 phút tự được bỏ qua. Xóa tay tệp đó nếu chắc không ai đang duyệt |
 | Duyệt nhầm / cần hoàn tác sau khi duyệt | không có lệnh hoàn tác. Làm tay 4 bước: (1) chuyển tệp từ `final/` về `drafts/`; (2) mở `metadata/<tên>.manifest.json`, sửa `review.status` về `pending` (xóa `decided_at`, `decided_by`, `reason`) hoặc xóa cả khối `review`; (3) làm y như vậy với `edit/render/<bản>/manifest.json` nếu `delivered_as` của nó cùng tên; (4) `review list` để kiểm lại. Manifest cũ (v1) vẫn đọc được nên không mất dữ liệu |
 | Video 3 phút không chọn được | máy chủ chưa mở (`durations.180.enabled = false` trong `config/rules.json`, bật sau nghiệm thu thật) |

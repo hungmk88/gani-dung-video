@@ -23,6 +23,10 @@ Quyết định em xin anh chốt (mỗi cái có đề xuất, xem mục 9): Q1
 
 ## 1. Hiện trạng: cái gì đã có, cái gì đang chặn
 
+> Bảng này là hiện trạng **trước 7a** (lúc viết thiết kế), giữ nguyên làm lịch sử. Các dòng cấu hình
+> riêng 180s, chặn, mã chết, V10 và gọi Claude đã được xử lý ở các pha sau: xem "Ghi chú triển
+> khai" của 7a, 7b, 7c, 7d, 7g trong mục 10.
+
 | Hạng mục | Hiện trạng [đọc] |
 |---|---|
 | Lựa chọn độ dài | `180` đã nằm trong bảng thời lượng, bảng tương thích phong cách×độ dài và bảng số cảnh cần (`scenes_needed`: Kể chuyện nghề 60, Bán hàng có lời 72, Review 90, Sang trọng 45, TVC 138) |
@@ -245,7 +249,8 @@ Cho đến khi anh chốt Q1–Q4, em không mở nhánh hay viết code GĐ7.
 - **Trần tổng:** `pick.max_total_candidates = 160` (mỗi ứng viên ≈ 94 token vào). Vượt thì các khối giảm đều nhưng không dưới số cảnh tối thiểu của khối; trần không thể đáp ứng thì bỏ qua thay vì bỏ đói khối. Giới hạn cứng 20/khối giữ nguyên vì tiểu khối ~20 phách chỉ cần ~10.
 - **Cổng khả thi theo cụm chương:** thử từng khối, rồi mọi tập con *bên trong* một chương, rồi mọi tập con các chương gộp lại (chỉ cả kế hoạch khi có hơn 12 cụm). Vẫn chỉ là điều kiện cần (không từ chối kế hoạch dựng được; test vét cạn ngẫu nhiên có chương). Thông báo gọi tên "chương 'x'" thay vì liệt kê tiểu khối (từ 17/10/2026 bằng tên tiếng Việt trong `rules.block_names`, ví dụ "chương 'Quy trình'").
 - **Footage giả:** `tests/mock_footage.py` tạo 28 clip × 3 đoạn (không có video), dùng cho test 7b và các pha sau; 28 clip đủ cho kế hoạch 180s 2 bản, 9 clip thì bị cổng chặn.
-- **Chưa làm ở 7b:** prompt/schema/luật V để 7c. `footage_fit` gộp theo chương làm sau (17/10/2026): một dòng cho mỗi chương, `role` là id chương, như cổng khả thi gọi tên "chương 'x'".
+- **Chưa làm ở 7b:** prompt/schema/luật V để 7c.
+- **Làm sau 7b (17/10/2026):** `footage_fit` gộp theo chương: một dòng cho mỗi chương, `role` là id chương, như cổng khả thi gọi tên "chương 'x'".
 
 ### Ghi chú triển khai 7c
 

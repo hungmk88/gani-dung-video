@@ -82,7 +82,7 @@ def check_duration(
     to the reference in seconds, `limit` the allowed gap.
 
     Beat-driven videos (music, grid) are held to rules.qc.duration_tolerance_sec around the
-    plan's own length ("plan", the default for now) or the chosen length ("chosen"), see
+    chosen length ("chosen", the default) or the plan's own length ("plan"), see
     rules.qc.duration_reference. The plan length is the chosen length rounded to whole scenes
     on the beat grid (spec §7.2); E1-DUR-GAP keeps it near the chosen length.
 
@@ -119,7 +119,9 @@ def check_duration_gap(
 ) -> tuple[E1Item, list[Finding]]:
     """E1-DUR-GAP: the plan's length stays within rules.qc.duration_plan_gap_pct of the chosen
     length, so reading E1-DUR against the plan cannot hide a plan that drifted away from what
-    the user asked for. `value` is planned minus chosen, in seconds."""
+    the user asked for. It runs whatever rules.qc.duration_reference says: with "chosen" it is
+    what stops a music plan that grew far past the chosen length (the tail trim would otherwise
+    hide it). `value` is planned minus chosen, in seconds."""
     pct = float(rules["qc"]["duration_plan_gap_pct"])
     limit, gap = pct * chosen_sec, planned_sec - chosen_sec
     detail = (f"Độ dài kế hoạch {planned_sec:.2f}s, đã chọn {chosen_sec}s: lệch {gap:+.2f}s, cho "
@@ -335,8 +337,9 @@ def build_e1(
     e: Edl, rules: Rules, found: Sequence[Finding], lufs: float | None, true_peak_db: float | None,
     checks: Mapping[str, E1Item],
 ) -> E1Report:  # fmt: skip
-    """Put the T1–T5 outcome and the new checks (keys E1-DUR, E1-DUR-GAP, E1-SAFE, E1-GLYPH, C1)
-    in one report, in the order the owner listed them. `found` = the findings of the QC loop."""
+    """Put the T1–T5 outcome and the new checks (keys E1-DUR, E1-DUR-GAP, E1-SAFE, E1-GLYPH, C1,
+    plus E1-NEN-TANG on a platform build: a warning, it always passes) in one report, in the
+    order the owner listed them. `found` = the findings of the QC loop."""
     items = [
         checks["E1-DUR"],
         checks["E1-DUR-GAP"],

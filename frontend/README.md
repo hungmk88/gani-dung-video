@@ -1,4 +1,4 @@
-# GANI FOODS AI Studio — frontend (GĐ6 UI prototype)
+# GANI FOODS AI Studio — frontend
 
 Bảng điều khiển (Studio Wizard + Job Queue) cho pipeline dựng video tự động
 `gani-dung-video`. Giao diện và logic Preflight Validator chạy trên trình duyệt, bám vào
@@ -47,18 +47,33 @@ chỉ là nút nghe thử nhạc và khung xem preview không có gì để phá
 
 ```
 src/
-  types/rules.ts        kiểu dữ liệu khớp domain/options.py, preflight.py, verify.py, qc.py
-  data/rules.ts          dữ liệu THẬT copy từ config/rules.json (không bịa)
-  data/mockMusic.ts       4 track BPM thật (xem trên)
-  data/mockPlan.ts        1 bản plan.json thật (Xuong GANI/edit/plan.json, 29/09/2026)
-  lib/preflight.ts        preflight phía trình duyệt — mirror domain/preflight.py (X1–X18)
-  services/config.ts      công tắc USE_MOCK — chỗ duy nhất cần đổi khi GĐ6 có backend thật
-  services/api.ts         interface StudioApi — component chỉ import từ đây
-  services/mockApi.ts      mô phỏng daemon SQLite Queue (setTimeout, không phải WS thật)
-  components/wizard/       FootageDropzone, RuleSelector, MusicPicker, PreflightValidator
-  components/queue/        PipelineStepper, VideoPlayerWithQA, ConsoleLog, PlanModal
+  App.tsx, main.tsx         hai tab "Tạo video mới" (wizard) và "Video đang làm" (queue)
+  types/api.ts              kiểu dữ liệu trên dây, chép tay từ domain/api_models.py
+  types/rules.ts            kiểu dữ liệu của giao diện (tùy chọn, preflight, job, QC)
+  data/rules.ts             bản sao config/rules.json, glossary.json cho wizard và bản mô
+                            phỏng (rules.test.ts so với file gốc)
+  data/bpmSafe.ts           bản sao music.bpm_safe_by_style_duration (test so với rules.json)
+  data/mockMusic.ts         4 track BPM thật cho bản mô phỏng
+  data/mockPlan.ts          1 bản plan.json thật cho bản mô phỏng
+  lib/                      hàm thuần, test bằng `node --test` (duyệt chi phí, BPM, nhạc,
+                            nền tảng, duyệt video cuối, chương 3 phút, bảng V/S, polling)
+  lib/preflight.ts          preflight của bản mô phỏng: chỉ các mã chỉ phụ thuộc tùy chọn
+                            (X1–X4, X9–X11, X14, X15, ma trận tương thích; X5/X6 ước tính);
+                            bản thật gọi POST /api/preflight
+  services/config.ts        công tắc USE_MOCK (VITE_USE_MOCK)
+  services/api.ts           interface StudioApi — component chỉ import `api` từ đây
+  services/realApi.ts       StudioApi qua API cục bộ (polling, docs/api-jobs.md)
+  services/http.ts          gọi JSON theo đường dẫn tương đối, lỗi {"error": …} → ApiError
+  services/mappers.ts       đổi kiểu trên dây ↔ kiểu giao diện (docs/api-jobs.md §5)
+  services/mockApi.ts       mô phỏng hàng đợi trong trình duyệt (setTimeout)
+  components/layout/        Header: ô "Máy dựng", "Thư viện nhạc", hai tab
+  components/wizard/        chọn dự án, tùy chọn, nhạc, nền tảng, tên file giao, Preflight
+  components/queue/         danh sách job, duyệt chi phí, video và QC, duyệt video cuối
 ```
 
-Khi GĐ6 được duyệt và có daemon thật: implement `realApi` trong `services/api.ts`, đổi
-`USE_MOCK` (hoặc `VITE_USE_MOCK=false`) trong `services/config.ts`. Không component nào
-cần sửa vì tất cả chỉ gọi `api` từ `services/api.ts`.
+Bản thật hay mô phỏng chọn lúc build: `npm run dev` / `npm run build` là mô phỏng;
+`npm run dev:real` / `npm run build:real` đọc `.env.real` (`VITE_USE_MOCK=false`) và dùng
+`realApi`. Khi chạy `dev:real`, `vite.config.ts` chuyển `/api` và `/media` tới
+`127.0.0.1:8765`; bản build được `serve` phục vụ cùng gốc nên gọi được ở cổng nào cũng vậy.
+
+Kiểm tra: `npm test`, `npx tsc -b`, `npm run lint`, `npm run build:real`.

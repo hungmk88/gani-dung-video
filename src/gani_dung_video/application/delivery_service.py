@@ -50,9 +50,10 @@ MANIFEST = "manifest.json"
 
 @dataclass(frozen=True)
 class DeliveryTarget:
-    """Who the video is for. Both fields are optional: the option file has no product or
-    campaign yet, so a missing product becomes rules.delivery.naming.default_product and a
-    missing campaign the name of the footage folder. `day` is for tests (default: today)."""
+    """Who the video is for (render --san-pham / --chien-dich; the queue fills them from the
+    option file's san_pham / chien_dich). Both are optional: a missing product becomes
+    rules.delivery.naming.default_product and a missing campaign the name of the footage
+    folder. `day` is for tests (default: today)."""
 
     product: str | None = None
     campaign: str | None = None
