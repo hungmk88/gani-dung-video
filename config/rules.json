@@ -392,6 +392,14 @@
    "products": ["gio-lua", "cha-lua", "cha-bo", "nem-chua", "bo-vien", "chung"]
   }
  },
+  "_ghi_chu_block_names": "Tên tiếng Việt của khối và chương (17/10/2026) cho mọi chữ người dùng đọc: thông báo của cổng khả thi, cảnh báo footage, dòng thời gian video 3 phút. Khóa là id trong purposes.*.blocks và durations.180.layouts.*.chapters; tiểu khối '<chương>#<k>' đọc là '<tên> (đoạn k)'. Thêm khối mới thì thêm tên ở đây và ở frontend/src/data/rules.ts (test hai bên báo nếu thiếu).",
+ "block_names": {
+   "hook": "Mở đầu", "nhu_cau": "Nhu cầu", "san_pham": "Sản phẩm", "bang_chung": "Bằng chứng",
+   "cta": "Kêu gọi", "ve_sinh": "Vệ sinh", "quy_trinh": "Quy trình", "hook_uu_dai": "Mở đầu ưu đãi",
+   "chi_tiet_uu_dai": "Chi tiết ưu đãi", "cta_gap": "Kêu gọi gấp", "mo": "Mở đầu",
+   "con_nguoi": "Con người", "gia_tri": "Giá trị", "logo": "Logo", "con_nguoi_1": "Con người (1)",
+   "con_nguoi_2": "Con người (2)"
+ },
   "_ghi_chu_platforms": "Nền tảng đăng (chủ chốt 16/10/2026: GANI đăng TikTok và Facebook Reels, có chạy quảng cáo, không gắn giỏ hàng). Mỗi bản nháp được dựng riêng cho từng nền tảng chọn ở Wizard (mặc định: default), cùng footage, kịch bản và nhịp cắt; profiles chỉ đổi: cta theo mục đích (thiếu mục đích nào thì giữ câu của purposes; không dùng ô [ngày]), zalo_on_end_card (TikTok: không ghi số Zalo ở khung kết, khách liên hệ bằng bình luận, tin nhắn TikTok, link trong hồ sơ), tên file giao có phần {nen-tang} và thư mục dựng edit/render/<bản>-<nền tảng>. Câu CTA của TikTok tránh từ điều hướng ra ngoài (nhắn tin, inbox, Zalo, sỉ…); sửa ở đây nếu chủ muốn câu khác. Không nhúng nhạc (16/10/2026, ô ở Wizard, render --khong-nhac): bỏ nhạc của kế hoạch khỏi file, nhịp cắt giữ nguyên, nhạc chèn trên app khi đăng; tên file giao có thêm phần {nhac} = delivery.naming.no_music_tag.",
  "platforms": {
   "default": ["tiktok", "facebook"],
