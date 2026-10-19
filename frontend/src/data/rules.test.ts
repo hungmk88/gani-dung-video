@@ -79,6 +79,10 @@ test('the platforms are the backend ones, same order and defaults', () => {
   assert.deepEqual(RULES.platforms.map((p) => ({ ...p })), want);
 });
 
+test('the block names are the backend ones', () => {
+  assert.deepEqual({ ...RULES.blockNames }, rules.block_names);
+});
+
 test('the product catalogue of the delivery names is the backend one', () => {
   assert.deepEqual([...RULES.deliveryProducts], rules.delivery.naming.products);
 });

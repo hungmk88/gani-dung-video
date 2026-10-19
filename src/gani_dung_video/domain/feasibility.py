@@ -34,6 +34,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from gani_dung_video.domain.block_names import block_name
 from gani_dung_video.domain.pick import Candidate, PickFile
 from gani_dung_video.domain.plan import Plan, PlanBlock
 from gani_dung_video.domain.preflight import Rules
@@ -71,10 +72,6 @@ def _supply(cands: Iterable[Candidate], per_clip: int) -> int:
     return sum(sum(sorted(caps, reverse=True)[:per_clip]) for caps in by_clip.values())
 
 
-def _names(blocks: Sequence[str]) -> str:
-    return ", ".join(f"'{b}'" for b in blocks)
-
-
 def _clusters(plan: Plan) -> list[list[int]]:
     """Blocks that belong together: the sub-blocks of a chapter form one cluster, every other
     block (and every block of a short video) is a cluster of its own."""
@@ -90,16 +87,17 @@ def _clusters(plan: Plan) -> list[list[int]]:
     return out
 
 
-def _group_label(plan: Plan, idx: Sequence[int]) -> str:
-    """Names for a failing group: a whole chapter reads as "chương 'x'", other blocks by role."""
+def _group_label(plan: Plan, idx: Sequence[int], rules: Rules) -> str:
+    """Names for a failing group: a whole chapter reads as "chương 'Quy trình'", other blocks by
+    their Vietnamese name (rules.json → block_names)."""
     chosen = set(idx)
     parts: list[str] = []
     for cluster in _clusters(plan):
         blocks = [plan.blocks[i] for i in cluster]
         if blocks[0].chapter is not None and chosen.issuperset(cluster):
-            parts.append(f"chương '{blocks[0].chapter}'")
+            parts.append(f"chương '{block_name(rules, blocks[0].chapter)}'")
         else:
-            parts += [f"'{plan.blocks[i].role}'" for i in cluster if i in chosen]
+            parts += [f"'{block_name(rules, plan.blocks[i].role)}'" for i in cluster if i in chosen]
     return ", ".join(parts)
 
 
@@ -155,10 +153,11 @@ def check_feasible(plan: Plan, pick: PickFile, rules: Rules, drafts: int) -> Sho
         if len(idx) == 1:
             b = chosen[0]
             text = msgs["FEASIBLE_BLOCK"].format(
-                block=b.role, beats=plan.planned_beats if lone else b.beats, tol=tol,
+                block=block_name(rules, b.role), beats=plan.planned_beats if lone else b.beats,
+                tol=tol,
                 count=count, have=have, per_clip=per_clip, tags=_tags(b))  # fmt: skip
             return Shortfall("block", roles, want, have, text)
-        text = msgs["FEASIBLE_GROUP"].format(blocks=_group_label(plan, idx), need=want,
+        text = msgs["FEASIBLE_GROUP"].format(blocks=_group_label(plan, idx, rules), need=want,
                                              count=count, have=have, per_clip=per_clip)  # fmt: skip
         return Shortfall("group", roles, want, have, text)
 
@@ -177,7 +176,8 @@ def _variety(plan: Plan, cands: dict[str, list[Candidate]], rules: Rules, drafts
     first = plan.blocks[0]
     hooks = len(_distinct(cands[first.role]))
     if hooks < drafts:
-        text = msgs["FEASIBLE_HOOK"].format(drafts=drafts, block=first.role, count=hooks)
+        text = msgs["FEASIBLE_HOOK"].format(drafts=drafts, block=block_name(rules, first.role),
+                                            count=hooks)  # fmt: skip
         return Shortfall("hook", (first.role,), drafts, hooks, text)
     every = _distinct(c for b in plan.blocks for c in cands[b.role])
     # Fewest scenes one draft can be made of: the highest-capacity ones until the total is met.
