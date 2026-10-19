@@ -96,6 +96,8 @@ export interface RulesBundle {
   deliveryProducts: readonly string[];
   /** platforms.profiles + platforms.default (14/10/2026), in rules.json order. */
   platforms: readonly PlatformInfo[];
+  /** block_names (17/10/2026): Vietnamese names of block and chapter ids. */
+  blockNames: Readonly<Record<string, string>>;
   pickTagNames: Record<string, string>;
   /** footage.min_usable_ratio: usable scenes should reach scenes needed × this (X6). */
   minUsableRatio: number;

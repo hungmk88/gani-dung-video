@@ -139,6 +139,7 @@ def test_a_chapter_whose_blocks_lack_scenes_is_named_by_its_chapter() -> None:
     verdict = gate(p, pick)
     assert verdict is not None and verdict.kind in {"block", "group"}
     assert any(r.startswith("quy_trinh") for r in verdict.blocks)
+    assert "Quy trình" in verdict.message and "quy_trinh" not in verdict.message  # for people
 
 
 def test_scenes_shared_by_every_chapter_are_not_enough_for_the_whole_plan() -> None:
