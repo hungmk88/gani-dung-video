@@ -1,11 +1,11 @@
 /**
  * Real values copied from ../../../config/rules.json (rules_version 2.0) and
- * ../../../config/glossary.json — NOT invented. When the phase-6 backend ships an
- * endpoint that serves rules.json directly, this file is replaced by a fetch in
- * services/api.ts and every component keeps working unchanged (same RulesBundle shape).
+ * ../../../config/glossary.json — NOT invented. The browser's copy: the wizard reads its
+ * labels, styles, purposes, platforms and products from here, and the demo mode
+ * (services/mockApi.ts, lib/preflight.ts) its rules. The server serves no rules endpoint.
  *
- * Source of truth stays the Python repo; if rules.json changes, re-sync this file by
- * hand (there are only ~90 fields, not worth a build step for a phase-B prototype).
+ * Source of truth stays the Python repo; if rules.json changes, re-sync this file by hand.
+ * rules.test.ts compares the copy with the two JSON files and fails when they drift apart.
  */
 
 import type { RulesBundle } from '../types/rules';
@@ -331,7 +331,7 @@ export const RULES: RulesBundle = {
     { id: 'facebook', name: 'Facebook Reels', short: 'Reels', zaloOnEndCard: true, default: true },
   ],
 
-  // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
+  // config/rules.json → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
   pickTagNames: {
     nguoi_thao_tac: 'Công nhân thao tác',
     thiet_bi: 'Máy móc, thiết bị',

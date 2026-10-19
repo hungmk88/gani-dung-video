@@ -1,7 +1,9 @@
 # gani-dung-video
 
 App dựng video ngắn cho GANI: từ thư mục footage thô ra video dọc 1080×1920 (15, 30, 45, 60
-giây và 3 phút ở chế độ nhạc) có nhạc theo nhịp, chữ, phụ đề và bản soát kỹ thuật tự động. Claude
+giây) có nhạc theo nhịp, chữ, phụ đề và bản soát kỹ thuật tự động. Video 3 phút (chế độ nhạc) đã có
+trong mã nhưng đang **tắt** (`durations.180.enabled = false` trong `config/rules.json`), chỉ bật
+sau khi nghiệm thu với footage thật ([`docs/GD7-THIET-KE.md`](docs/GD7-THIET-KE.md)). Claude
 chỉ chọn cảnh và viết chữ trong khuôn số phách do code tính sẵn; mọi phép kiểm và mọi khoản chi
 phí đều do người dùng duyệt trên giao diện.
 

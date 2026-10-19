@@ -333,7 +333,7 @@ class Daemon:
             raw = read_options_file(Path(job.options_file))
             return VideoOptions.model_validate(raw)
         except (ConfigError, YeuCauFormatError, ValidationError) as e:
-            logger.warning("Khong doc duoc options_file %s: %s", job.options_file, e)
+            logger.warning("Không đọc được tệp tùy chọn %s: %s", job.options_file, e)
             return None
 
     @staticmethod

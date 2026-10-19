@@ -29,7 +29,7 @@ config/            rules.json, glossary.json (sửa số ở đây, không sửa
 
 | GĐ | Nội dung | Đầu ra kiểm được | Cần gì từ anh |
 |---|---|---|---|
-| **1** | Lớp quy tắc: rules.json, glossary.json, preflight X1–X15, đọc `yeu-cau.md` (Phụ lục D), lọc từ cấm V7, CLI `preflight` | 18 file mẫu xung đột + quét 1.440 tổ hợp | — |
+| **1** | Lớp quy tắc: rules.json, glossary.json, bảng xung đột X1–X18 (preflight kiểm X1–X7, X9–X15; X8, X16–X18 ở bước plan, AI, dựng), đọc `yeu-cau.md` (Phụ lục D), lọc từ cấm V7, CLI `preflight` | 18 file mẫu xung đột + quét 1.440 tổ hợp | — |
 | 2 | Kiểm kê footage: ffprobe, lọc file trùng (" 2"), phát hiện HDR, cờ "không lời" | `inventory.json` trên footage thật | 1 thư mục footage mẫu (vd "Xuong VL") |
 | 3 | Nhận dạng: faster-whisper (lời + mốc từng từ), tách cảnh, đo nét/rung OpenCV, CLIP nhãn cảnh + điểm thẩm mỹ | `scenes.json` có nhãn | Chạy thử trên Mac Mini (laptop Dell quá chậm cho CLIP ViT-L/14) |
 | 4 | Biên dịch plan: tùy chọn → khối/số phách/driver (Mục 7.2), gọi Claude API chọn cảnh + viết chữ, căn phách + lùi đỉnh (7.3) | `plan.json` + chi phí/lần gọi | API key trong `.env` |

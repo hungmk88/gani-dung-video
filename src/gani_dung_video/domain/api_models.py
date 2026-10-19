@@ -428,7 +428,7 @@ def frontend_status(status: str, result: str | None) -> str:
     if status == "processing":
         return "running"
     if status == "awaiting_approval":
-        return "awaiting_approval"  # a new value for the UI (phase 6c-2 fills it)
+        return "awaiting_approval"  # a draft job waiting for its cost approval (phase 6c)
     if status == "completed":
         return "done" if result == "passed" else "qa_review"
     return "error"  # failed, cancelled
