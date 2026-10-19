@@ -155,6 +155,8 @@ def test_a_count_that_cannot_reach_the_length_falls_back_on_one_that_can() -> No
     assert plan.music.effective_bpm == 100.0 and plan.beat_sec == pytest.approx(0.6)
     assert plan.planned_beats * plan.beat_sec == pytest.approx(15.0)
     assert any("thay vì 50 BPM" in a for a in plan.adjustments)
+    note = next(a for a in plan.adjustments if "thay vì" in a)  # counts read in words, not ids
+    assert "(giữ nguyên)" in note and "(đếm 2 phách thành 1)" in note and "_" not in note
     # a count that already fits is never changed, even if another one would fit too
     fits = plan_at("sang_trong", 15, 80.0)
     assert fits.music is not None and fits.music.fold == "giu_nguyen"

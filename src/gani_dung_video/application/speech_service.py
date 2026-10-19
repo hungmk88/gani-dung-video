@@ -80,7 +80,8 @@ def build_phrases(
     style = rules["styles"].get(style_name)
     msgs = rules["input_msgs"]
     if style is None or style.get("driver") != "speech":
-        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=style_name))
+        name = style.get("name", style_name) if style is not None else style_name
+        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=name))
     inv = _read_inventory(folder)
     if not (folder / EDIT_DIR / TRANSCRIPTS_DIR).is_dir():
         raise ConfigError(msgs["PHRASES_NO_TRANSCRIPTS"])

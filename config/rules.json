@@ -62,6 +62,7 @@
    "blocks": [["hook_uu_dai", 0.15], ["san_pham", 0.35], ["chi_tiet_uu_dai", 0.35], ["cta_gap", 0.15]],
    "required_tags": {"san_pham": ["thanh_pham"]},
    "required_fields": ["uu_dai", "thoi_han"],
+   "required_field_names": {"uu_dai": "mức ưu đãi", "thoi_han": "thời hạn"},
    "cta": "Ưu đãi đến [ngày]", "max_duration": 60
   },
   "ke_chuyen_thuong_hieu": {

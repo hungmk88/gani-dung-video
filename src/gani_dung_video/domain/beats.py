@@ -81,6 +81,13 @@ def fold_bpm(
     return eff, mode
 
 
+FOLD_NAMES = {  # how the X12 counts read in messages for people
+    "giu_nguyen": "giữ nguyên",
+    "dem_2_thanh_1": "đếm 2 phách thành 1",
+    "tach_1_thanh_2": "tách 1 phách thành 2",
+}
+
+
 def other_folds(
     bpm: float, bpm_range: tuple[float, float] | None, chosen: str, max_deviation: float = 0.2
 ) -> list[tuple[float, str]]:

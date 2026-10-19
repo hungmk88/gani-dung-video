@@ -108,7 +108,7 @@ def test_no_speech_clips_contribute_nothing(folder: Path, tmp_path: Path) -> Non
 def test_non_speech_style_is_refused(folder: Path, tmp_path: Path) -> None:
     opt = write_options(tmp_path / "o.json", phong_cach="ke_chuyen_nghe",
                        muc_dich="gioi_thieu_xuong")  # fmt: skip
-    with pytest.raises(ConfigError, match="ke_chuyen_nghe"):
+    with pytest.raises(ConfigError, match="Kể chuyện nghề"):  # the style's name, not its id
         build_phrases(opt, folder, RULES, GLOSSARY)
 
 
