@@ -331,6 +331,27 @@ export const RULES: RulesBundle = {
     { id: 'facebook', name: 'Facebook Reels', short: 'Reels', zaloOnEndCard: true, default: true },
   ],
 
+  // config/rules.json → block_names (17/10/2026): what a person reads instead of a block id.
+  // src/data/rules.test.ts fails when this copy drifts.
+  blockNames: {
+    hook: 'Mở đầu',
+    nhu_cau: 'Nhu cầu',
+    san_pham: 'Sản phẩm',
+    bang_chung: 'Bằng chứng',
+    cta: 'Kêu gọi',
+    ve_sinh: 'Vệ sinh',
+    quy_trinh: 'Quy trình',
+    hook_uu_dai: 'Mở đầu ưu đãi',
+    chi_tiet_uu_dai: 'Chi tiết ưu đãi',
+    cta_gap: 'Kêu gọi gấp',
+    mo: 'Mở đầu',
+    con_nguoi: 'Con người',
+    gia_tri: 'Giá trị',
+    logo: 'Logo',
+    con_nguoi_1: 'Con người (1)',
+    con_nguoi_2: 'Con người (2)',
+  },
+
   // config/rules.json → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
   pickTagNames: {
     nguoi_thao_tac: 'Công nhân thao tác',

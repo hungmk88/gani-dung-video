@@ -4,37 +4,18 @@
  * plan; this file only turns them into widths, labels and click targets.
  */
 
+import { RULES } from '../data/rules.ts';
 import type { Structure, StructureItem } from '../types/rules.ts';
 
 /** A stretch narrower than this share of the bar keeps its place but hides its label. */
 export const MIN_LABEL_PCT = 8;
 
-const NAMES: Record<string, string> = {
-  hook: 'Mở đầu',
-  cta: 'Kêu gọi',
-  mo: 'Mở đầu',
-  logo: 'Logo',
-  ve_sinh: 'Vệ sinh',
-  quy_trinh: 'Quy trình',
-  bang_chung: 'Bằng chứng',
-  nhu_cau: 'Nhu cầu',
-  san_pham: 'Sản phẩm',
-  con_nguoi: 'Con người',
-  con_nguoi_1: 'Con người (1)',
-  con_nguoi_2: 'Con người (2)',
-  gia_tri: 'Giá trị',
-  // Khuyến mãi (rules.json → purposes.khuyen_mai.blocks)
-  hook_uu_dai: 'Mở đầu ưu đãi',
-  chi_tiet_uu_dai: 'Chi tiết ưu đãi',
-  cta_gap: 'Kêu gọi gấp',
-};
-
-/** Vietnamese name of a block / chapter id (rules.json → purposes.*.blocks, durations.180
- *  chapters); a sub-block "quy_trinh#2" reads "Quy trình (đoạn 2)"; an unknown id reads as its
- *  words. */
+/** Vietnamese name of a block / chapter id (rules.json → block_names, the same table the server
+ *  uses for its messages); a sub-block "quy_trinh#2" reads "Quy trình (đoạn 2)"; an unknown id
+ *  reads as its words. */
 export function chapterName(id: string): string {
   const [base, part] = id.split('#');
-  const name = NAMES[base] ?? base.replace(/_/g, ' ');
+  const name = RULES.blockNames[base] ?? base.replace(/_/g, ' ');
   return part ? `${name} (đoạn ${part})` : name;
 }
 

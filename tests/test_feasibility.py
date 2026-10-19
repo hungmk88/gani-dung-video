@@ -74,7 +74,7 @@ def test_two_short_scenes_cannot_fill_a_24_beat_block() -> None:
     assert got is not None and got.kind == "block" and got.blocks == ("san_pham",)
     assert (got.need, got.have) == (24 - TOL, 8)  # V2 lets a block be one scene short
     msg = got.message
-    assert msg.startswith(COST_LINE) and "'san_pham'" in msg and "24 phách" in msg
+    assert msg.startswith(COST_LINE) and "'Sản phẩm'" in msg and "24 phách" in msg  # name, not id
     assert "2 cảnh" in msg and "8 phách" in msg and "Quay thêm" in msg
 
 
