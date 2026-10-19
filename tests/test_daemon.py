@@ -675,3 +675,32 @@ def test_job_options_malformed_md_returns_none(tmp_path: Path) -> None:
     job = job.model_copy(update={"options_file": str(opts_file)})
     daemon = _empty_daemon(tmp_path)
     assert daemon._job_options(job) is None
+
+
+def test_a_rerender_of_a_planned_project_keeps_the_product_and_campaign(tmp_path: Path) -> None:
+    # "Chỉ dựng lại" queues renders on edit/plan.json; the product and campaign the wizard
+    # saved with the last full build (edit/options.json) must still name the delivered file.
+    edit = tmp_path / "edit"
+    edit.mkdir()
+    (edit / "plan.json").write_text("{}", encoding="utf-8")
+    (edit / "options.json").write_text(json.dumps({
+        "phong_cach": "ke_chuyen_nghe", "muc_dich": "gioi_thieu_xuong", "do_dai_giay": 30,
+        "so_ban_nhap": 1, "nhac": "khong_nhac", "san_pham": "gio-lua", "chien_dich": "tet-2027",
+    }), encoding="utf-8")  # fmt: skip
+    job = job_stub(tmp_path, final=True, no_asr=False)
+    job = job.model_copy(update={"options_file": str(edit / "plan.json")})
+    opts = _empty_daemon(tmp_path)._job_options(job)
+    assert opts is not None and (opts.san_pham, opts.chien_dich) == ("gio-lua", "tet-2027")
+    argv = render_argv(job, ["py"], opts)
+    assert argv[-4:] == ["--san-pham", "gio-lua", "--chien-dich", "tet-2027"]
+
+
+def test_a_rerender_without_saved_options_uses_the_defaults_quietly(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "plan.json").write_text("{}", encoding="utf-8")
+    job = job_stub(tmp_path, final=True, no_asr=False)
+    job = job.model_copy(update={"options_file": str(tmp_path / "plan.json")})
+    with caplog.at_level("WARNING"):
+        assert _empty_daemon(tmp_path)._job_options(job) is None
+    assert caplog.records == []  # no "cannot read" warning on every rerender

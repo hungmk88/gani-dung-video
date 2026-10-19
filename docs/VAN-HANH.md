@@ -163,8 +163,8 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
    video, đọc "Soát chất lượng" và dòng **"Tự chỉnh"** (việc QC tự sửa, ví dụ hạ trần đỉnh ở vòng
    2). Bảng **"Kiểm tra kịch bản AI"** cho biết V1–V9 (V10 với video 3 phút) đạt/trượt từng vòng.
 5. Ưng bản nào thì dựng **bản cuối 1080×1920**: tab **Tạo video mới** → chọn dự án → chế độ
-   **Chỉ dựng lại**, chọn đúng bản nháp, tick "Dựng bản cuối 1080×1920" (chế độ này dùng sản
-   phẩm và chiến dịch mặc định, xem mục 9c). Nút **Dựng lại** trên trang video chỉ dựng lại đúng
+   **Chỉ dựng lại**, chọn đúng bản nháp, tick "Dựng bản cuối 1080×1920" (sản phẩm và chiến dịch
+   lấy theo lần chạy cả chuỗi gần nhất của dự án, xem mục 9c). Nút **Dựng lại** trên trang video chỉ dựng lại đúng
    cỡ của video đó, không đổi nháp thành bản cuối. Tải về bằng nút **"Tải bản cuối"**.
    `cover.jpg` và `phude.srt` nằm cùng thư mục làm việc (mục 9).
 
@@ -453,7 +453,8 @@ Host/Origin; chỗ cắm cho bot Telegram sau này là hàm `authorize_reviewer`
 - Giao diện (web) chọn được sản phẩm và chiến dịch ở bước "Tên file giao" (từ 14/10/2026):
   hai trường đi cùng tùy chọn vào `edit/options.json` rồi tới lệnh `render`. Bỏ trống thì sản
   phẩm là `chung` và chiến dịch là tên thư mục footage. Chế độ "Chỉ dựng lại" không gửi tùy
-  chọn nên luôn dùng mặc định.
+  chọn: từ 19/10/2026 nó dùng sản phẩm và chiến dịch đã lưu ở `edit/options.json` của lần chạy
+  cả chuỗi gần nhất (trước đó luôn rơi về mặc định); dự án chưa chạy chuỗi nào thì dùng mặc định.
 - Hàng đợi đã truyền `--san-pham` và `--chien-dich` (từ 06/10/2026): job đọc hai trường từ
   `yeu-cau.md` (khối `---`, xem Phụ lục D) và thêm vào lệnh con. Thiếu trường nào thì mặc định
   như trên. `san_pham` ngoài danh mục `rules.delivery.naming.products` vẫn chạy, chỉ ghi cảnh
