@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { PRODUCT_NAMES } from './products.ts';
 import { RULES } from './rules.ts';
 
 // The source of truth is the backend: config/glossary.json → banned_claims. RULES.bannedClaims is
@@ -48,6 +49,8 @@ test('the demo has the same styles, with the same display names and numbers', ()
     assert.equal(d.max_effects, s.max_effects, `${id}: max_effects`);
     assert.equal(d.grade, s.grade, `${id}: grade`);
     assert.equal(d.text_max_words, s.text?.max_words, `${id}: text_max_words`);
+    assert.equal(d.requires_speech, s.requires_speech, `${id}: requires_speech`);
+    assert.equal(d.note_min_words, s.note_min_words, `${id}: note_min_words`);
   }
 });
 
@@ -60,11 +63,70 @@ test('the demo has the same purposes: name, call to action, blocks, longest leng
     assert.equal(d.cta, p.cta, `${id}: cta`);
     assert.deepEqual(d.blocks, p.blocks, `${id}: blocks`);
     assert.equal(d.max_duration, p.max_duration, `${id}: max_duration`);
+    assert.deepEqual(d.required_fields, p.required_fields, `${id}: required_fields`);
   }
 });
 
 test('the lengths offered are the keys of durations in rules.json', () => {
   assert.deepEqual([...RULES.durations], Object.keys(rules.durations).map(Number));
+});
+
+test('the music modes are the backend ones: same order, names and rights tick', () => {
+  const want = Object.entries<Json>(rules.music_modes).map(([id, m]) => ({
+    id,
+    name: m.name,
+    needs_rights_tick: m.needs_rights_tick,
+  }));
+  assert.deepEqual(Object.values(RULES.musicModes).map((m) => ({ ...m })), want);
+  assert.deepEqual(Object.keys(RULES.musicModes), Object.keys(rules.music_modes));
+});
+
+test('the draft counts offered are drafts.allowed', () => {
+  assert.deepEqual([...RULES.draftCounts], rules.drafts.allowed);
+});
+
+test('the style × purpose and style × length matrices are the backend ones', () => {
+  assert.deepEqual(RULES.compatStylePurpose, rules.compat_style_purpose);
+  assert.deepEqual(RULES.compatStyleDuration, rules.compat_style_duration);
+});
+
+test('the scenes needed per style and length are the backend table (5.3.A)', () => {
+  assert.deepEqual(RULES.scenesNeeded, rules.scenes_needed);
+});
+
+test('the shot names are pick.tag_names', () => {
+  assert.deepEqual(RULES.pickTagNames, rules.pick.tag_names);
+  assert.deepEqual(Object.keys(RULES.pickTagNames), Object.keys(rules.pick.tag_names));
+});
+
+test('the usable-footage ratio and the QC rounds are the backend numbers', () => {
+  assert.equal(RULES.minUsableRatio, rules.footage.min_usable_ratio);
+  assert.equal(RULES.qcMaxRounds, rules.qc.max_rounds);
+});
+
+// lib/preflight.ts does not read these rules from RULES: it hard-codes the conditions (X3, X10,
+// X14, X15). These tests pin the rules.json values the code was written against; when one fails,
+// update lib/preflight.ts together with the expected value here.
+test('X10 fires for Sang trọng and Kể chuyện nghề at 15 s, as lib/preflight.ts assumes', () => {
+  assert.deepEqual(rules.conflicts.X10.when, { styles: ['sang_trong', 'ke_chuyen_nghe'], duration: 15 });
+});
+
+test('X15 fires for 3 drafts at 180 s, as lib/preflight.ts assumes', () => {
+  assert.deepEqual(rules.conflicts.X15.when, { drafts: 3, duration: 180 });
+});
+
+test('only Khuyến mãi has required fields (offer + deadline), as lib/preflight.ts assumes (X3)', () => {
+  const withFields = Object.entries<Json>(rules.purposes)
+    .filter(([, p]) => p.required_fields !== undefined)
+    .map(([id, p]) => [id, p.required_fields]);
+  assert.deepEqual(withFields, [['khuyen_mai', ['uu_dai', 'thoi_han']]]);
+});
+
+test('only uploaded music needs the rights tick, as lib/preflight.ts assumes (X14)', () => {
+  const needTick = Object.entries<Json>(rules.music_modes)
+    .filter(([, m]) => m.needs_rights_tick === true)
+    .map(([id]) => id);
+  assert.deepEqual(needTick, ['tai_len']);
 });
 
 test('the platforms are the backend ones, same order and defaults', () => {
@@ -81,6 +143,13 @@ test('the platforms are the backend ones, same order and defaults', () => {
 
 test('the product catalogue of the delivery names is the backend one', () => {
   assert.deepEqual([...RULES.deliveryProducts], rules.delivery.naming.products);
+});
+
+test('every delivery product has a display name, and no name is left for an unknown product', () => {
+  assert.deepEqual(Object.keys(PRODUCT_NAMES).sort(), [...rules.delivery.naming.products].sort());
+  for (const [id, name] of Object.entries(PRODUCT_NAMES)) {
+    assert.ok(name.trim().length > 0, `${id}: empty name`);
+  }
 });
 
 // The browser can only judge a part of X1–X18 before any footage or AI call (see the comment in

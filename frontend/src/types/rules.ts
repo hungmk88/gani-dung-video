@@ -97,6 +97,10 @@ export interface RulesBundle {
   /** platforms.profiles + platforms.default (14/10/2026), in rules.json order. */
   platforms: readonly PlatformInfo[];
   pickTagNames: Record<string, string>;
+  /** footage.min_usable_ratio: usable scenes should reach scenes needed × this (X6). */
+  minUsableRatio: number;
+  /** qc.max_rounds: render + technical-check rounds before a QC failure is final. */
+  qcMaxRounds: number;
 }
 
 /** Pacing mode is a UI-facing grouping of `driver` used by the brief (LỜI/NHẠC/LƯỚI ẢO). */

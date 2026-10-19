@@ -52,11 +52,12 @@ import type {
   VerifyStatus,
   VideoOptions,
 } from '../types/rules.ts';
+import { RULES } from '../data/rules.ts';
 import { platformOrder } from '../lib/platforms.ts';
 import { latestReview, toReview } from '../lib/review.ts';
 
-// rules.json → qc.max_rounds; the API does not echo it, so it is mirrored here.
-const QC_MAX_ROUNDS = 3;
+// rules.json → qc.max_rounds; the API does not echo it, so the demo copy of rules.json is read.
+const QC_MAX_ROUNDS = RULES.qcMaxRounds;
 
 const JOB_STATUSES: readonly JobStatus[] = [
   'queued',

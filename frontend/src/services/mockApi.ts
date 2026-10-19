@@ -86,7 +86,7 @@ function stepDetail(id: PipelineStepId, options: VideoOptions, footage: FootageF
   }
 }
 
-const RULES_QC_MAX_ROUNDS = 3;
+const RULES_QC_MAX_ROUNDS = RULES.qcMaxRounds;
 
 /** Demo QA of one output. `platform` and `noMusic` mirror what the real server reports: a
  *  TikTok render gets the platform-word warning row, a render without music says so under T3. */

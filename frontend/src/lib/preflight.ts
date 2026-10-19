@@ -14,7 +14,7 @@ import { countWords } from './format';
 
 // footage.min_usable_ratio from rules.json — raw footage should be this many times the
 // scene count actually usable after blur/shake/duplicate filtering (phase 3b estimate).
-const MIN_USABLE_RATIO = 1.3;
+const MIN_USABLE_RATIO = RULES.minUsableRatio;
 
 function issue(code: keyof typeof RULES.conflicts, vars: Record<string, string | number>): PreflightIssue {
   const c = RULES.conflicts[code];
@@ -90,7 +90,8 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
   if (purpose.max_duration !== undefined && dur > purpose.max_duration) {
     errors.push(issue('X2', {}));
   }
-  // X3 — khuyen_mai required fields
+  // X3 — khuyen_mai required fields. Assumes khuyen_mai is the only purpose with
+  // required_fields and they are uu_dai + thoi_han; src/data/rules.test.ts pins that.
   if (o.muc_dich === 'khuyen_mai') {
     const missing: string[] = [];
     if (!o.khuyen_mai?.uu_dai.trim()) missing.push('mức ưu đãi');
@@ -123,15 +124,18 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
       message: `'${style.name}' ở ${dur}s dùng được nhưng không phải độ dài tối ưu.`,
     });
   }
-  // X10 — sang_trong / ke_chuyen_nghe × 15s
+  // X10 — sang_trong / ke_chuyen_nghe × 15s. Hard-coded copy of rules.json conflicts.X10.when
+  // ({styles: [sang_trong, ke_chuyen_nghe], duration: 15}); src/data/rules.test.ts pins it.
   if ((style.id === 'sang_trong' || style.id === 'ke_chuyen_nghe') && dur === 15) {
     warnings.push(issue('X10', { style: style.name }));
   }
-  // X14 — uploaded music without rights tick
+  // X14 — uploaded music without rights tick. Assumes tai_len is the only music mode with
+  // needs_rights_tick; src/data/rules.test.ts pins that.
   if (o.nhac === 'tai_len' && !o.nhac_quyen_su_dung) {
     errors.push(issue('X14', {}));
   }
-  // X15 — 3 drafts × 180s
+  // X15 — 3 drafts × 180s. Hard-coded copy of rules.json conflicts.X15.when
+  // ({drafts: 3, duration: 180}); src/data/rules.test.ts pins it.
   if (o.so_ban_nhap === 3 && dur === 180) {
     warnings.push(issue('X15', {}));
   }
@@ -165,9 +169,10 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
           short: Math.max(0, scenesNeeded - scenesEstimated),
         }),
       );
-    } else if (scenesEstimated < scenesNeeded * 1.3) {
+    } else if (scenesEstimated < scenesNeeded * MIN_USABLE_RATIO) {
+      // same ratio as domain/preflight.py: ideal = ceil(need × footage.min_usable_ratio)
       warnings.push(
-        issue('X6', { usable: `~${scenesEstimated}`, ideal: Math.ceil(scenesNeeded * 1.3) }),
+        issue('X6', { usable: `~${scenesEstimated}`, ideal: Math.ceil(scenesNeeded * MIN_USABLE_RATIO) }),
       );
     }
   }

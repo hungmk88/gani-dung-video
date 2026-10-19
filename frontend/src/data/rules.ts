@@ -331,7 +331,8 @@ export const RULES: RulesBundle = {
     { id: 'facebook', name: 'Facebook Reels', short: 'Reels', zaloOnEndCard: true, default: true },
   ],
 
-  // domain/pick.py → pick.tag_names (CLIP visual-dictionary labels, phase 4b)
+  // config/rules.json → pick.tag_names (CLIP visual-dictionary labels, phase 4b; read by
+  // domain/pick.py). src/data/rules.test.ts fails when this copy drifts.
   pickTagNames: {
     nguoi_thao_tac: 'Công nhân thao tác',
     thiet_bi: 'Máy móc, thiết bị',
@@ -343,6 +344,13 @@ export const RULES: RulesBundle = {
     nguoi_noi: 'Người nói trước ống kính',
     khac: 'Màn chữ / logo',
   },
+
+  // config/rules.json → footage.min_usable_ratio (X6 "ideal" = ceil(need × ratio); the demo also
+  // divides raw footage by it to estimate usable scenes). src/data/rules.test.ts checks it.
+  minUsableRatio: 1.3,
+
+  // config/rules.json → qc.max_rounds (the API does not echo it). src/data/rules.test.ts checks it.
+  qcMaxRounds: 3,
 };
 
 export const PACING_LABELS: Record<'loi' | 'nhac' | 'luoi_ao', { label: string; hint: string }> = {
