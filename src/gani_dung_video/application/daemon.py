@@ -328,9 +328,19 @@ class Daemon:
 
         Returns None when the file is missing, wrong format, or invalid: the queue
         keeps running with the old behaviour instead of failing on an option typo.
+
+        A render queued on a planned project ("Chỉ dựng lại", POST /api/jobs) points at
+        edit/plan.json, whose options have no product or campaign. The wizard's options of the
+        last full build sit next to it (edit/options.json): those are read instead, and with
+        none the delivery defaults apply without a warning.
         """
+        path = Path(job.options_file)
+        if path.name == "plan.json":
+            path = path.with_name("options.json")
+            if not path.is_file():
+                return None
         try:
-            raw = read_options_file(Path(job.options_file))
+            raw = read_options_file(path)
             return VideoOptions.model_validate(raw)
         except (ConfigError, YeuCauFormatError, ValidationError) as e:
             logger.warning("Không đọc được tệp tùy chọn %s: %s", job.options_file, e)
