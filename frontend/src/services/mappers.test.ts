@@ -1,6 +1,7 @@
 // Run with `npm test` (plain node:test — no test-runner dependency).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { RULES } from '../data/rules.ts';
 import type { ApiJob, ApiJobDetail } from '../types/api.ts';
 import type { VideoOptions } from '../types/rules.ts';
 import {
@@ -140,7 +141,7 @@ test('toQaReport groups T-checks, never fabricates V1–V9 rows', () => {
   const ai = qa.groups[3];
   assert.equal(ai.checks.length, 0);
   assert.match(ai.emptyNote ?? '', /Chưa có dữ liệu/);
-  assert.equal(qa.max_rounds, 3);
+  assert.equal(qa.max_rounds, RULES.qcMaxRounds);
   assert.equal(qa.overall_pass, true);
 });
 

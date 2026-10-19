@@ -99,6 +99,10 @@ export interface RulesBundle {
   /** block_names (17/10/2026): Vietnamese names of block and chapter ids. */
   blockNames: Readonly<Record<string, string>>;
   pickTagNames: Record<string, string>;
+  /** footage.min_usable_ratio: usable scenes should reach scenes needed × this (X6). */
+  minUsableRatio: number;
+  /** qc.max_rounds: render + technical-check rounds before a QC failure is final. */
+  qcMaxRounds: number;
 }
 
 /** Pacing mode is a UI-facing grouping of `driver` used by the brief (LỜI/NHẠC/LƯỚI ẢO). */

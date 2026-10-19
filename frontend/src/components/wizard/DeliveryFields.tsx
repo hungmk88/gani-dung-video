@@ -1,15 +1,6 @@
+import { PRODUCT_NAMES } from '../../data/products';
 import { RULES } from '../../data/rules';
 import type { VideoOptions } from '../../types/rules';
-
-/** Vietnamese names of the delivery product slugs (rules.json → delivery.naming.products). */
-const PRODUCT_NAMES: Record<string, string> = {
-  'gio-lua': 'Giò lụa',
-  'cha-lua': 'Chả lụa',
-  'cha-bo': 'Chả bò',
-  'nem-chua': 'Nem chua',
-  'bo-vien': 'Bò viên',
-  chung: 'Chung (nhiều sản phẩm)',
-};
 
 /**
  * Product and campaign of the delivered file: GANI_{sản-phẩm}_…mp4 inside
