@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from review_fixtures import NAME, RULES, VIDEO, Tree, build
+from review_fixtures import NAME, RULES, VIDEO, Tree, build, now_s
 
 from gani_dung_video.application.api_service import ApiContext
 from gani_dung_video.domain.delivery_checks import E1Item
@@ -47,7 +47,9 @@ def served(tmp_path: Path) -> Iterator[tuple[Tree, Client]]:
 
 def _serve(tree: Tree, root: Path) -> Iterator[tuple[Tree, Client]]:
     rules = {**RULES, "api": {**RULES["api"], "frontend_dist": None}}
-    ctx = ApiContext(tree.db, rules, Settings(gani_dv_allowed_roots=str(root)))
+    # A fixed clock 10 minutes after the fixture's render: with the real clock the video would
+    # count as overdue once review.ttl_sec has passed since 15/10/2026 (it did on 19/10).
+    ctx = ApiContext(tree.db, rules, Settings(gani_dv_allowed_roots=str(root)), clock=now_s)
     server = make_server(ctx, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
