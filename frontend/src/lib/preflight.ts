@@ -8,9 +8,9 @@
  * facts, an AI call, or the render step and are intentionally left out rather than faked.
  */
 
-import { RULES } from '../data/rules';
-import type { FootageFile, PreflightIssue, PreflightResult, VideoOptions } from '../types/rules';
-import { countWords } from './format';
+import { RULES } from '../data/rules.ts';
+import type { FootageFile, PreflightIssue, PreflightResult, VideoOptions } from '../types/rules.ts';
+import { countWords } from './format.ts';
 
 // footage.min_usable_ratio from rules.json — raw footage should be this many times the
 // scene count actually usable after blur/shake/duplicate filtering (phase 3b estimate).
@@ -115,18 +115,20 @@ export function runPreflight({ options: o, footage }: PreflightInput): Preflight
       message: `'${style.name}' dùng được cho '${purpose.name}' nhưng không phải lựa chọn tối ưu.`,
     });
   }
-  // duration compat matrix (warn only — 'bad' cases are already covered by X1)
+  // X10 — sang_trong / ke_chuyen_nghe × 15s. Hard-coded copy of rules.json conflicts.X10.when
+  // ({styles: [sang_trong, ke_chuyen_nghe], duration: 15}); src/data/rules.test.ts pins it.
+  const x10Hit = (style.id === 'sang_trong' || style.id === 'ke_chuyen_nghe') && dur === 15;
+  // duration compat matrix (warn only — 'bad' cases are already covered by X1). As in
+  // domain/preflight.py, X10 replaces this generic hint on its own 'warn' cells.
   const sdCompat = RULES.compatStyleDuration[style.id][String(dur)];
-  if (sdCompat === 'warn') {
+  if (sdCompat === 'warn' && !x10Hit) {
     warnings.push({
       code: 'W_STYLE_DURATION',
       level: 'warn',
       message: `'${style.name}' ở ${dur}s dùng được nhưng không phải độ dài tối ưu.`,
     });
   }
-  // X10 — sang_trong / ke_chuyen_nghe × 15s. Hard-coded copy of rules.json conflicts.X10.when
-  // ({styles: [sang_trong, ke_chuyen_nghe], duration: 15}); src/data/rules.test.ts pins it.
-  if ((style.id === 'sang_trong' || style.id === 'ke_chuyen_nghe') && dur === 15) {
+  if (x10Hit) {
     warnings.push(issue('X10', { style: style.name }));
   }
   // X14 — uploaded music without rights tick. Assumes tai_len is the only music mode with
