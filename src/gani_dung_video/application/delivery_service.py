@@ -91,7 +91,7 @@ def apply_e1(
     words, f_words = check_platform_words(e, glossary.platform_risk_words.get(e.platform, []))
     checks: dict[str, E1Item] = {"E1-DUR": dur, "E1-DUR-GAP": gap, "E1-SAFE": safe,
                                  "E1-GLYPH": glyph, "C1": claims}  # fmt: skip
-    if e.platform:  # a render without a profile keeps the E1 list it had before 14/10/2026
+    if e.platform:  # a render without a profile keeps the E1 list it had before 16/10/2026
         checks["E1-NEN-TANG"] = words
     report = build_e1(e, rules, rep.findings, rep.lufs, rep.true_peak_db, checks)
     vs_chosen, vs_plan = duration_deviations(file_sec, e, chosen, planned)

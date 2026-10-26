@@ -294,7 +294,7 @@ def test_black_frames_fail_the_picture_item_but_a_freeze_only_warns() -> None:
     assert pic[0].passed and not pic[1].passed and pic[1].value == 1.0
 
 
-# ─────────────── 14/10/2026: platform risk words (warnings only) ───────────────
+# ─────────────── 16/10/2026: platform risk words (warnings only) ───────────────
 
 
 def test_platform_words_warn_on_screen_and_spoken_text_and_never_block() -> None:

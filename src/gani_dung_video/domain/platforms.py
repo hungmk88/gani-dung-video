@@ -1,4 +1,4 @@
-"""Platform profiles (14/10/2026): one draft rendered once per platform it is posted on.
+"""Platform profiles (16/10/2026): one draft rendered once per platform it is posted on.
 
 TikTok and Facebook Reels get the same footage, script and cuts; a profile in
 rules.json → platforms changes only what the platform's moderation is strict about:

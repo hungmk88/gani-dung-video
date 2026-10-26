@@ -1,4 +1,4 @@
-/** Platforms a draft is rendered for (TikTok, Facebook Reels — 14/10/2026). Pure functions. */
+/** Platforms a draft is rendered for (TikTok, Facebook Reels — 16/10/2026). Pure functions. */
 import { RULES } from '../data/rules.ts';
 import type { PlatformInfo } from '../types/rules.ts';
 

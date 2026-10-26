@@ -29,7 +29,7 @@ export interface ApiPlatform {
 export interface ApiFeatures {
   /** 3-minute videos are open (switched on after the real acceptance run, phase 7e). */
   long_video: boolean;
-  /** Platforms the server renders for (14/10/2026); absent on older servers. */
+  /** Platforms the server renders for (16/10/2026); absent on older servers. */
   platforms?: ApiPlatform[];
 }
 

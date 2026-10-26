@@ -63,7 +63,7 @@ class GlossaryFile(BaseModel):
     banned_claims: list[str]
     caption_highlight_keywords: list[str] = []
     visual: dict[_Text, _Prompts] = {}
-    # 14/10/2026: words a platform tends to limit (TikTok: sending people off the app…), per
+    # 16/10/2026: words a platform tends to limit (TikTok: sending people off the app…), per
     # platform id of rules.json → platforms. Warnings only, never a block (not the NVH list).
     platform_risk_words: dict[_Text, list[_Text]] = {}
 

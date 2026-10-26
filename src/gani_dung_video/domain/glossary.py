@@ -245,7 +245,7 @@ def find_banned_claims(text: str, banned: Sequence[str]) -> list[str]:
 def find_phrases(text: str, phrases: Sequence[str]) -> list[str]:
     """The phrases that appear in text as whole syllables next to each other, tone marks KEPT.
 
-    For the platform risk words (14/10/2026): with the marks folded away "máu" (blood) would
+    For the platform risk words (16/10/2026): with the marks folded away "máu" (blood) would
     match "màu" (colour) and "chết" would match "chết"'s unmarked cousins, so these warnings
     compare the text as written. Case and punctuation are ignored.
 

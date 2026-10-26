@@ -164,7 +164,7 @@ const QA_GROUP_OF: Record<string, string> = {
   T6: TEXT_GROUP,
   T7: TEXT_GROUP,
   T8: TEXT_GROUP,
-  'E1-NEN-TANG': TEXT_GROUP, // platform risk words (14/10/2026): warnings only
+  'E1-NEN-TANG': TEXT_GROUP, // platform risk words (16/10/2026): warnings only
   T3: 'Âm thanh (T3)',
 };
 const QA_GROUP_ORDER = [

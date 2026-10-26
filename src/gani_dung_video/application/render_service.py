@@ -315,7 +315,7 @@ def build_render(
     feed that name and folder (defaults: rules' default product, the footage folder's name).
     `platform` (rules.json → platforms, e.g. "tiktok") sets the CTA, the end card, the render
     folder edit/render/<draft>-<platform> and the platform part of the delivered name; "" =
-    no profile (the behaviour from before 14/10/2026). `no_music` leaves the plan's music out
+    no profile (the behaviour from before 16/10/2026). `no_music` leaves the plan's music out
     (the video keeps the voice / camera sound; music is added in the TikTok / Facebook app), and
     the delivered name gets rules.delivery.naming.no_music_tag.
 

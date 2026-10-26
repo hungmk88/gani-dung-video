@@ -1,4 +1,4 @@
-"""Tests: domain/platforms.py — one draft rendered for TikTok and Facebook Reels (14/10/2026)."""
+"""Tests: domain/platforms.py — one draft rendered for TikTok and Facebook Reels (16/10/2026)."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 import type { PlatformInfo } from '../../types/rules';
 
 /**
- * Where the video is posted (14/10/2026): one render per ticked platform, same script and cuts.
+ * Where the video is posted (16/10/2026): one render per ticked platform, same script and cuts.
  * TikTok gets a call-to-action without "nhắn tin"/Zalo and no Zalo number on the end card.
  */
 export function PlatformPicker({

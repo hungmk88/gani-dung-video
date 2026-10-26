@@ -4,7 +4,7 @@ GANI_{san-pham}_{phong-cach}_{muc-dich}_{do-dai}s_{ty-le}_{nen-tang}_{nhac}_v{n}
 field lower case, hyphen-separated and without Vietnamese marks. The template and the allowed
 products live in rules.json → delivery.naming. A video rendered without a platform profile has no
 {nen-tang} part (and no separator around it), and {nhac} is there only for a video exported
-without music (no_music_tag, 16/10/2026): a plain render keeps the name from before 14/10/2026.
+without music (no_music_tag, 16/10/2026): a plain render keeps the name from before 16/10/2026.
 """
 
 from __future__ import annotations
