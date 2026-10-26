@@ -91,7 +91,8 @@ def _frame_at(e: Edl, zoom: float) -> list[str]:
 
 
 def _video_chain(i: int, s: Shot, e: Edl) -> str:
-    head = ["setpts=PTS-STARTPTS"] + ([_HDR_TO_SDR] if s.hdr else [])
+    pts = "PTS-STARTPTS" if s.speed == 1.0 else f"(PTS-STARTPTS)/{_n(s.speed)}"  # slow motion
+    head = [f"setpts={pts}"] + ([_HDR_TO_SDR] if s.hdr else [])
     tail = [f"tpad=stop_mode=clone:stop_duration={_n(s.pad_sec)}"] if s.pad_sec > 0 else []
     if s.punch_sec is None:
         return f"[{i}:v]{','.join(head + _frame_at(e, s.zoom) + tail)}[v{i}]"
@@ -360,7 +361,9 @@ def _inputs(
     if music is not None and e.music is not None:
         music_idx = len(sources) + len(e.overlays)
         args += ["-ss", _n(e.music.audio_in_sec), "-i", str(music)]
-    return args, [_has_audio(p, 60.0) for p in sources], music_idx
+    # a slowed shot's own sound would be slowed too: it stays silent (music carries on)
+    heard = [s.speed == 1.0 and _has_audio(p, 60.0) for s, p in zip(e.shots, sources, strict=True)]
+    return args, heard, music_idx
 
 
 def render(
