@@ -336,7 +336,8 @@ def build_speech_edl(
                           dissolve_out_sec=0.0, pad_sec=0.0))  # fmt: skip
     covered = [(b.overlay.t_start, b.overlay.t_end) for b in broll]
     zooms = speech_zooms(_spans(shots), [c.words for c in cuts], covered, style,
-                         rules["effects"], _room(clips, rules))  # fmt: skip
+                         rules["effects"], _room(clips, rules),
+                         bool(se.get("jump_cut_zoom_enabled")))  # fmt: skip
     shots = _zoomed(shots, zooms)
     end = shots[-1].t_end if shots else 0.0
     m = plan.music
