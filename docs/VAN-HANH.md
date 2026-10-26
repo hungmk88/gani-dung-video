@@ -232,6 +232,9 @@ thêm hay bớt mã phong cách đó trong `config/rules.json` → `transitions.
 - Lia nhanh và glitch chỉ thay chỗ cắt thẳng, không đè hòa tan sẵn có, và chỉ ở video dựng theo
   nhạc. Video bị cắt bớt cho vừa độ dài (đã mờ dần ở cuối) thì không khép vòng tròn.
 - Kiểu, số khung, màu vệt sáng chỉnh trong `transitions.styles` (xem `_ghi_chu_transitions`).
+- **Sang trọng** (theo đặc tả, không cần bật): cảnh cuối mờ dần về đen trong 12 khung (0,4 giây)
+  trước khung kết (`styles.sang_trong.end = "fade_black"`). Khi chuyển cảnh của Sang trọng được
+  bật, vòng tròn khép thay cho mờ dần.
 
 ### Chi phí (số thật và trần)
 
