@@ -55,8 +55,14 @@ def _styles(edl: Edl, rules: Rules, sizes: Mapping[str, int] | None) -> list[str
         _style("ChapterTitle", edl.font, int(px["chapter_title"]), "&H00FFFFFF", 8, safe["left"],
                safe["right"], safe["top"] + int(r["chapter_title_offset"]), outline=5, bold=1)
     ] if any(c.kind == "title" for c in edl.captions) else []  # fmt: skip
+    split = [
+        _style(name, edl.font, int(px["caption"]), "&H00FFFFFF", 8, safe["left"], safe["right"],
+               split_label_margin(kind, rules))
+        for name, kind in (("SplitTop", "split_top"), ("SplitBottom", "split_bottom"))
+    ] if any(c.kind.startswith("split_") for c in edl.captions) else []  # fmt: skip
     return [
         *title,
+        *split,
         _style("Caption", edl.font, int(px["caption"]), "&H00FFFFFF", 2, safe["left"],
                safe["right"], safe["bottom"]),
         _style("CTA", edl.font, int(px["cta"]), "&H0000E1FF", 2, safe["left"], safe["right"],
@@ -73,6 +79,15 @@ def _styles(edl: Edl, rules: Rules, sizes: Mapping[str, int] | None) -> list[str
     ]  # fmt: skip
 
 
+def split_label_margin(kind: str, rules: Rules) -> int:
+    """Top margin (px) of a split screen label: the top one under the top safe margin, the
+    bottom one just under the dividing line in the middle of the frame."""
+    offset = int(rules["effects"]["split_screen"]["label_offset"])
+    if kind == "split_top":
+        return int(rules["render"]["safe"]["top"]) + offset
+    return PLAY_H // 2 + offset
+
+
 def _dialogue(start: float, end: float, style: str, text: str) -> str:
     return f"Dialogue: 0,{ass_time(start)},{ass_time(end)},{style},,0,0,0,,{text}"
 
@@ -86,7 +101,8 @@ def _events(edl: Edl, rules: Rules) -> list[str]:
     out = [_dialogue(0.0, edl.content_end, "Logo", escape_ass(brand["logo_text"]))]
     if not text_logo:
         out = []
-    style_of = {"cta": "CTA", "title": "ChapterTitle"}
+    style_of = {"cta": "CTA", "title": "ChapterTitle", "split_top": "SplitTop",
+                "split_bottom": "SplitBottom"}  # fmt: skip
     pop = r["keyword_highlight"]
     on = rf"{{\c{ass_colour(str(pop['colour']))}\fscx{pop['scale_pct']}\fscy{pop['scale_pct']}}}"
     off = r"{\c&H00FFFFFF&\fscx100\fscy100}"  # Caption and ChapterTitle are white at full size

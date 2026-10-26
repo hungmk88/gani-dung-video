@@ -203,7 +203,9 @@ def test_the_layout_matches_the_real_ass_styles(mode: str) -> None:
 
     caps = [Caption(start=0, end=1, text="a", kind="text"),
             Caption(start=1, end=2, text="b", kind="title"),
-            Caption(start=2, end=3, text="c", kind="cta")]  # fmt: skip
+            Caption(start=2, end=3, text="c", kind="cta"),
+            Caption(start=3, end=4, text="d", kind="split_top"),
+            Caption(start=3, end=4, text="e", kind="split_bottom")]  # fmt: skip
     e = edl(caps, mode=mode)
     styles = {}
     for line in ass_document(e, RULES).splitlines():
@@ -211,7 +213,8 @@ def test_the_layout_matches_the_real_ass_styles(mode: str) -> None:
             f = line.removeprefix("Style: ").split(",")
             styles[f[0]] = (int(f[18]), int(f[21]))  # Alignment, MarginV
     for kind, style in (("text", "Caption"), ("title", "ChapterTitle"), ("cta", "CTA"),
-                        ("karaoke", "Karaoke")):  # fmt: skip
+                        ("karaoke", "Karaoke"), ("split_top", "SplitTop"),
+                        ("split_bottom", "SplitBottom")):  # fmt: skip
         _, margin_v, from_top = _layout(kind, e, RULES)
         align, mv = styles[style]
         assert margin_v == mv and from_top == (align == 8), kind

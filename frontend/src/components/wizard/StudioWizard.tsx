@@ -4,6 +4,8 @@ import { api } from '../../services/api';
 import type { FootageFile, PlatformInfo, PreflightResult, VideoOptions } from '../../types/rules';
 import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
+import { RULES } from '../../data/rules';
+import { CompareFields } from './CompareFields';
 import { DeliveryFields } from './DeliveryFields';
 import { PlatformPicker } from './PlatformPicker';
 import { defaultPlatforms } from '../../lib/platforms';
@@ -226,6 +228,12 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
         {!renderOnly && (
           <Panel title={platformList.length > 0 ? '5. Tên file giao' : '4. Tên file giao'} id="chon-giao-hang">
             <DeliveryFields options={options} onChange={patch} />
+          </Panel>
+        )}
+
+        {!renderOnly && RULES.splitScreenStyles.includes(options.phong_cach) && (
+          <Panel title="So sánh chia đôi màn hình" id="so-sanh">
+            <CompareFields options={options} onChange={patch} />
           </Panel>
         )}
       </div>

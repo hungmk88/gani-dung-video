@@ -90,7 +90,32 @@ def _frame_at(e: Edl, zoom: float) -> list[str]:
             "setsar=1", f"fps={e.fps}", "format=yuv420p"]  # fmt: skip
 
 
-def _video_chain(i: int, s: Shot, e: Edl) -> str:
+def _half(e: Edl) -> list[str]:
+    """Fill half the frame (split screen), cropped around the centre."""
+    h = e.height // 2
+    return [f"scale={e.width}:{h}:force_original_aspect_ratio=increase", f"crop={e.width}:{h}",
+            "setsar=1", f"fps={e.fps}", "format=yuv420p"]  # fmt: skip
+
+
+def _split_chain(i: int, s: Shot, e: Edl, low: int, divider: int) -> str:
+    """Split screen: this shot's clip on top, input `low` below, a white line between."""
+
+    def pad(sec: float) -> str:
+        return f",tpad=stop_mode=clone:stop_duration={_n(sec)}" if sec > 0 else ""
+
+    top = ["setpts=PTS-STARTPTS"] + ([_HDR_TO_SDR] if s.hdr else []) + _half(e)
+    bottom = ["setpts=PTS-STARTPTS"] + ([_HDR_TO_SDR] if s.split_hdr else []) + _half(e)
+    line = max(2, 2 * round(divider * e.width / PLAY_W / 2))
+    return (f"[{i}:v]{','.join(top)}{pad(s.pad_sec)}[sa{i}];"
+            f"[{low}:v]{','.join(bottom)}{pad(s.split_pad_sec)}[sb{i}];"
+            f"[sa{i}][sb{i}]vstack=inputs=2,"
+            f"drawbox=x=0:y={e.height // 2 - line // 2}:w={e.width}:h={line}:color=white:t=fill"
+            f"[v{i}]")  # fmt: skip
+
+
+def _video_chain(i: int, s: Shot, e: Edl, low: int | None = None, divider: int = 6) -> str:
+    if s.split_with is not None and low is not None:
+        return _split_chain(i, s, e, low, divider)
     pts = "PTS-STARTPTS" if s.speed == 1.0 else f"(PTS-STARTPTS)/{_n(s.speed)}"  # slow motion
     head = [f"setpts={pts}"] + ([_HDR_TO_SDR] if s.hdr else [])
     tail = [f"tpad=stop_mode=clone:stop_duration={_n(s.pad_sec)}"] if s.pad_sec > 0 else []
@@ -282,7 +307,8 @@ def _join_label(lines: list[str], e: Edl) -> list[str]:
 def build_graph(
     e: Edl, has_audio: Sequence[bool], music_idx: int | None = None, ass_name: str | None = None,
     loudnorm: Mapping[str, float] | None = None, logo: BrandLogo | None = None,
-    phone_idx: int | None = None,
+    phone_idx: int | None = None, split_idx: Mapping[int, int] | None = None,
+    divider_px: int = 6,
 ) -> str:  # fmt: skip
     """The -filter_complex text (pure: testable without ffmpeg).
 
@@ -290,8 +316,10 @@ def build_graph(
         logo: picture logo (watermark + end card); None = the .ass draws the text logo.
         phone_idx: input index of the phone frame picture (the screenshot is the next input),
             when the EDL has a phone mockup.
+        split_idx: shot index → input index of its bottom clip (split screen shots).
     """
-    lines = [_video_chain(i, s, e) for i, s in enumerate(e.shots)]
+    lows = split_idx or {}
+    lines = [_video_chain(i, s, e, lows.get(i), divider_px) for i, s in enumerate(e.shots)]
     lines += _join_label(_join_video(e), e)
     lines += _overlays(e)
     end = "vend0" if logo else "vend"
@@ -484,10 +512,19 @@ def render(
         phone_idx = len(e.shots) + len(e.overlays) + (music_idx is not None) + (2 if logo else 0)
         for f in phone:  # still pictures, repeated for the mockup's seconds
             inputs += ["-loop", "1", "-framerate", str(e.fps), "-t", _n(e.phone.sec), "-i", str(f)]
+    split_idx = {}
+    for i, s in enumerate(e.shots):  # split screen: the bottom clip of a shot, last inputs
+        if s.split_with is not None:
+            low = footage_dir / s.split_with
+            if not low.is_file():
+                raise RenderError(f"Không tìm thấy {low.name} — ffmpeg không thể dựng.")
+            split_idx[i] = inputs.count("-i")
+            inputs += ["-ss", _n(s.split_in), "-t", _n(s.split_out - s.split_in), "-i", str(low)]
+    divider = int(rules["effects"].get("split_screen", {}).get("divider_px", 6))
     _copy_fonts(work / "fonts")
     graph = work / "graph.txt"
-    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm, logo, phone_idx),
-                     encoding="utf-8")  # fmt: skip
+    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm, logo, phone_idx,
+                                 split_idx, divider), encoding="utf-8")  # fmt: skip
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,
             "-/filter_complex", graph.name, "-map", "[vout]", "-map", "[aout]",
             *encode_args(e, rules), "-t", _n(e.duration), str(out)]  # fmt: skip

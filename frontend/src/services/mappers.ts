@@ -44,6 +44,7 @@ import type {
   QaGroup,
   QaReport,
   RenderJob,
+  SoSanhFields,
   Structure,
   StructureKind,
   VerifyCheck,
@@ -629,6 +630,15 @@ function withoutFacts(options: Record<string, unknown>): Record<string, unknown>
 
 /** Body of POST /api/preflight (Appendix D keys; the server rejects unknown keys, so the
  *  UI-only `pacing` is left out and blanks become null). */
+function compareOf(o: VideoOptions): SoSanhFields | null {
+  const s = o.so_sanh;
+  if (!s || !RULES.splitScreenStyles.includes(o.phong_cach)) return null;
+  const tren = s.tren.trim();
+  const duoi = s.duoi.trim();
+  if (!tren || !duoi) return null;
+  return { tren, duoi, nhan_tren: s.nhan_tren.trim(), nhan_duoi: s.nhan_duoi.trim() };
+}
+
 export function preflightBody(o: VideoOptions): { options: Record<string, unknown> } {
   return {
     options: {
@@ -644,6 +654,8 @@ export function preflightBody(o: VideoOptions): { options: Record<string, unknow
       // Delivery naming (Dev Package 03): the queue hands both to `render`; blank = defaults.
       ...(o.san_pham ? { san_pham: o.san_pham } : {}),
       ...(o.chien_dich?.trim() ? { chien_dich: o.chien_dich.trim() } : {}),
+      // Split screen: only for a style that has it, and only with both clips named.
+      ...(compareOf(o) ? { so_sanh: compareOf(o) } : {}),
       // Only sent when known / chosen: the server warns about a track its BPM cannot build with.
       ...(typeof o.nhac_bpm === 'number' ? { nhac_bpm: o.nhac_bpm } : {}),
       ...(o.bpm_override === true ? { bpm_override: true } : {}),

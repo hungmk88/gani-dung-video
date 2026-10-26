@@ -22,7 +22,7 @@ from gani_dung_video.domain.edl import Edl
 from gani_dung_video.domain.glossary import find_phrases
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.qc import PLAY_W, Finding, WidthFn, size_key, usable_width, wrap_lines
-from gani_dung_video.domain.subtitles import PLAY_H
+from gani_dung_video.domain.subtitles import PLAY_H, split_label_margin
 
 GlyphFn = Callable[[str, str], bool]  # (character, font family) → the font draws it
 _EPS = 1e-6
@@ -161,6 +161,8 @@ def _layout(kind: str, e: Edl, rules: Rules) -> tuple[str, int, bool]:
         return "chapter_title", int(safe["top"]) + int(r["chapter_title_offset"]), True
     if kind == "karaoke":
         return "karaoke", int(safe["bottom"]), False
+    if kind in ("split_top", "split_bottom"):
+        return "caption", split_label_margin(kind, rules), True
     extra = int(r["speech_cta_extra_margin"]) if kind == "cta" and e.mode == "speech" else 0
     return size_key(kind), int(safe["bottom"]) + extra, False
 

@@ -181,6 +181,17 @@ def test_storytelling_follows_the_voice_only_when_the_footage_speaks(
     assert plan.driver == driver and plan_json(folder)["driver"] == driver
 
 
+def test_a_compare_clip_missing_from_the_footage_is_refused_at_plan(
+    folder: Path, tmp_path: Path
+) -> None:
+    pair = {"tren": "a.mp4", "duoi": "khong-co.mp4"}
+    with pytest.raises(ConfigError, match=r"khong-co\.mp4"):
+        build_plan(write_options(tmp_path / "o.json", so_sanh=pair), folder, rules=RULES)
+    plan, _ = build_plan(write_options(tmp_path / "o.json", so_sanh={**pair, "duoi": "a.mp4"}),
+                         folder, rules=RULES)  # fmt: skip
+    assert plan.options["compare"]["duoi"] == "a.mp4"
+
+
 def test_cli_plan_prints_a_summary(
     folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

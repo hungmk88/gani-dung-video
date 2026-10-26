@@ -157,6 +157,19 @@ def test_the_phone_mockup_puts_the_screenshot_under_the_frame_screen() -> None:
     assert "[vphone]" not in build_graph(edl([shot("a.mp4", 0, 2.0)]), [True])
 
 
+def split_shot(t0: float, t1: float) -> Shot:
+    return shot("a.mp4", t0, t1).model_copy(update={
+        "split_with": "b.mp4", "split_in": 0.5, "split_out": 0.5 + (t1 - t0)})  # fmt: skip
+
+
+def test_a_split_shot_stacks_two_half_frames_with_a_line_between() -> None:
+    g = build_graph(edl([shot("a.mp4", 0, 1.0), split_shot(1.0, 2.0)]), [True, True],
+                    split_idx={1: 2})  # fmt: skip
+    assert "[1:v]setpts=PTS-STARTPTS,scale=540:480:force_original_aspect_ratio=increase" in g
+    assert "[2:v]setpts=PTS-STARTPTS,scale=540:480:force_original_aspect_ratio=increase" in g
+    assert "[sa1][sb1]vstack=inputs=2,drawbox=x=0:y=478:w=540:h=4:color=white:t=fill[v1]" in g
+
+
 def test_a_slowed_shot_stretches_its_timestamps() -> None:
     slow = shot("a.mp4", 0, 1.0).model_copy(update={"src_out": 0.5, "speed": 0.5})
     g = build_graph(edl([slow, shot("a.mp4", 1.0, 2.0)]), [False, True])
@@ -611,3 +624,18 @@ def test_a_missing_screenshot_stops_the_render_with_its_name(tmp_path: Path) -> 
     e = edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"phone": phone()})
     with pytest.raises(RenderError, match=r"a\.png"):
         phone_files(e, tmp_path, RULES)
+
+
+@needs_render_ffmpeg
+def test_real_render_with_a_split_screen_shot(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
+    ff(tmp_path / "b.mp4", "smptebars=s=720x1280:r=30:d=3", 3.0)
+    e = edl([shot("a.mp4", 0, 1.0), split_shot(1.0, 2.0)])
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    r = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+                        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
+    assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s + 1 s end card, 30 fps

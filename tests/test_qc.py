@@ -286,3 +286,13 @@ def test_fit_font_px_steps_down_to_the_floor_then_gives_up() -> None:
     assert px == {"caption": 68, "cta": 80}  # 3 lines at 72 px, 2 lines at 68 px
     huge = [Caption(start=0, end=3, text=f"{LONG} {LONG}", kind="text")]
     assert fit_font_px(edl(huge), RULES, {"caption": 72, "cta": 80}, width_of) is None
+
+
+def test_split_screen_labels_have_their_own_lanes() -> None:
+    caps = [Caption(start=0, end=3, text="Nhanh hơn", kind="text"),
+            Caption(start=0, end=3, text="Tự làm", kind="split_top"),
+            Caption(start=0, end=3, text="Dùng GANI", kind="split_bottom")]  # fmt: skip
+    px = {"caption": 72, "cta": 80}
+    assert "T6" not in codes(check_captions(edl(caps), RULES, px, width_of))
+    two = [*caps, Caption(start=1, end=2, text="Lại", kind="split_top")]
+    assert "T6" in codes(check_captions(edl(two), RULES, px, width_of))

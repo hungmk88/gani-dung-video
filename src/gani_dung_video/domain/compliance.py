@@ -39,7 +39,13 @@ def edl_texts(e: Edl) -> dict[str, str]:
     Keys are unique and say what to look at: "chữ 2" (the 2nd on-screen line), "tiêu đề 1",
     "CTA 1", "lời 3" (the 3rd spoken line, from the word timing) and "từ nhấn 1".
     """
-    names = {"text": "chữ", "title": "tiêu đề", "cta": "CTA"}
+    names = {
+        "text": "chữ",
+        "title": "tiêu đề",
+        "cta": "CTA",
+        "split_top": "nhãn so sánh",
+        "split_bottom": "nhãn so sánh",
+    }
     count: dict[str, int] = {}
     out: dict[str, str] = {}
     for c in e.captions:

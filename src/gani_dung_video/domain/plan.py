@@ -522,7 +522,8 @@ def compile_plan(
     return Plan(
         rules_version=str(rules["rules_version"]),
         options={"style": o.phong_cach, "purpose": o.muc_dich, "duration": o.do_dai_giay,
-                 "drafts": o.so_ban_nhap, "music": o.nhac},
+                 "drafts": o.so_ban_nhap, "music": o.nhac,
+                 **({"compare": o.so_sanh.model_dump()} if o.so_sanh else {})},
         driver=driver, music=pm, beat_sec=beat_sec, target_beats=target,
         planned_beats=sum(b.beats for b in blocks), beats_per_scene_allowed=allowed,
         blocks=blocks, chapters=chapters, text_rules=text_rules,

@@ -239,6 +239,29 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   trí, cỡ, thời lượng chỉnh ở đó. Khung điện thoại là `assets/brand/khung-dien-thoai.png`, vẽ lại
   bằng `python scripts/tao_khung_dien_thoai.py`.
 
+### So sánh chia đôi màn hình (có từ 26/10/2026, đang TẮT)
+
+- Cảnh đầu của khối **Sản phẩm** (hay Nhu cầu, Chi tiết ưu đãi, Bằng chứng, theo
+  `effects.split_screen.blocks`) chia đôi: clip trên và clip dưới chạy cùng lúc, vạch trắng ở
+  giữa, mỗi nửa một nhãn. Ví dụ "Tự làm: 60 phút" / "Dùng GANI: 5 phút", ảnh quảng cáo / món thật.
+- Chọn ở giao diện, phần **So sánh chia đôi màn hình** (chỉ hiện khi phong cách đã bật), hoặc
+  trong `yeu-cau.md`:
+
+  ```
+  so_sanh:
+    tren: tu-lam.mp4
+    duoi: dung-gani.mp4
+    nhan_tren: "Tự làm: 60 phút"
+    nhan_duoi: "Dùng GANI: 5 phút"
+  ```
+
+  Ghi đúng tên file trong thư mục footage; sai tên thì bước lập kế hoạch báo lỗi ngay.
+- Mỗi clip lấy đoạn giữa, cùng độ dài cảnh; tiếng là của clip trên. Clip ngắn hơn cảnh thì khung
+  cuối đứng lại. Chỉ ở video dựng theo nhạc.
+- Nhãn là chữ trên màn hình: qua bộ lọc cụm cấm và kiểm tra E1 như mọi chữ khác. **So sánh với
+  hàng hay thương hiệu khác: đưa NVH xem trước** (luật quảng cáo hạn chế so sánh trực tiếp).
+- Bật cho phong cách nào thì thêm mã phong cách vào `effects.split_screen.enabled_styles`.
+
 ### Chuyển cảnh thêm (từ 26/10/2026)
 
 Bốn kiểu chuyển cảnh mới. **Đang bật cho TVC cắt nhanh và Review món ăn** (chủ duyệt

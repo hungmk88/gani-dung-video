@@ -59,6 +59,13 @@ export interface StyleDef {
   grade?: string;
 }
 
+export interface SoSanhFields {
+  tren: string;
+  duoi: string;
+  nhan_tren: string;
+  nhan_duoi: string;
+}
+
 export interface PurposeDef {
   id: PurposeId;
   name: string;
@@ -97,6 +104,8 @@ export interface RulesBundle {
   bannedClaims: string[];
   /** delivery.naming.products: the product names a delivered file may carry. */
   deliveryProducts: readonly string[];
+  /** effects.split_screen.enabled_styles: the styles that show the split screen fields. */
+  splitScreenStyles: string[];
   /** platforms.profiles + platforms.default (16/10/2026), in rules.json order. */
   platforms: readonly PlatformInfo[];
   /** block_names (17/10/2026): Vietnamese names of block and chapter ids. */
@@ -159,6 +168,8 @@ export interface VideoOptions {
   san_pham?: string;
   /** Campaign = delivery folder; unset/blank = the project folder name. */
   chien_dich?: string;
+  /** Split screen (26/10/2026): two clips of the footage folder stacked, with their labels. */
+  so_sanh?: SoSanhFields;
   pacing: PacingMode;
   /** The person chose a track the BPM table warns about (ticket 13/10/2026); null = not asked. */
   bpm_override?: boolean | null;

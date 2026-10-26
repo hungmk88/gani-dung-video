@@ -25,6 +25,18 @@ class KhuyenMai(BaseModel):
     dieu_kien: StrictStr = ""
 
 
+class SoSanh(BaseModel):
+    """Split screen (26/10/2026): two clips of the footage folder shown one above the other,
+    each with its label, e.g. "Tự làm: 60 phút" / "Dùng GANI: 5 phút"."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tren: Annotated[str, Field(min_length=1, strict=True)]  # clip file name, top half
+    duoi: Annotated[str, Field(min_length=1, strict=True)]  # clip file name, bottom half
+    nhan_tren: Annotated[str, Field(max_length=40, strict=True)] = ""
+    nhan_duoi: Annotated[str, Field(max_length=40, strict=True)] = ""
+
+
 class VideoOptions(BaseModel):
     """One option combo. Choice values are checked against rules.json, not hardcoded here.
 
@@ -46,6 +58,7 @@ class VideoOptions(BaseModel):
     ghi_chu: StrictStr | None = None
     san_pham: StrictStr | None = None
     chien_dich: StrictStr | None = None
+    so_sanh: SoSanh | None = None
     # Appendix D writes `rules_version: 2.0` unquoted, so accept the number form too.
     rules_version: StrictStr | float | None = None
     so_canh_dung_duoc: Count | None = None

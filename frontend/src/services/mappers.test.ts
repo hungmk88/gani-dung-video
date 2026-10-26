@@ -279,3 +279,24 @@ test('preflightBody sends product and campaign only when chosen (blank = server 
   assert.equal(set.san_pham, 'gio-lua');
   assert.equal(set.chien_dich, 'Tết 2027');
 });
+
+test('the split screen pair is sent only for a style that has it and with both clips', () => {
+  const pair = { tren: ' tu-lam.mp4 ', duoi: 'gani.mp4', nhan_tren: ' Tự làm ', nhan_duoi: 'GANI' };
+  const styles = RULES.splitScreenStyles as string[];
+  const saved = [...styles];
+  try {
+    styles.splice(0, styles.length);
+    assert.equal('so_sanh' in preflightBody({ ...OPTS, so_sanh: pair }).options, false); // off
+    styles.push(OPTS.phong_cach);
+    assert.deepEqual(preflightBody({ ...OPTS, so_sanh: pair }).options.so_sanh, {
+      tren: 'tu-lam.mp4',
+      duoi: 'gani.mp4',
+      nhan_tren: 'Tự làm',
+      nhan_duoi: 'GANI',
+    });
+    const half = preflightBody({ ...OPTS, so_sanh: { ...pair, duoi: ' ' } }).options;
+    assert.equal('so_sanh' in half, false);
+  } finally {
+    styles.splice(0, styles.length, ...saved);
+  }
+});

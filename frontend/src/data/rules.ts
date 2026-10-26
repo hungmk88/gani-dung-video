@@ -315,6 +315,10 @@ export const RULES: RulesBundle = {
     'thiên nhiên 100 phần trăm',
   ],
 
+  // config/rules.json → effects.split_screen.enabled_styles (26/10/2026): the styles that show
+  // the split screen fields. src/data/rules.test.ts fails when this copy drifts.
+  splitScreenStyles: [],
+
   // config/rules.json → delivery.naming.products (the products a delivered file may be named
   // for). Same list, same order: src/data/rules.test.ts fails when this copy drifts.
   deliveryProducts: [

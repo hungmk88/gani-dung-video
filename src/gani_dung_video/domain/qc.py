@@ -225,12 +225,14 @@ def _too_long(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> li
 def check_captions(e: Edl, rules: Rules, px: Mapping[str, int], width: WidthFn) -> list[Finding]:
     """T6 two captions on screen at once; T7 a caption needs more than the allowed lines.
 
-    A chapter title is drawn at the top of the frame, the other captions at the bottom: they
-    are two lanes, and only captions in the same lane can overlap."""
+    A chapter title is drawn at the top of the frame, a split screen label at the top of its
+    half, the other captions at the bottom: each is its own lane, and only captions in the same
+    lane can overlap."""
     out = []
+    own_lane = ("title", "split_top", "split_bottom")
     for lane in (
-        [c for c in e.captions if c.kind == "title"],
-        [c for c in e.captions if c.kind != "title"],
+        *([c for c in e.captions if c.kind == k] for k in own_lane),
+        [c for c in e.captions if c.kind not in own_lane],
     ):
         for a, b in itertools.pairwise(sorted(lane, key=lambda c: c.start)):
             if b.start < a.end - 1e-6:

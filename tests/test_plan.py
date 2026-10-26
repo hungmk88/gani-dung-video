@@ -242,6 +242,14 @@ def test_speech_driven_rules() -> None:
     assert not speech_driven(styles["tvc_cat_nhanh"], True, chapters=False)
 
 
+def test_the_compare_pair_rides_along_in_the_plan_options() -> None:
+    pair = {"tren": "a.mp4", "duoi": "b.mp4", "nhan_tren": "Tự làm", "nhan_duoi": "GANI"}
+    p = compile_plan(opts(so_sanh=pair), RULES, music=music(), available_tags=ALL_TAGS)
+    assert p.options["compare"] == pair
+    assert "compare" not in compile_plan(opts(), RULES, music=music(),
+                                         available_tags=ALL_TAGS).options  # fmt: skip
+
+
 def test_three_minute_video_is_not_supported_yet() -> None:
     with pytest.raises(PlanError) as e:
         compile_plan(opts(do_dai_giay=180), RULES, music=music(), available_tags=ALL_TAGS)
