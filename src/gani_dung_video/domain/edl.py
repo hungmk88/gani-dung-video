@@ -22,6 +22,7 @@ from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.speech_edit import Overlay, SpeechCut, duck_intervals
+from gani_dung_video.domain.zoom import Room, Span, Zoom, beat_punches, speech_zooms, zoom_room
 
 
 class EdlError(ValueError):
@@ -40,6 +41,9 @@ class Shot(BaseModel):
     hdr: bool
     dissolve_out_sec: float  # cross-fade into the next shot (0 = hard cut)
     pad_sec: float  # tail the source is too short for: freeze its last frame
+    zoom: float = 1.0  # whole-shot framing (domain/zoom.py, 26/10/2026)
+    punch_sec: float | None = None  # punch-in this many seconds into the shot
+    punch_zoom: float = 1.0  # framing from punch_sec on
 
 
 class MusicTrack(BaseModel):
@@ -259,6 +263,8 @@ def build_edl(
     else:
         to = None
     shots = _shots(draft, style, clips, fps, group_of)
+    room = _room(clips, rules)
+    shots = _zoomed(shots, beat_punches(_spans(shots), style, plan.beat_sec, fps, room))
     content_end = shots[-1].t_end if shots else 0.0
     end_card = float(r["end_card_sec"])
     m = plan.music
@@ -276,6 +282,21 @@ def build_edl(
         captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
         trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
     )  # fmt: skip
+
+
+def _spans(shots: Sequence[Shot]) -> list[Span]:
+    return [Span(s.t_start, s.t_end, s.source) for s in shots]
+
+
+def _room(clips: Mapping[str, Clip], rules: Rules) -> Room:
+    final = rules["render"]["final"]
+    return zoom_room(clips, int(final["width"]), int(final["height"]),
+                     float(rules["effects"]["max_upscale"]))  # fmt: skip
+
+
+def _zoomed(shots: list[Shot], zooms: Mapping[int, Zoom]) -> list[Shot]:
+    return [s.model_copy(update={"zoom": z.base, "punch_sec": z.punch_sec, "punch_zoom": z.punch})
+            if (z := zooms.get(i)) else s for i, s in enumerate(shots)]  # fmt: skip
 
 
 def _broll_shot(b: BrollPlacement, clips: Mapping[str, Clip], fps: int) -> Shot:
@@ -313,6 +334,11 @@ def build_speech_edl(
         shots.append(Shot(source=c.clip, src_in=c.src_in, src_out=c.src_out, t_start=c.t_start,
                           t_end=c.t_end, block="speech", hdr=clips[c.clip].is_hdr,
                           dissolve_out_sec=0.0, pad_sec=0.0))  # fmt: skip
+    covered = [(b.overlay.t_start, b.overlay.t_end) for b in broll]
+    zooms = speech_zooms(_spans(shots), [c.words for c in cuts], covered, style,
+                         rules["effects"], _room(clips, rules),
+                         bool(se.get("jump_cut_zoom_enabled")))  # fmt: skip
+    shots = _zoomed(shots, zooms)
     end = shots[-1].t_end if shots else 0.0
     m = plan.music
     music = MusicTrack(track=m.track, audio_in_sec=m.audio_in_sec, loop_sec=m.loop_sec,

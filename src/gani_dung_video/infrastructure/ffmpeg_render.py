@@ -83,20 +83,24 @@ def _n(x: float) -> str:
     return f"{x:.6g}"
 
 
+def _frame_at(e: Edl, zoom: float) -> list[str]:
+    """Fill the frame, `zoom` times closer, cropped around the centre."""
+    w, h = (2 * math.ceil(x * zoom / 2) for x in (e.width, e.height))
+    return [f"scale={w}:{h}:force_original_aspect_ratio=increase", f"crop={e.width}:{e.height}",
+            "setsar=1", f"fps={e.fps}", "format=yuv420p"]  # fmt: skip
+
+
 def _video_chain(i: int, s: Shot, e: Edl) -> str:
-    parts = ["setpts=PTS-STARTPTS"]
-    if s.hdr:
-        parts.append(_HDR_TO_SDR)
-    parts += [
-        f"scale={e.width}:{e.height}:force_original_aspect_ratio=increase",
-        f"crop={e.width}:{e.height}",
-        "setsar=1",
-        f"fps={e.fps}",
-        "format=yuv420p",
-    ]
-    if s.pad_sec > 0:
-        parts.append(f"tpad=stop_mode=clone:stop_duration={_n(s.pad_sec)}")
-    return f"[{i}:v]{','.join(parts)}[v{i}]"
+    head = ["setpts=PTS-STARTPTS"] + ([_HDR_TO_SDR] if s.hdr else [])
+    tail = [f"tpad=stop_mode=clone:stop_duration={_n(s.pad_sec)}"] if s.pad_sec > 0 else []
+    if s.punch_sec is None:
+        return f"[{i}:v]{','.join(head + _frame_at(e, s.zoom) + tail)}[v{i}]"
+    # punch-in (domain/zoom.py): the closer framing is laid over from punch_sec on
+    return (f"[{i}:v]{','.join(head)},split[za{i}][zb{i}];"
+            f"[za{i}]{','.join(_frame_at(e, s.zoom))}[zc{i}];"
+            f"[zb{i}]{','.join(_frame_at(e, s.punch_zoom))}[zd{i}];"
+            f"[zc{i}][zd{i}]overlay=enable='gte(t,{_n(s.punch_sec)})'"
+            f"{''.join(',' + t for t in tail)}[v{i}]")  # fmt: skip
 
 
 def _join_video(e: Edl) -> list[str]:

@@ -111,6 +111,19 @@ def test_tvc_is_all_cuts() -> None:
     assert all(s.dissolve_out_sec == 0 for s in e.shots)
 
 
+def test_tvc_punches_in_on_the_beat_and_other_styles_do_not() -> None:
+    # 26/10/2026, domain/zoom.py: TVC shots of ≥ 2 beats punch in 5 % on their second beat,
+    # at most max_effects (3) of them; c.mp4 etc. are 1080×1920 so the zoom fits.
+    e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS, RULES,
+                  preview=True)  # fmt: skip
+    punched = [i for i, s in enumerate(e.shots) if s.punch_sec is not None]
+    assert punched == [0, 2, 4]
+    assert all(e.shots[i].punch_sec == 0.75 and e.shots[i].punch_zoom == pytest.approx(1.05)
+               and e.shots[i].zoom == 1.0 for i in punched)  # fmt: skip
+    calm = build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=True)
+    assert all(s.punch_sec is None and s.zoom == 1.0 for s in calm.shots)
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12
@@ -287,6 +300,21 @@ def test_speech_edl_keeps_the_voice_ducks_the_music_and_places_broll() -> None:
     assert [(c.text, c.kind) for c in e.captions] == [("Nhắn tin nhận báo giá sỉ", "cta")]
     assert [[w.text for w in g] for g in e.karaoke] == [["Giò", "lụa", "ngon."],
                                                         ["Nhắn", "tin", "ngay"]]  # fmt: skip
+
+
+def test_speech_edl_frames_every_other_phrase_closer_and_review_punches_on_taste_words() -> None:
+    from gani_dung_video.domain.edl import build_speech_edl
+
+    sales = build_speech_edl(speech_cuts(), [], speech_plan(), CLIPS, RULES, preview=True)
+    assert [(s.zoom, s.punch_sec) for s in sales.shots] == [(1.0, None), (1.12, None)]
+    p = speech_plan()
+    review = p.model_copy(update={"options": {**p.options, "style": "review_mon_an"}})
+    e = build_speech_edl(speech_cuts(), [], review, CLIPS, RULES, preview=True)
+    # "ngon." at 0.9 s of the first phrase (punctuation ignored); review has no alternate framing
+    assert [(s.zoom, s.punch_sec, s.punch_zoom) for s in e.shots] == [
+        (1.0, pytest.approx(0.9), pytest.approx(1.08)),
+        (1.0, None, 1.0),
+    ]
 
 
 def test_speech_edl_refuses_broll_from_an_unknown_clip() -> None:
