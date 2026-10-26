@@ -185,6 +185,21 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   `broll_beats`, `pad_ms`, `duck_db` (chép từ Bán hàng có lời, chủ duyệt 26/10/2026),
   `silence_keep` (của từng phong cách).
 
+### Zoom tự động (từ 26/10/2026)
+
+| Phong cách | Kiểu zoom | Khi nào |
+|---|---|---|
+| TVC cắt nhanh | Zoom bật vào 5% | Ở phách thứ hai của cảnh dài từ 2 phách, tối đa 3 lần mỗi video, rải đều |
+| Bán hàng có lời | Khung gần hơn 1,12× | Cứ một câu thì câu sau quay gần hơn, che chỗ nối hai câu cùng một lần quay |
+| Review món ăn (có lời) | Zoom bật vào 8% | Đúng lúc người nói nói từ khen vị ("ngon", "giòn", "thơm", "đáng tiền"…) khi đang thấy mặt, tối đa 3 lần |
+
+- Chữ, logo và khung kết không bị zoom (chồng lên sau).
+- Clip **không đủ điểm ảnh thì không zoom** để hình không bị nhòe: clip dọc 1080×1920 zoom được,
+  clip 720p hoặc clip quay ngang thì không. Quay review bằng điện thoại để **dọc, 1080p hoặc 4K**.
+- Số liệu và danh sách từ nằm trong `config/rules.json`: `styles.<phong cách>.punch_zoom`,
+  `zoom_alternate`, `keyword_zoom`, `max_effects`; `effects.keywords`, `effects.max_upscale`,
+  `effects.keyword_min_hold_sec`. Muốn tắt một kiểu thì xóa khóa đó ở phong cách.
+
 ### Chi phí (số thật và trần)
 
 | | Số |

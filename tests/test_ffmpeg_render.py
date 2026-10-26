@@ -97,6 +97,20 @@ def test_hdr_shots_are_tone_mapped_and_short_sources_padded() -> None:
     assert "tpad=stop_mode=clone:stop_duration=0.2" in g
 
 
+def test_zoomed_shots_are_framed_closer_and_punch_in_at_their_moment() -> None:
+    plain, framed, punched = (
+        shot("a.mp4", 0, 1.0),
+        shot("a.mp4", 1.0, 2.0).model_copy(update={"zoom": 1.12, "punch_zoom": 1.12}),
+        shot("a.mp4", 2.0, 3.0).model_copy(update={"punch_sec": 0.5, "punch_zoom": 1.05}),
+    )
+    g = build_graph(edl([plain, framed, punched]), [True, True, True])
+    assert "[0:v]setpts=PTS-STARTPTS,scale=540:960:force_original_aspect_ratio=increase," in g
+    assert "[1:v]setpts=PTS-STARTPTS,scale=606:1076:force_original_aspect_ratio=increase," in g
+    assert "[2:v]setpts=PTS-STARTPTS,split[za2][zb2]" in g
+    assert "[zb2]scale=568:1008:force_original_aspect_ratio=increase,crop=540:960" in g
+    assert "[zc2][zd2]overlay=enable='gte(t,0.5)'[v2]" in g
+
+
 def test_audio_is_placed_on_the_timeline_music_looped_and_loudness_normalised() -> None:
     m = MusicTrack(track="t.m4a", audio_in_sec=0.5, loop_sec=2.0, fade_out_sec=0.5)
     g = build_graph(edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 2)], music=m),
@@ -451,3 +465,20 @@ def test_an_ffmpeg_failure_keeps_the_last_lines_so_the_cause_is_visible(
         render_run(["ffmpeg"], tmp_path, 5.0)
     msg = str(caught.value)
     assert "line12" in msg and "line5" in msg and "line4" not in msg
+
+
+@needs_render_ffmpeg
+def test_real_render_with_a_punch_in_keeps_size_and_length(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=1080x1920:r=30:d=3", 3.0)
+    e = edl([shot("a.mp4", 0, 1.0).model_copy(update={"zoom": 1.12, "punch_zoom": 1.12}),
+             shot("a.mp4", 1.0, 2.0, src_in=1.0).model_copy(
+                 update={"punch_sec": 0.5, "punch_zoom": 1.05})])  # fmt: skip
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    streams = probe(out)["streams"]
+    assert isinstance(streams, list)
+    v = next(s for s in streams if s["codec_type"] == "video")
+    assert (v["width"], v["height"], v["r_frame_rate"]) == (540, 960, "30/1")
+    assert float(v["duration"]) == pytest.approx(3.0, abs=0.1)  # 2 s of shots + 1 s end card

@@ -29,7 +29,7 @@
    "name": "Review món ăn", "driver": "music", "driver_if_speech": "speech",
    "scene_sec": [1.5, 3.0], "scene_avg_sec": 2.0, "beats_allowed": [2, 4],
    "segment_sec": [1.2, 3.0], "silence_keep": [0.15, 0.3], "bpm_range": [95, 120],
-   "broll_beats": [2, 4], "pad_ms": [80, 120], "duck_db": -18,
+   "broll_beats": [2, 4], "pad_ms": [80, 120], "duck_db": -18, "keyword_zoom": 0.08,
    "transition": "cut", "max_effects": 3, "slowmo_min_fps": 60,
    "text": {"min_words": 3, "max_words": 6}, "ambient_db": -12, "grade": "mon-an"
   },
@@ -342,6 +342,12 @@
   },
   "ffmpeg_timeout_sec": 1800
  },
+ "_ghi_chu_effects": "Zoom (chủ duyệt 26/10/2026, domain/zoom.py). Ba kiểu, đọc từ styles: punch_zoom (TVC cắt nhanh, 0,05 = gần thêm 5%) zoom bật vào ở phách thứ hai của cảnh dài ≥ 2 phách; zoom_alternate (Bán hàng có lời, 1,12) cứ một câu thì câu sau quay gần hơn để hai câu cùng một lần quay không bị giật hình; keyword_zoom (Review món ăn, 0,08) zoom bật vào đúng lúc người nói nói một từ trong keywords (khớp nguyên từ, giữ dấu) khi đang thấy mặt người nói (không dưới B-roll) và còn ít nhất keyword_min_hold_sec giây trước khi hết câu. Zoom bật vào (punch_zoom, keyword_zoom) tính vào max_effects của phong cách (null = không giới hạn), chọn rải đều trong video; zoom_alternate không tính. max_upscale: không zoom nếu điểm ảnh của clip bị phóng quá mức này ở cỡ bản cuối 1080×1920 (clip dọc 1080×1920 zoom được tới 1,15 lần nên zoom 1,12 dùng được; clip dọc 720×1280 hay clip ngang 1920×1080 vốn đã bị phóng nên không zoom; clip 4K dọc zoom thoải mái); bản nháp 540p quyết y như bản cuối.",
+ "effects": {
+  "max_upscale": 1.15,
+  "keyword_min_hold_sec": 0.5,
+  "keywords": ["ngon", "giòn", "thơm", "đậm đà", "béo", "ngọt", "mềm", "dai", "đáng tiền", "tuyệt vời", "xuất sắc", "wow"]
+ },
  "_ghi_chu_qc": "Soát kỹ thuật sau render (GĐ5b, chốt 29/09/2026): đo trên chính file xuất. T1 độ dài/khung/fps/codec, T2 số khung = độ dài × fps (±frame_slack), T3 −14 ±lufs_tolerance LU và đỉnh thật ≤ max_true_peak_db (sai → dựng lại với chuẩn hóa 2 lượt; ≤ silence_lufs là im lặng: bỏ qua nếu video cố ý không tiếng, là lỗi nếu có nhạc/tiếng hiện trường), T4 khung đen ≥ black_min_sec trong phần nội dung là lỗi (khung kết miễn), T5 đứng hình ≥ freeze_min_sec chỉ cảnh báo (bỏ qua chỗ cố ý kéo dài khung cuối), T6 hai dòng chữ cùng lúc là lỗi, T7 chữ quá max_lines dòng trong 800px → giảm font_step_px mỗi nấc, không dưới font_min_px, vẫn tràn là lỗi. Tối đa max_rounds vòng. Dung sai T2 (sửa 07/10/2026, phong cách theo_mo_ta ra 507/510 khung): H.264 sắp lại B-frame nên khi -shortest cắt giữa GOP, 2–3 khung cuối rơi khi giải mã; dung sai = max(frame_slack, làm tròn lên nửa(fps × frame_slack_sec)) khung, tức 24 fps → 4, 30 fps → 5, 60 fps → 9 (0,15 s). frame_slack = 1 là sàn cho fps rất thấp hoặc metadata lỗi. Đo vẫn đếm từng khung (không bỏ -count_frames) nên mất khung thật do encoder lỗi vẫn bị chặn. Dung sai độ dài T1 vẫn dùng frame_slack cũ.",
  "qc": {
   "lufs_tolerance": 1.0,
@@ -475,7 +481,7 @@
   "S6": "Các bản không trùng nhau",
   "SNAP": "Khớp phách"
  },
- "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K. Từ 26/10/2026 Review món ăn và Kể chuyện nghề cũng dựng theo lời khi footage có lời (driver_if_speech, xem _ghi_chu).",
+ "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× (zoom_alternate) bật từ 26/10/2026, chỉ trên clip đủ điểm ảnh (xem _ghi_chu_effects). Từ 26/10/2026 Review món ăn và Kể chuyện nghề cũng dựng theo lời khi footage có lời (driver_if_speech, xem _ghi_chu).",
  "speech_edit": {
   "sentence_end": ".?!…",
   "soft_break": ",;:",
