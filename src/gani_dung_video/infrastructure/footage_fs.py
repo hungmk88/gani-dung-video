@@ -28,6 +28,22 @@ def list_videos(folder: Path, extensions: Sequence[str]) -> list[Path]:
     )  # fmt: skip
 
 
+def first_picture(folder: Path, subfolder: str, extensions: Sequence[str]) -> str | None:
+    """The first picture (by name) in <folder>/<subfolder>, as a path relative to folder; None
+    when there is none. Hidden files and anything resolving outside the folder are skipped."""
+    sub = folder / subfolder
+    if not sub.is_dir():
+        return None
+    root, exts = folder.resolve(), {e.lower() for e in extensions}
+    pics = sorted(
+        (p for p in sub.iterdir()
+         if p.is_file() and not p.name.startswith(".") and p.suffix.lower() in exts
+         and p.resolve().is_relative_to(root)),
+        key=lambda p: p.name.lower(),
+    )  # fmt: skip
+    return pics[0].relative_to(folder).as_posix() if pics else None
+
+
 def fingerprint(path: Path, chunk_bytes: int) -> str:
     """SHA-256 over (size, first chunk, last chunk) — reads at most 2 × chunk_bytes.
 

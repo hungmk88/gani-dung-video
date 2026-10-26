@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -129,3 +130,15 @@ def test_clip_stems_add_the_extension_only_when_two_clips_share_a_stem() -> None
     assert len(set(got.values())) == len(got)  # "IMG_1_MOV.mp4" keeps its plain stem too
     assert got["IMG_1_MOV.mp4"] == "IMG_1_MOV"
     assert clip_stems(["IMG_1.mp4", "IMG_1.MOV"]) == clip_stems(["IMG_1.MOV", "IMG_1.mp4"])
+
+
+def test_first_picture_takes_the_first_image_by_name_inside_the_folder(tmp_path: Path) -> None:
+    from gani_dung_video.infrastructure.footage_fs import first_picture
+
+    exts = [".png", ".jpg"]
+    assert first_picture(tmp_path, "dien-thoai", exts) is None  # no such folder
+    sub = tmp_path / "dien-thoai"
+    sub.mkdir()
+    for name in ("b.PNG", "a.txt", ".an.png", "c.jpg"):
+        (sub / name).write_bytes(b"x")
+    assert first_picture(tmp_path, "dien-thoai", exts) == "dien-thoai/b.PNG"

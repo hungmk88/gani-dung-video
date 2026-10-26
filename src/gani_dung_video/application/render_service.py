@@ -27,7 +27,13 @@ from gani_dung_video.application.qc_service import (
 )
 from gani_dung_video.domain.asr_check import T8Measures
 from gani_dung_video.domain.compliance import check_edl_claims
-from gani_dung_video.domain.edl import Edl, SpeechDraft, build_edl, build_speech_edl
+from gani_dung_video.domain.edl import (
+    Edl,
+    SpeechDraft,
+    build_edl,
+    build_speech_edl,
+    with_phone,
+)
 from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.platforms import PlatformError, apply_platform, render_dir_name
@@ -41,7 +47,7 @@ from gani_dung_video.infrastructure.ffmpeg_render import (
     render,
     render_voice_only,
 )
-from gani_dung_video.infrastructure.footage_fs import EDIT_DIR, INVENTORY_FILE
+from gani_dung_video.infrastructure.footage_fs import EDIT_DIR, INVENTORY_FILE, first_picture
 from gani_dung_video.infrastructure.media_probe import FontMetrics
 from gani_dung_video.infrastructure.whisper_asr import Transcriber, load_transcriber
 
@@ -175,7 +181,7 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
         if d is None:
             raise ConfigError(f"Không có bản nháp '{draft}' trong drafts.json.")
         e = build_edl(d, plan, clips, rules, preview=preview)
-    e = _as_posted(e, plan, rules, platform, no_music)
+    e = _as_posted(e, plan, rules, platform, no_music, folder)
     out = folder / EDIT_DIR / RENDER_DIR / render_dir_name(draft, platform)
     video = out / _video_name(draft, preview)
     if not video.is_file():
@@ -190,9 +196,11 @@ def recheck(folder: Path, draft: str, preview: bool = True, rules: Rules | None 
     return [f"{f.level.upper()} {f.code}: {f.msg}" for f in found]
 
 
-def _as_posted(e: Edl, plan: Plan, rules: Rules, platform: str, no_music: bool) -> Edl:
+def _as_posted(e: Edl, plan: Plan, rules: Rules, platform: str, no_music: bool,
+               folder: Path) -> Edl:  # fmt: skip
     """The EDL as posted on `platform` (CTA, end card), "" = unchanged; with `no_music` the
-    plan's music is left out (cuts and lengths stay as planned, music is added in the app).
+    plan's music is left out (cuts and lengths stay as planned, music is added in the app). The
+    project's message screenshot, if any, goes in the style's phone mockup.
 
     Raises:
         ConfigError: unknown platform or unusable profile in rules.json.
@@ -201,6 +209,10 @@ def _as_posted(e: Edl, plan: Plan, rules: Rules, platform: str, no_music: bool) 
         e = apply_platform(e, rules, str(plan.options["purpose"]), platform)
     except PlatformError as err:
         raise ConfigError(str(err)) from err
+    cfg = rules["effects"].get("phone_mockup", {})
+    if e.style in cfg.get("enabled_styles", []):
+        image = first_picture(folder, str(cfg["folder"]), list(cfg["image_extensions"]))
+        e = with_phone(e, image, rules)
     return e.model_copy(update={"music": None, "no_music": True}) if no_music else e
 
 
@@ -342,7 +354,7 @@ def build_render(
         return [
             _render_one(_as_posted(build_speech_edl(x.cuts, x.broll, plan, clips, rules,
                                                     preview=preview), plan, rules, platform,
-                                   no_music),
+                                   no_music, folder),
                        x.draft, x.label, sd.model, sd.cost_vnd, folder, edit, music, rules,
                        preview, metrics, plan, t8, target)
             for x in speech_chosen
@@ -355,7 +367,7 @@ def build_render(
         raise ConfigError(f"Không có bản nháp '{draft}'; drafts.json có: {have}.")
     return [
         _render_one(_as_posted(build_edl(x, plan, clips, rules, preview=preview), plan, rules,
-                               platform, no_music), x.draft, x.label,
+                               platform, no_music, folder), x.draft, x.label,
                    drafts.model, drafts.cost_vnd, folder, edit, music, rules, preview, metrics,
                    plan, None, target)
         for x in chosen

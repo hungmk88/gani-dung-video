@@ -197,6 +197,30 @@ def test_a_render_without_music_leaves_the_plan_track_out(folder: Path, tmp_path
     assert not [f for f in again if not f.startswith("WARN")], again  # silence is planned
 
 
+@needs_render_ffmpeg
+def test_a_message_screenshot_in_the_project_shows_in_the_phone_frame(
+    folder: Path, tmp_path: Path
+) -> None:
+    # 26/10/2026: effects.phone_mockup, for the styles switched on, when dien-thoai/ has a picture
+    project = tmp_path / "du-an"
+    shutil.copytree(folder, project)
+    (project / "dien-thoai").mkdir()
+    pic = project / "dien-thoai" / "tin-nhan.png"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "color=c=white:s=720x1280", "-frames:v", "1", str(pic)],
+                   check=True, timeout=60)  # fmt: skip
+    fx = RULES["effects"]
+    style = str(VideoOptions(**OPTS).phong_cach)
+    on = {**RULES, "effects": {**fx, "phone_mockup": {**fx["phone_mockup"],
+                                                      "enabled_styles": [style]}}}  # fmt: skip
+    [r] = build_render(project, preview=True, rules=on)
+    graph = (r.video.parent / "graph.txt").read_text(encoding="utf-8")
+    assert "[pbs][pfr]overlay=0:0" in graph and "[vphone]" in graph
+    assert r.qc_passed, r.qc_notes
+    [plain] = build_render(project, preview=True, rules=RULES)  # switched off: no phone
+    assert "[vphone]" not in (plain.video.parent / "graph.txt").read_text(encoding="utf-8")
+
+
 def test_a_render_without_music_does_not_need_the_track_file(folder: Path, tmp_path: Path) -> None:
     project = with_music(folder, tmp_path / "mat-nhac", None)
     with pytest.raises(ConfigError, match=r"nen\.m4a"):
