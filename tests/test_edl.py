@@ -137,12 +137,13 @@ def test_review_plays_clips_filmed_at_60_fps_slowly_and_silently_on_the_same_tim
     assert all(s.speed == 1.0 for s in build_edl(draft(segs), plan(), fast, RULES, True).shots)
 
 
-def with_transitions(on: bool = True) -> Any:
-    return {**RULES, "transitions": {**RULES["transitions"], "enabled": on}}
+def with_transitions(*styles: str) -> Any:
+    on = list(styles) or list(RULES["transitions"]["styles"])
+    return {**RULES, "transitions": {**RULES["transitions"], "enabled_styles": on}}
 
 
 def test_extra_transitions_are_off_by_default() -> None:
-    assert RULES["transitions"]["enabled"] is False
+    assert RULES["transitions"]["enabled_styles"] == []
     e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS, RULES,
                   preview=True)  # fmt: skip
     assert all(s.transition == "fade" and s.dissolve_out_sec == 0 for s in e.shots)
@@ -175,6 +176,14 @@ def test_storytelling_whips_between_process_steps_only() -> None:
         ("fade", 7),
         ("fade", 0),
     ]
+
+
+def test_only_the_styles_switched_on_get_their_transitions() -> None:
+    tvc = plan("tvc_cat_nhanh", text_rules={"max_words": 4})
+    off = build_edl(draft(SEGS), tvc, CLIPS, with_transitions("review_mon_an"), preview=True)
+    assert off.end_wipe is None and all(s.transition == "fade" for s in off.shots)
+    on = build_edl(draft(SEGS), tvc, CLIPS, with_transitions("tvc_cat_nhanh"), preview=True)
+    assert on.end_wipe == "circleclose"
 
 
 def test_luxury_sweeps_light_at_each_block_change() -> None:

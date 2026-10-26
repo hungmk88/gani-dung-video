@@ -216,8 +216,9 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
 
 ### Chuyển cảnh thêm (có từ 26/10/2026, đang TẮT)
 
-Bốn kiểu chuyển cảnh mới, **mặc định tắt** cho tới khi chủ xem video mẫu và duyệt. Bật bằng
-`"enabled": true` ở `config/rules.json` → `transitions`.
+Bốn kiểu chuyển cảnh mới, **mặc định tắt** cho tới khi chủ xem video mẫu và duyệt. Bật cho
+phong cách nào thì thêm mã phong cách đó vào `config/rules.json` → `transitions.enabled_styles`
+(ví dụ `["tvc_cat_nhanh", "review_mon_an"]`).
 
 | Phong cách | Chuyển cảnh |
 |---|---|

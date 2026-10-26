@@ -199,9 +199,10 @@ def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int,
 
 
 def _style_transitions(rules: Rules, style_name: str) -> Mapping[str, Any]:
-    """The style's extra transitions, or {} while rules.json → transitions.enabled is off."""
+    """The style's extra transitions, or {} unless it is in transitions.enabled_styles."""
     t = rules.get("transitions", {})
-    return t.get("styles", {}).get(style_name, {}) if t.get("enabled") else {}
+    on = style_name in t.get("enabled_styles", [])
+    return t.get("styles", {}).get(style_name, {}) if on else {}
 
 
 def _cuts(segs: Sequence[Any], style: Mapping[str, Any], extra: Mapping[str, Any], fps: int,
