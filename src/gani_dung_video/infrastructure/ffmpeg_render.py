@@ -305,6 +305,12 @@ def build_graph(
         lines.append(f"[{pic}][lk{j}]overlay=eof_action=pass:"
                      f"enable='between(t,{_n(t0)},{_n(t1)})'[vlk{j}]")  # fmt: skip
         pic = f"vlk{j}"
+    if e.spotlight:  # everything but a centred circle goes dark for a moment
+        lines.append(_spotlight(e))
+        t0, t1 = e.spotlight.t_start, e.spotlight.t_start + e.spotlight.sec
+        lines.append(f"[{pic}][spot]overlay=eof_action=pass:"
+                     f"enable='between(t,{_n(t0)},{_n(t1)})'[vspot]")  # fmt: skip
+        pic = "vspot"
     if e.end_wipe and e.trim_fade_sec == 0:  # e.g. an iris closing on black before the end card
         d, at = e.end_wipe_sec, max(0.0, e.content_end - e.end_wipe_sec)
         lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(d)},"
@@ -333,6 +339,21 @@ def _light_leak(e: Edl, j: int, t0: float) -> str:
             f"colorchannelmixer=aa={_n(e.light_leak_opacity)},"
             f"fade=t=in:st=0:d={_n(half)}:alpha=1,fade=t=out:st={_n(half)}:d={_n(half)}:alpha=1,"
             f"setpts=PTS-STARTPTS+{_n(t0)}/TB[lk{j}]")  # fmt: skip
+
+
+def _spotlight(e: Edl) -> str:
+    """A black layer, clear inside a soft circle, that fades in and out over the spotlight."""
+    sp = e.spotlight
+    assert sp is not None
+    k = e.width / PLAY_W  # rules give pixels on the 1080-wide frame
+    r, f, cy = sp.radius * k, max(1.0, sp.feather * k), sp.center_y * e.height
+    alpha = f"{_n(255 * sp.dim)}*clip((hypot(X-{_n(e.width / 2)},Y-{_n(cy)})-{_n(r)})/{_n(f)},0,1)"
+    fade = min(sp.fade_sec, sp.sec / 2)
+    return (f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(sp.sec)},format=rgba,"
+            f"geq=r=0:g=0:b=0:a='{alpha}',"
+            f"fade=t=in:st=0:d={_n(fade)}:alpha=1,"
+            f"fade=t=out:st={_n(sp.sec - fade)}:d={_n(fade)}:alpha=1,"
+            f"setpts=PTS-STARTPTS+{_n(sp.t_start)}/TB[spot]")  # fmt: skip
 
 
 def _has_audio(path: Path, timeout: float) -> bool:

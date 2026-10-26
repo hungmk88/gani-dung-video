@@ -34,6 +34,20 @@ from gani_dung_video.domain.zoom import Room, Span, Zoom, beat_punches, speech_z
 _PEAK = 0.35  # where a window puts its clip's peak (B-roll; scenes without a peak_ratio)
 
 
+class Spotlight(BaseModel):
+    """Everything but a centred circle goes dark for a moment (rules.json → effects.spotlight)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    t_start: float
+    sec: float
+    fade_sec: float
+    radius: float  # px on the 1080-wide frame
+    feather: float
+    dim: float  # 0 = no darkening, 1 = black outside the circle
+    center_y: float  # fraction of the frame height
+
+
 class EdlError(ValueError):
     """The draft cannot be rendered as is (message in Vietnamese)."""
 
@@ -110,6 +124,7 @@ class Edl(BaseModel):
     light_leak_sec: float = 0.0
     light_leak_opacity: float = 0.0
     light_leak_colors: list[str] = []
+    spotlight: Spotlight | None = None  # music mode, once, at the first shot of a chosen block
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:
@@ -254,6 +269,20 @@ def _ending(extra: Mapping[str, Any], style: Mapping[str, Any], rules: Rules,
     return out
 
 
+def _spotlight(shots: Sequence[Shot], style_name: str, rules: Rules) -> Spotlight | None:
+    """The style's spotlight on the first shot of the first block in effects.spotlight.blocks."""
+    cfg = rules["effects"].get("spotlight", {})
+    if style_name not in cfg.get("enabled_styles", []):
+        return None
+    for block in cfg["blocks"]:
+        if s := next((s for s in shots if s.block == block), None):
+            return Spotlight(t_start=s.t_start, sec=min(float(cfg["sec"]), s.t_end - s.t_start),
+                             fade_sec=float(cfg["fade_sec"]), radius=float(cfg["radius"]),
+                             feather=float(cfg["feather"]), dim=float(cfg["dim"]),
+                             center_y=float(cfg["center_y"]))  # fmt: skip
+    return None
+
+
 def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Clip], fps: int,
            group_of: Mapping[str, str] | None = None,
            extra: Mapping[str, Any] | None = None) -> list[Shot]:  # fmt: skip
@@ -363,6 +392,7 @@ def build_edl(
         captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
         trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
         light_leaks=_light_leaks(shots, extra), **_ending(extra, style, rules, fps),
+        spotlight=_spotlight(shots, style_name, rules),
     )  # fmt: skip
 
 

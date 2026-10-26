@@ -125,6 +125,18 @@ def test_extra_transitions_end_wipe_and_light_leak_are_drawn() -> None:
     assert "[vwiped][vend]concat=n=2" in g
 
 
+def test_spotlight_darkens_all_but_a_centred_circle_for_its_moment() -> None:
+    from gani_dung_video.domain.edl import Spotlight
+
+    sp = Spotlight(t_start=0.5, sec=1.0, fade_sec=0.3, radius=330, feather=160, dim=0.65,
+                   center_y=0.45)  # fmt: skip
+    g = build_graph(edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"spotlight": sp}), [True])
+    # 540x960 preview: radius and feather scale by 0.5; the circle sits at 45 % of the height
+    assert "geq=r=0:g=0:b=0:a='165.75*clip((hypot(X-270,Y-432)-165)/80,0,1)'" in g
+    assert "fade=t=in:st=0:d=0.3:alpha=1,fade=t=out:st=0.7:d=0.3:alpha=1" in g
+    assert "[vjoin][spot]overlay=eof_action=pass:enable='between(t,0.5,1.5)'[vspot]" in g
+
+
 def test_a_slowed_shot_stretches_its_timestamps() -> None:
     slow = shot("a.mp4", 0, 1.0).model_copy(update={"src_out": 0.5, "speed": 0.5})
     g = build_graph(edl([slow, shot("a.mp4", 1.0, 2.0)]), [False, True])
@@ -529,6 +541,24 @@ def test_real_render_with_glitch_iris_and_light_leak(tmp_path: Path) -> None:
         "end_wipe": "circleclose", "end_wipe_sec": 0.5, "light_leaks": [0.6],
         "light_leak_sec": 0.8, "light_leak_opacity": 0.35,
         "light_leak_colors": ["0xFFB04A", "0xFFF1C8"]})  # fmt: skip
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    r = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+                        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
+    assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s + 1 s end card, 30 fps
+
+
+@needs_render_ffmpeg
+def test_real_render_with_a_spotlight(tmp_path: Path) -> None:
+    from gani_dung_video.domain.edl import Spotlight
+
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
+    sp = Spotlight(t_start=0.5, sec=1.0, fade_sec=0.3, radius=330, feather=160, dim=0.65,
+                   center_y=0.45)  # fmt: skip
+    e = edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"spotlight": sp})
     ass = tmp_path / "sub.ass"
     ass.write_text(ass_document(e, RULES), encoding="utf-8")
     out = tmp_path / "out.mp4"
