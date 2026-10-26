@@ -108,7 +108,8 @@ def test_a_clip_missing_from_the_inventory_is_refused() -> None:
 def test_tvc_is_all_cuts() -> None:
     e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS, RULES,
                   preview=False)  # fmt: skip
-    assert all(s.dissolve_out_sec == 0 for s in e.shots)
+    # no dissolves; the one overlap is the hook's glitch (transitions on for TVC, 26/10/2026)
+    assert all(s.dissolve_out_sec == 0 or s.transition == "pixelize" for s in e.shots)
 
 
 def test_tvc_punches_in_on_the_beat_and_other_styles_do_not() -> None:
@@ -142,11 +143,14 @@ def with_transitions(*styles: str) -> Any:
     return {**RULES, "transitions": {**RULES["transitions"], "enabled_styles": on}}
 
 
-def test_extra_transitions_are_off_by_default() -> None:
-    assert RULES["transitions"]["enabled_styles"] == []
-    e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS, RULES,
-                  preview=True)  # fmt: skip
-    assert all(s.transition == "fade" and s.dissolve_out_sec == 0 for s in e.shots)
+def test_extra_transitions_are_on_for_tvc_and_review_only() -> None:
+    # 26/10/2026: the owner switched them on for TVC cắt nhanh and Review món ăn
+    assert RULES["transitions"]["enabled_styles"] == ["tvc_cat_nhanh", "review_mon_an"]
+    tvc = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS,
+                    RULES, preview=True)  # fmt: skip
+    assert tvc.end_wipe == "circleclose"
+    e = build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=True)  # Kể chuyện nghề: still off
+    assert all(s.transition == "fade" for s in e.shots)
     assert e.end_wipe is None and e.light_leaks == []
 
 
