@@ -214,11 +214,11 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   cận món. Clip 30 khung/giây không bao giờ bị quay chậm vì sẽ giật.
 - Số liệu: `styles.review_mon_an.slowmo_min_fps`, `effects.slowmo_speed` trong `config/rules.json`.
 
-### Chuyển cảnh thêm (có từ 26/10/2026, đang TẮT)
+### Chuyển cảnh thêm (từ 26/10/2026)
 
-Bốn kiểu chuyển cảnh mới, **mặc định tắt** cho tới khi chủ xem video mẫu và duyệt. Bật cho
-phong cách nào thì thêm mã phong cách đó vào `config/rules.json` → `transitions.enabled_styles`
-(ví dụ `["tvc_cat_nhanh", "review_mon_an"]`).
+Bốn kiểu chuyển cảnh mới. **Đang bật cho TVC cắt nhanh và Review món ăn** (chủ duyệt
+26/10/2026 sau khi xem video mẫu); các phong cách khác vẫn tắt. Bật hay tắt phong cách nào thì
+thêm hay bớt mã phong cách đó trong `config/rules.json` → `transitions.enabled_styles`.
 
 | Phong cách | Chuyển cảnh |
 |---|---|
