@@ -190,6 +190,15 @@ def test_only_the_styles_switched_on_get_their_transitions() -> None:
     assert on.end_wipe == "circleclose"
 
 
+def test_luxury_fades_to_black_before_the_end_card() -> None:
+    # spec v2.1: sang_trong "end": "fade_black", over its own dissolve (12 frames)
+    e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=True)
+    assert e.end_wipe == "fade" and round(e.end_wipe_sec * FPS) == 12
+    assert build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=True).end_wipe is None
+    lit = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, with_transitions(), preview=True)
+    assert lit.end_wipe == "circleclose"  # an extra end transition, when on, takes its place
+
+
 def test_luxury_sweeps_light_at_each_block_change() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, with_transitions(), preview=True)
     assert e.light_leaks == pytest.approx([3.0 - 0.8, 12.0 - 0.8])  # hook→main, main→cta

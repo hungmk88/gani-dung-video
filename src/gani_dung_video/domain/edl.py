@@ -239,11 +239,15 @@ def _light_leaks(shots: Sequence[Shot], extra: Mapping[str, Any]) -> list[float]
             if a.block != b.block]  # fmt: skip
 
 
-def _ending(extra: Mapping[str, Any], rules: Rules, fps: int) -> dict[str, Any]:
-    """Edl fields of the style's end wipe and light sweep (empty while transitions are off)."""
+def _ending(extra: Mapping[str, Any], style: Mapping[str, Any], rules: Rules,
+            fps: int) -> dict[str, Any]:  # fmt: skip
+    """Edl fields of the style's end wipe and light sweep. Without an extra `end` transition, a
+    style with "end": "fade_black" (Sang trọng, spec v2.1) fades to black over its dissolve."""
     out: dict[str, Any] = {}
     if end := extra.get("end"):
         out |= {"end_wipe": str(end["type"]), "end_wipe_sec": int(end["frames"]) / fps}
+    elif style.get("end") == "fade_black" and style.get("dissolve_frames"):
+        out |= {"end_wipe": "fade", "end_wipe_sec": int(style["dissolve_frames"]) / fps}
     if leak := extra.get("light_leak"):
         out |= {"light_leak_sec": float(leak["sec"]), "light_leak_opacity": float(leak["opacity"]),
                 "light_leak_colors": list(rules["transitions"]["light_leak_colors"])}  # fmt: skip
@@ -358,7 +362,7 @@ def build_edl(
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
         captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
         trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
-        light_leaks=_light_leaks(shots, extra), **_ending(extra, rules, fps),
+        light_leaks=_light_leaks(shots, extra), **_ending(extra, style, rules, fps),
     )  # fmt: skip
 
 
@@ -453,7 +457,7 @@ def build_speech_edl(
         duck=duck_intervals(cuts, float(se["duck_merge_gap_sec"])),
         duck_db=float(style["duck_db"]), duck_fade_sec=float(se["duck_fade_sec"]),
         karaoke=_karaoke_groups(words, se), denoise=denoise, grade=grade,
-        **_ending(_style_transitions(rules, style_name), rules, fps),
+        **_ending(_style_transitions(rules, style_name), style, rules, fps),
     )  # fmt: skip
 
 
