@@ -225,6 +225,23 @@ def test_spotlight_is_off_by_default_and_lights_the_first_shot_of_a_chosen_block
     assert other.spotlight is None  # only the styles switched on
 
 
+def test_phone_mockup_needs_both_the_style_switched_on_and_a_picture() -> None:
+    from gani_dung_video.domain.edl import with_phone
+
+    e = build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=True)
+    assert with_phone(e, "dien-thoai/a.png", RULES).phone is None  # off by default
+    fx = RULES["effects"]
+    phone_on = {**fx["phone_mockup"], "enabled_styles": ["ke_chuyen_nghe"]}
+    on = {**RULES, "effects": {**fx, "phone_mockup": phone_on}}
+    assert with_phone(e, None, on).phone is None  # no screenshot in the project
+    ph = with_phone(e, "dien-thoai/a.png", on).phone
+    assert ph is not None and ph.image == "dien-thoai/a.png"
+    assert (ph.t_start, ph.sec, ph.frame_size, ph.screen) == (0.3, 2.5, (560, 1120),
+                                                              (20, 20, 520, 1080))  # fmt: skip
+    short = e.model_copy(update={"content_end": 1.0})
+    assert with_phone(short, "dien-thoai/a.png", on).phone.sec == pytest.approx(0.7)  # type: ignore[union-attr]
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12

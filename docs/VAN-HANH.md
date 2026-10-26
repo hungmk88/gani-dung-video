@@ -224,6 +224,21 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
 - Bật cho phong cách nào thì thêm mã phong cách vào `effects.spotlight.enabled_styles`; độ tối
   (`dim`), cỡ vòng (`radius`, `feather`), vị trí (`center_y`) và thời lượng (`sec`) chỉnh ở đó.
 
+### Tin nhắn khách trong khung điện thoại (có từ 26/10/2026, đang TẮT)
+
+- Chép **ảnh chụp tin nhắn THẬT** của khách (ví dụ "Quán này ngon thật không?") vào thư mục con
+  **`dien-thoai/`** trong thư mục footage của dự án (đuôi .png, .jpg, .jpeg, .webp). App lấy ảnh
+  đầu tiên theo tên file.
+- Ảnh hiện trong khung điện thoại ở giữa hình, từ giây 0,3 trong 2,5 giây đầu video, hiện và tắt
+  dần. Không có ảnh thì video dựng như cũ.
+- **Trước khi chép ảnh**: che tên, ảnh đại diện, số điện thoại của khách. Chỉ dùng tin nhắn thật,
+  không tự soạn. Chữ trong ảnh **không** qua bộ lọc cụm cấm (app không đọc chữ trong ảnh): người
+  chọn ảnh tự kiểm không có "ngon nhất", "số 1", "100%"… Với bản TikTok, tránh ảnh có Zalo,
+  Facebook, số điện thoại (từ ngữ rủi ro).
+- Bật cho phong cách nào thì thêm mã phong cách vào `effects.phone_mockup.enabled_styles`; vị
+  trí, cỡ, thời lượng chỉnh ở đó. Khung điện thoại là `assets/brand/khung-dien-thoai.png`, vẽ lại
+  bằng `python scripts/tao_khung_dien_thoai.py`.
+
 ### Chuyển cảnh thêm (từ 26/10/2026)
 
 Bốn kiểu chuyển cảnh mới. **Đang bật cho TVC cắt nhanh và Review món ăn** (chủ duyệt

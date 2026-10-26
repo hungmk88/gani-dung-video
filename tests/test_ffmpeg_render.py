@@ -9,6 +9,7 @@ import shutil
 import struct
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from ffmpeg_marks import needs_render_ffmpeg
@@ -25,6 +26,7 @@ from gani_dung_video.infrastructure.ffmpeg_render import (
     encode_args,
     logo_files,
     parse_loudnorm,
+    phone_files,
     render,
 )
 from gani_dung_video.infrastructure.ffmpeg_render import _run as render_run
@@ -135,6 +137,24 @@ def test_spotlight_darkens_all_but_a_centred_circle_for_its_moment() -> None:
     assert "geq=r=0:g=0:b=0:a='165.75*clip((hypot(X-270,Y-432)-165)/80,0,1)'" in g
     assert "fade=t=in:st=0:d=0.3:alpha=1,fade=t=out:st=0.7:d=0.3:alpha=1" in g
     assert "[vjoin][spot]overlay=eof_action=pass:enable='between(t,0.5,1.5)'[vspot]" in g
+
+
+def phone() -> Any:
+    from gani_dung_video.domain.edl import PhoneMockup
+
+    return PhoneMockup(image="dien-thoai/a.png", t_start=0.3, sec=1.2, fade_sec=0.25, width=520,
+                       top=330, frame_size=(560, 1120), screen=(20, 20, 520, 1080))  # fmt: skip
+
+
+def test_the_phone_mockup_puts_the_screenshot_under_the_frame_screen() -> None:
+    e = edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"phone": phone()})
+    g = build_graph(e, [True], None, None, None, None, 1)
+    # 540-wide preview: the 520 px phone becomes 260 x 520; its screen 9, 9, 241, 501
+    assert "[1:v]format=rgba,scale=260:520[pfr]" in g
+    assert "[2:v]scale=241:501:force_original_aspect_ratio=decrease" in g
+    assert "[pbg][pscr]overlay=9:9[pbs]" in g
+    assert "[vjoin][phone]overlay=x=140:y=165:eof_action=pass:enable='between(t,0.3,1.5)'" in g
+    assert "[vphone]" not in build_graph(edl([shot("a.mp4", 0, 2.0)]), [True])
 
 
 def test_a_slowed_shot_stretches_its_timestamps() -> None:
@@ -567,3 +587,27 @@ def test_real_render_with_a_spotlight(tmp_path: Path) -> None:
                         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
                        capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
     assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s + 1 s end card, 30 fps
+
+
+@needs_render_ffmpeg
+def test_real_render_with_a_phone_mockup(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
+    (tmp_path / "dien-thoai").mkdir()
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "color=c=white:s=720x1280", "-frames:v", "1",
+                    str(tmp_path / "dien-thoai" / "a.png")], check=True, timeout=60)  # fmt: skip
+    e = edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"phone": phone()})
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    r = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+                        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
+    assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s + 1 s end card, 30 fps
+
+
+def test_a_missing_screenshot_stops_the_render_with_its_name(tmp_path: Path) -> None:
+    e = edl([shot("a.mp4", 0, 2.0)]).model_copy(update={"phone": phone()})
+    with pytest.raises(RenderError, match=r"a\.png"):
+        phone_files(e, tmp_path, RULES)

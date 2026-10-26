@@ -282,11 +282,14 @@ def _join_label(lines: list[str], e: Edl) -> list[str]:
 def build_graph(
     e: Edl, has_audio: Sequence[bool], music_idx: int | None = None, ass_name: str | None = None,
     loudnorm: Mapping[str, float] | None = None, logo: BrandLogo | None = None,
+    phone_idx: int | None = None,
 ) -> str:  # fmt: skip
     """The -filter_complex text (pure: testable without ffmpeg).
 
     Args:
         logo: picture logo (watermark + end card); None = the .ass draws the text logo.
+        phone_idx: input index of the phone frame picture (the screenshot is the next input),
+            when the EDL has a phone mockup.
     """
     lines = [_video_chain(i, s, e) for i, s in enumerate(e.shots)]
     lines += _join_label(_join_video(e), e)
@@ -311,6 +314,9 @@ def build_graph(
         lines.append(f"[{pic}][spot]overlay=eof_action=pass:"
                      f"enable='between(t,{_n(t0)},{_n(t1)})'[vspot]")  # fmt: skip
         pic = "vspot"
+    if e.phone and phone_idx is not None:  # a real message screenshot in a phone frame
+        lines += _phone_lines(e, phone_idx, pic)
+        pic = "vphone"
     if e.end_wipe and e.trim_fade_sec == 0:  # e.g. an iris closing on black before the end card
         d, at = e.end_wipe_sec, max(0.0, e.content_end - e.end_wipe_sec)
         lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(d)},"
@@ -354,6 +360,48 @@ def _spotlight(e: Edl) -> str:
             f"fade=t=in:st=0:d={_n(fade)}:alpha=1,"
             f"fade=t=out:st={_n(sp.sec - fade)}:d={_n(fade)}:alpha=1,"
             f"setpts=PTS-STARTPTS+{_n(sp.t_start)}/TB[spot]")  # fmt: skip
+
+
+def _phone_lines(e: Edl, idx: int, pic: str) -> list[str]:
+    """The screenshot (input idx + 1) under the frame's transparent screen (input idx), fading in
+    and out at the mockup's place on the picture."""
+    ph = e.phone
+    assert ph is not None
+    k = e.width / PLAY_W
+    fw, fh = ph.frame_size
+    w = _even(ph.width * k)
+    h = _even(w * fh / fw)
+    sx, sy, sw, sh = (round(v * w / fw) for v in ph.screen)
+    fade = min(ph.fade_sec, ph.sec / 2)
+    t0, t1 = ph.t_start, ph.t_start + ph.sec
+    return [
+        f"[{idx}:v]format=rgba,scale={w}:{h}[pfr]",
+        f"[{idx + 1}:v]scale={sw}:{sh}:force_original_aspect_ratio=decrease,"
+        f"pad={sw}:{sh}:(ow-iw)/2:(oh-ih)/2:color=white,format=rgba[pscr]",
+        f"color=c=black@0:s={w}x{h}:r={e.fps}:d={_n(ph.sec)},format=rgba[pbg]",
+        f"[pbg][pscr]overlay={sx}:{sy}[pbs]",
+        f"[pbs][pfr]overlay=0:0,fade=t=in:st=0:d={_n(fade)}:alpha=1,"
+        f"fade=t=out:st={_n(ph.sec - fade)}:d={_n(fade)}:alpha=1,"
+        f"setpts=PTS-STARTPTS+{_n(t0)}/TB[phone]",
+        f"[{pic}][phone]overlay=x={(e.width - w) // 2}:y={round(ph.top * k)}:eof_action=pass:"
+        f"enable='between(t,{_n(t0)},{_n(t1)})'[vphone]",
+    ]  # fmt: skip
+
+
+def phone_files(e: Edl, footage_dir: Path, rules: Rules) -> tuple[Path, Path] | None:
+    """(frame picture, screenshot) of the EDL's phone mockup, or None without one.
+
+    Raises:
+        RenderError: one of the two pictures is not on disk.
+    """
+    if e.phone is None:
+        return None
+    files = (APP_DIR / str(rules["effects"]["phone_mockup"]["frame_image"]),
+             footage_dir / e.phone.image)  # fmt: skip
+    for f in files:
+        if not f.is_file():
+            raise RenderError(f"Không thấy ảnh {f} cho khung điện thoại.")
+    return files
 
 
 def _has_audio(path: Path, timeout: float) -> bool:
@@ -431,9 +479,14 @@ def render(
     if (pictures := logo_files(rules)) is not None:
         logo = brand_logo(rules, len(e.shots) + len(e.overlays) + (music_idx is not None))
         inputs += ["-i", str(pictures[0]), "-i", str(pictures[1])]
+    phone_idx = None
+    if (phone := phone_files(e, footage_dir, rules)) is not None and e.phone is not None:
+        phone_idx = len(e.shots) + len(e.overlays) + (music_idx is not None) + (2 if logo else 0)
+        for f in phone:  # still pictures, repeated for the mockup's seconds
+            inputs += ["-loop", "1", "-framerate", str(e.fps), "-t", _n(e.phone.sec), "-i", str(f)]
     _copy_fonts(work / "fonts")
     graph = work / "graph.txt"
-    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm, logo),
+    graph.write_text(build_graph(e, has_audio, music_idx, ass.name, loudnorm, logo, phone_idx),
                      encoding="utf-8")  # fmt: skip
     args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *inputs,
             "-/filter_complex", graph.name, "-map", "[vout]", "-map", "[aout]",

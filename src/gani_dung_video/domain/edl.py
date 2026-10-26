@@ -48,6 +48,21 @@ class Spotlight(BaseModel):
     center_y: float  # fraction of the frame height
 
 
+class PhoneMockup(BaseModel):
+    """A real message screenshot shown inside a phone frame (rules.json → effects.phone_mockup)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    image: str  # path inside the footage folder, e.g. "dien-thoai/tin-nhan-1.png"
+    t_start: float
+    sec: float
+    fade_sec: float
+    width: int  # px on the 1080-wide frame
+    top: int
+    frame_size: tuple[int, int]
+    screen: tuple[int, int, int, int]  # x, y, w, h on the frame picture
+
+
 class EdlError(ValueError):
     """The draft cannot be rendered as is (message in Vietnamese)."""
 
@@ -125,6 +140,7 @@ class Edl(BaseModel):
     light_leak_opacity: float = 0.0
     light_leak_colors: list[str] = []
     spotlight: Spotlight | None = None  # music mode, once, at the first shot of a chosen block
+    phone: PhoneMockup | None = None  # set by with_phone() when the project has a screenshot
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:
@@ -267,6 +283,24 @@ def _ending(extra: Mapping[str, Any], style: Mapping[str, Any], rules: Rules,
         out |= {"light_leak_sec": float(leak["sec"]), "light_leak_opacity": float(leak["opacity"]),
                 "light_leak_colors": list(rules["transitions"]["light_leak_colors"])}  # fmt: skip
     return out
+
+
+def with_phone(e: Edl, image: str | None, rules: Rules) -> Edl:
+    """`e` with the style's phone mockup showing `image` (None, or a style not switched on in
+    effects.phone_mockup.enabled_styles: unchanged)."""
+    cfg = rules["effects"].get("phone_mockup", {})
+    if image is None or e.style not in cfg.get("enabled_styles", []):
+        return e
+    start = min(float(cfg["start_sec"]), e.content_end)
+    sec = min(float(cfg["sec"]), e.content_end - start)
+    if sec <= 0:
+        return e
+    fw, fh = (int(x) for x in cfg["frame_size"])
+    sx, sy, sw, sh = (int(x) for x in cfg["screen"])
+    return e.model_copy(update={"phone": PhoneMockup(
+        image=image, t_start=start, sec=sec, fade_sec=float(cfg["fade_sec"]),
+        width=int(cfg["width"]), top=int(cfg["top"]), frame_size=(fw, fh),
+        screen=(sx, sy, sw, sh))})  # fmt: skip
 
 
 def _spotlight(shots: Sequence[Shot], style_name: str, rules: Rules) -> Spotlight | None:
