@@ -143,6 +143,8 @@ class ProjectView(BaseModel):
     has_plan: bool
     has_drafts: bool
     ready_to_render: bool  # plan and drafts exist: a job can be queued
+    clips: list[str] = []  # clip file names of edit/inventory.json (split screen choice)
+    phone_image: str | None = None  # the message screenshot the phone mockup would show
 
 
 class EventView(BaseModel):

@@ -165,10 +165,17 @@ xếp gì: bản dựng lẻ sẽ ghi đè tệp của pipeline. Job dựng lẻ
     "has_inventory": true,
     "has_plan": true,
     "has_drafts": true,
-    "ready_to_render": true
+    "ready_to_render": true,
+    "clips": ["tu-lam.mp4", "dung-gani.mp4"],
+    "phone_image": "tin-nhan.png"
   }
 ]
 ```
+
+`clips` (từ 26/10/2026): tên file clip trong `edit/inventory.json`, rỗng khi chưa phân tích hay
+inventory hỏng; giao diện dùng cho ô chọn clip của chia đôi màn hình. `phone_image`: ảnh đầu tiên
+trong thư mục `dien-thoai/` (khung điện thoại), `null` khi không có. Chỉ là tên file, không có
+đường dẫn.
 
 `GET /api/health`
 

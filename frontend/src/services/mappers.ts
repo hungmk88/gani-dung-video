@@ -82,6 +82,8 @@ export function toProjectInfo(p: ApiProject): ProjectInfo {
     has_inventory: p.has_inventory,
     has_plan: p.has_plan,
     has_drafts: p.has_drafts,
+    clips: p.clips ?? [],
+    phone_image: p.phone_image ?? null,
   };
 }
 

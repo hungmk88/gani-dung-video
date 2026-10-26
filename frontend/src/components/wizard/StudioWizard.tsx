@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { isOptionsComplete } from '../../lib/preflight';
 import { api } from '../../services/api';
-import type { FootageFile, PlatformInfo, PreflightResult, VideoOptions } from '../../types/rules';
+import type {
+  FootageFile,
+  PlatformInfo,
+  PreflightResult,
+  ProjectInfo,
+  VideoOptions,
+} from '../../types/rules';
 import { FootageDropzone } from './FootageDropzone';
 import { BpmWarning } from './BpmWarning';
 import { RULES } from '../../data/rules';
@@ -50,6 +56,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   const isReal = api.mode === 'real';
   const [options, setOptions] = useState<VideoOptions>(DEFAULT_OPTIONS);
   const [footage, setFootage] = useState<FootageFile[]>([]);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [choice, setChoice] = useState<RealJobChoice>(DEFAULT_CHOICE);
   // A preflight answer belongs to the exact inputs it was asked for (identity, see `patch`).
   const [checked, setChecked] = useState<{
@@ -140,6 +147,8 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
   }, [options, footage, incomplete, renderOnly]);
 
   const needsProject = isReal && choice.projectId === null;
+  const project = projects.find((p) => p.id === choice.projectId) ?? null;
+  const clipNames = isReal ? (project?.clips ?? []) : footage.map((f) => f.name);
   // What is still to choose, in page order, each with the place on the page to jump to.
   const missing: MissingChoice[] = [
     ...(renderOnly
@@ -190,6 +199,7 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
               value={choice}
               draftLetters={draftLetters}
               onChange={(p) => setChoice((c) => ({ ...c, ...p }))}
+              onProjects={setProjects}
             />
           </Panel>
         ) : (
@@ -233,8 +243,16 @@ export function StudioWizard({ onJobCreated }: { onJobCreated: (jobId: string) =
 
         {!renderOnly && RULES.splitScreenStyles.includes(options.phong_cach) && (
           <Panel title="So sánh chia đôi màn hình" id="so-sanh">
-            <CompareFields options={options} onChange={patch} />
+            <CompareFields options={options} onChange={patch} clips={clipNames} />
           </Panel>
+        )}
+
+        {isReal && project && RULES.phoneMockupStyles.includes(options.phong_cach) && (
+          <p className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-xs text-slate-300">
+            {project.phone_image
+              ? `Tin nhắn khách trong khung điện thoại: ${project.phone_image} (thư mục dien-thoai/ của dự án).`
+              : 'Dự án chưa có ảnh tin nhắn trong thư mục dien-thoai/: video sẽ không có khung điện thoại.'}
+          </p>
         )}
       </div>
 

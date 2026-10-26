@@ -16,6 +16,10 @@ export interface ApiProject {
   has_plan: boolean;
   has_drafts: boolean;
   ready_to_render: boolean;
+  /** Clip file names of the project's inventory (26/10/2026); absent on older servers. */
+  clips?: string[];
+  /** The message screenshot in dien-thoai/ the phone mockup would show. */
+  phone_image?: string | null;
 }
 
 export interface ApiPlatform {

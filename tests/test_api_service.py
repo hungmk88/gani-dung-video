@@ -133,6 +133,28 @@ def test_projects_are_listed_with_opaque_ids_and_readiness(ctx: ApiContext, root
     assert str(root) not in json.dumps([p.model_dump() for p in got.values()])  # no paths leak
 
 
+def test_a_project_lists_its_clips_and_its_message_screenshot(ctx: ApiContext, root: Path) -> None:
+    # 26/10/2026: the wizard offers these for the split screen and the phone mockup
+    folder = make_project(root, "Xuong GANI")
+    clips = [{"file": n, "size_bytes": 1, "duration_sec": 8.0, "width": 1080, "height": 1920,
+              "rotation": 0, "orientation": "doc", "fps": 30.0, "video_codec": "h264",
+              "pix_fmt": "yuv420p", "color_transfer": None, "color_primaries": None,
+              "is_hdr": False, "has_audio_stream": True, "audio_tracks": 1}
+             for n in ("tu-lam.mp4", "gani.mp4")]  # fmt: skip
+    inv = {"folder": str(folder), "rules_version": "2.0", "clips": clips, "duplicates": [],
+           "skipped": [], "total_duration_sec": 16.0}  # fmt: skip
+    (folder / "edit" / "inventory.json").write_text(json.dumps(inv), encoding="utf-8")
+    (folder / "dien-thoai").mkdir()
+    (folder / "dien-thoai" / "tin-nhan.png").write_bytes(b"png")
+    [p] = list_projects(ctx)
+    assert p.clips == ["tu-lam.mp4", "gani.mp4"] and p.phone_image == "tin-nhan.png"
+    (folder / "edit" / "inventory.json").write_text("{", encoding="utf-8")  # unreadable
+    assert list_projects(ctx)[0].clips == []
+    bare = make_project(root, "khac")
+    assert next(x for x in list_projects(ctx) if x.name == "khac").phone_image is None
+    assert not (bare / "dien-thoai").exists()
+
+
 def test_a_root_that_is_itself_a_project_is_listed_as_dot(tmp_path: Path) -> None:
     solo = tmp_path / "solo"
     make_project(solo.parent, "solo")

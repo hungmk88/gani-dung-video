@@ -146,8 +146,9 @@ test('the block names are the backend ones', () => {
   assert.deepEqual({ ...RULES.blockNames }, rules.block_names);
 });
 
-test('the split screen styles are the backend ones', () => {
+test('the split screen and phone mockup styles are the backend ones', () => {
   assert.deepEqual([...RULES.splitScreenStyles], rules.effects.split_screen.enabled_styles);
+  assert.deepEqual([...RULES.phoneMockupStyles], rules.effects.phone_mockup.enabled_styles);
 });
 
 test('the product catalogue of the delivery names is the backend one', () => {

@@ -106,6 +106,8 @@ export interface RulesBundle {
   deliveryProducts: readonly string[];
   /** effects.split_screen.enabled_styles: the styles that show the split screen fields. */
   splitScreenStyles: string[];
+  /** effects.phone_mockup.enabled_styles: the styles that show the phone screenshot note. */
+  phoneMockupStyles: string[];
   /** platforms.profiles + platforms.default (16/10/2026), in rules.json order. */
   platforms: readonly PlatformInfo[];
   /** block_names (17/10/2026): Vietnamese names of block and chapter ids. */
@@ -434,6 +436,10 @@ export interface ProjectInfo {
   has_inventory: boolean;
   has_plan: boolean;
   has_drafts: boolean;
+  /** Clip file names (split screen choice); [] before the inventory step. */
+  clips: string[];
+  /** Screenshot in dien-thoai/ for the phone mockup; null = none. */
+  phone_image: string | null;
 }
 
 export type StructureKind = 'opening' | 'chapter' | 'closing';

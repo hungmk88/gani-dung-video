@@ -230,7 +230,8 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   **`dien-thoai/`** trong thư mục footage của dự án (đuôi .png, .jpg, .jpeg, .webp). App lấy ảnh
   đầu tiên theo tên file.
 - Ảnh hiện trong khung điện thoại ở giữa hình, từ giây 0,3 trong 2,5 giây đầu video, hiện và tắt
-  dần. Không có ảnh thì video dựng như cũ.
+  dần. Không có ảnh thì video dựng như cũ. Với phong cách đã bật, giao diện ghi dự án đang có ảnh
+  nào hay chưa có ảnh.
 - **Trước khi chép ảnh**: che tên, ảnh đại diện, số điện thoại của khách. Chỉ dùng tin nhắn thật,
   không tự soạn. Chữ trong ảnh **không** qua bộ lọc cụm cấm (app không đọc chữ trong ảnh): người
   chọn ảnh tự kiểm không có "ngon nhất", "số 1", "100%"… Với bản TikTok, tránh ảnh có Zalo,
@@ -255,7 +256,8 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
     nhan_duoi: "Dùng GANI: 5 phút"
   ```
 
-  Ghi đúng tên file trong thư mục footage; sai tên thì bước lập kế hoạch báo lỗi ngay.
+  Trên giao diện, khi dự án đã qua bước phân tích, hai ô clip là danh sách chọn; chưa phân tích thì
+  gõ tên file. Ghi đúng tên file trong thư mục footage; sai tên thì bước lập kế hoạch báo lỗi ngay.
 - Mỗi clip lấy đoạn giữa, cùng độ dài cảnh; tiếng là của clip trên. Clip ngắn hơn cảnh thì khung
   cuối đứng lại. Chỉ ở video dựng theo nhạc.
 - Nhãn là chữ trên màn hình: qua bộ lọc cụm cấm và kiểm tra E1 như mọi chữ khác. **So sánh với
