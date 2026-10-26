@@ -1,5 +1,5 @@
 {
- "_ghi_chu": "Bộ quy tắc v2.0 — nguồn: Đặc tả App Dựng Video v2.1 (Mục 5, 6, Phụ lục A, D). Mọi con số chỉnh ở đây, không sửa code. Ma trận tương thích: ok = phù hợp, warn = dùng được có cảnh báo, bad = cảnh báo mạnh (X9) hoặc chặn (X1 qua max_duration). Danh sách từ cấm (claim) nằm ở glossary.json → banned_claims. Sang trọng beats_allowed [6, 8] → [5, 6, 8] (chủ duyệt 15/10/2026): cảnh 5 phách dài 3,5–5,0s ở 60–85 BPM, nằm trong scene_sec; nhờ đó video 15/30 giây với nhạc chậm không còn vượt ±10% độ dài.",
+ "_ghi_chu": "Bộ quy tắc v2.0 — nguồn: Đặc tả App Dựng Video v2.1 (Mục 5, 6, Phụ lục A, D). Mọi con số chỉnh ở đây, không sửa code. Ma trận tương thích: ok = phù hợp, warn = dùng được có cảnh báo, bad = cảnh báo mạnh (X9) hoặc chặn (X1 qua max_duration). Danh sách từ cấm (claim) nằm ở glossary.json → banned_claims. Sang trọng beats_allowed [6, 8] → [5, 6, 8] (chủ duyệt 15/10/2026): cảnh 5 phách dài 3,5–5,0s ở 60–85 BPM, nằm trong scene_sec; nhờ đó video 15/30 giây với nhạc chậm không còn vượt ±10% độ dài. driver_if_speech = speech (Review món ăn, Kể chuyện nghề; chủ duyệt 26/10/2026): footage CÓ LỜI (edit/speech.json, co_loi_noi) thì video cắt theo lời như Bán hàng có lời (bước phrases, bản nháp lời, S1–S6), dùng broll_beats, pad_ms, duck_db chép từ Bán hàng có lời và silence_keep của chính phong cách; footage không lời, chưa nhận dạng lời, hoặc video 3 phút (chế độ lời 3 phút chờ GĐ7f) thì vẫn cắt theo nhạc như trước.",
  "rules_version": "2.0",
  "styles": {
   "tvc_cat_nhanh": {
@@ -21,13 +21,15 @@
    "name": "Kể chuyện nghề", "driver": "music", "driver_if_speech": "speech",
    "scene_sec": [2.5, 4.0], "scene_avg_sec": 3.0, "beats_allowed": [4, 6],
    "segment_sec": [2.5, 4.5], "silence_keep": [0.15, 0.4], "bpm_range": [70, 95],
+   "broll_beats": [2, 4], "pad_ms": [80, 120], "duck_db": -18,
    "transition": "cut", "dissolve_between_blocks": 7, "max_effects": 4,
    "text": {"max_words": 8, "per_block": 1}, "ambient_db": -20
   },
   "review_mon_an": {
-   "name": "Review món ăn", "driver": "music",
+   "name": "Review món ăn", "driver": "music", "driver_if_speech": "speech",
    "scene_sec": [1.5, 3.0], "scene_avg_sec": 2.0, "beats_allowed": [2, 4],
    "segment_sec": [1.2, 3.0], "silence_keep": [0.15, 0.3], "bpm_range": [95, 120],
+   "broll_beats": [2, 4], "pad_ms": [80, 120], "duck_db": -18,
    "transition": "cut", "max_effects": 3, "slowmo_min_fps": 60,
    "text": {"min_words": 3, "max_words": 6}, "ambient_db": -12, "grade": "mon-an"
   },
@@ -473,7 +475,7 @@
   "S6": "Các bản không trùng nhau",
   "SNAP": "Khớp phách"
  },
- "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K.",
+ "_ghi_chu_speech_edit": "Dựng theo lời (GĐ5c-1, chốt 29/09/2026, phong cách Bán hàng có lời). Tách câu từ mốc từng từ của Whisper: ngắt khi lặng ≥ silence_keep tối đa của phong cách (0,25s), ở dấu kết câu, hoặc ở dấu phẩy khi câu đã dài quá max_phrase_sec/2 (đo 29/09: Whisper để 95% khoảng giữa hai từ = 0 nên không thể chỉ dựa vào khoảng lặng). Cửa sổ cắt đệm pad_ms của phong cách (80ms trước / 120ms sau) nhưng không lấn sang từ bên cạnh. Câu < min_phrase_sec (tiếng đệm) bị bỏ; câu > max_phrase_sec và câu có cụm từ cấm không được đưa cho AI chọn. B-roll phủ {2,4} phách, điểm bắt đầu dịch về phách gần nhất nếu lệch ≤ broll_max_shift_sec (X17); câu đầu (hook) và câu cuối (CTA) giữ mặt người nói. Nhạc giảm duck_db của phong cách (−18 dB) theo mốc từ, dốc duck_fade_sec. Phụ đề karaoke 3–5 từ, từ đang nói màu highlight. Zoom so le 1,12× tắt mặc định cho đến khi có footage người nói 1080p/4K. Từ 26/10/2026 Review món ăn và Kể chuyện nghề cũng dựng theo lời khi footage có lời (driver_if_speech, xem _ghi_chu).",
  "speech_edit": {
   "sentence_end": ".?!…",
   "soft_break": ",;:",
@@ -576,7 +578,7 @@
   "DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",
   "DRAFT_FAILED": "Sau {attempts} vòng Claude vẫn chưa đạt kiểm tra; không dựng. Lỗi còn lại: {issues}",
   "DRAFT_TRUNCATED": "Câu trả lời bị cắt vì chạm giới hạn max_tokens; trả lời ngắn gọn hơn, đủ JSON.",
-  "PHRASES_NOT_SPEECH_STYLE": "Phong cách '{style}' không dẫn nhịp theo lời nói — chỉ 'Bán hàng có lời' dùng bước này. Chọn phong cách đó, hoặc dùng lệnh `plan`/`pick` cho phong cách hiện tại.",
+  "PHRASES_NOT_SPEECH_STYLE": "Video '{style}' này không cắt theo lời nói nên không dùng bước này. 'Bán hàng có lời' luôn cắt theo lời; 'Review món ăn' và 'Kể chuyện nghề' chỉ cắt theo lời khi footage có lời nói (chạy `transcribe` trước) và video không dài 3 phút. Còn lại dùng lệnh `plan`/`pick`.",
   "PHRASES_NO_TRANSCRIPTS": "Chưa có edit/transcripts/ — chạy lệnh `transcribe` trước.",
   "SPEECH_DRAFT_NO_PHRASES": "Chưa có edit/phrases.json — chạy lệnh `phrases` trước.",
   "SPEECH_DRAFT_COST_CAP": "Dừng gọi Claude: đã tiêu {spent:,.0f}đ, lần gọi tới có thể tốn tới {next:,.0f}đ, vượt trần {cap:,.0f}đ cho video {duration}s.",

@@ -43,6 +43,7 @@ test('the demo has the same styles, with the same display names and numbers', ()
     assert.equal(d.name, s.name, `${id}: name`);
     assert.equal(d.driver, s.driver, `${id}: driver`);
     assert.equal(d.driver_fallback, s.driver_fallback, `${id}: driver_fallback`);
+    assert.equal(d.driver_if_speech, s.driver_if_speech, `${id}: driver_if_speech`);
     assert.equal(d.scene_avg_sec, s.scene_avg_sec, `${id}: scene_avg_sec`);
     assert.deepEqual(d.bpm_range, s.bpm_range, `${id}: bpm_range`);
     assert.equal(d.max_duration, s.max_duration, `${id}: max_duration`);

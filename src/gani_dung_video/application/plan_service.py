@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from gani_dung_video.application.transcribe_service import SPEECH_FILE, SpeechSummary
+from gani_dung_video.application.transcribe_service import read_speech_fact
 from gani_dung_video.domain.bpm_measure import blocked_text, level_of_plan
 from gani_dung_video.domain.options import VideoOptions
 from gani_dung_video.domain.plan import MusicInfo, Plan, PlanError, compile_plan
@@ -49,16 +49,6 @@ def _read_scenes(folder: Path, rules: Rules) -> ScenesFile:
         return ScenesFile.model_validate_json(p.read_text(encoding="utf-8"))
     except ValidationError as e:
         raise ConfigError(f"{SCENES_FILE} hỏng — chạy lại lệnh `scenes` và `semantics`.") from e
-
-
-def _speech_fact(folder: Path) -> bool | None:
-    p = folder / EDIT_DIR / SPEECH_FILE
-    if not p.is_file():
-        return None
-    try:
-        return SpeechSummary.model_validate_json(p.read_text(encoding="utf-8")).co_loi_noi
-    except ValidationError:
-        return None
 
 
 def _available_tags(scenes: ScenesFile, style: str) -> set[str]:
@@ -131,7 +121,7 @@ def build_plan(
     style = facts.get("phong_cach")
     if style in scenes.usable_by_style:
         facts["so_canh_dung_duoc"] = scenes.usable_by_style[style]
-    facts["co_loi_noi"] = _speech_fact(folder)
+    facts["co_loi_noi"] = read_speech_fact(folder)
     if bpm_override:
         facts["bpm_override"] = True
     first = preflight_check(facts if facts else raw, rules)

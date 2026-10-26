@@ -168,6 +168,23 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
    cỡ của video đó, không đổi nháp thành bản cuối. Tải về bằng nút **"Tải bản cuối"**.
    `cover.jpg` và `phude.srt` nằm cùng thư mục làm việc (mục 9).
 
+### Video có người nói: cắt theo lời (từ 26/10/2026)
+
+- **Bán hàng có lời** luôn cắt theo lời nói.
+- **Review món ăn** và **Kể chuyện nghề** tự chọn cách cắt theo footage: bước phân tích nhận
+  ra **có lời nói** (`edit/speech.json`, `co_loi_noi`) thì video cắt theo câu nói giống Bán hàng
+  có lời. B-roll món ăn hay xưởng phủ lên giữa câu theo phách (2 hoặc 4 phách), nhạc hạ −18 dB
+  khi có người nói, phụ đề chạy theo từng chữ, kịch bản AI được soát bằng S1–S6. Footage không
+  lời thì cắt theo phách nhạc như trước.
+- Video **3 phút** của hai phong cách này vẫn cắt theo nhạc: chế độ lời 3 phút chưa làm (GĐ7f).
+- Câu nào có cụm cấm (`banned_claims`, ví dụ "ngon nhất", "số 1") bị **bỏ khỏi bản cắt**, không
+  đưa cho AI chọn, nên video vẫn dựng được. Câu bị bỏ được liệt kê trong `edit/phrases.json`.
+- Khi quay review: người nói tránh các cụm cấm ngay từ đầu (đỡ mất câu hay); không tự chấm điểm
+  sản phẩm GANI ("9/10"); so sánh với hàng hay thương hiệu khác thì đưa NVH xem trước.
+- Số liệu nằm trong `config/rules.json` → `styles.<phong cách>`: `driver_if_speech`,
+  `broll_beats`, `pad_ms`, `duck_db` (chép từ Bán hàng có lời, chủ duyệt 26/10/2026),
+  `silence_keep` (của từng phong cách).
+
 ### Chi phí (số thật và trần)
 
 | | Số |

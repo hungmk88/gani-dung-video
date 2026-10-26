@@ -42,6 +42,14 @@ export function derivePacing(o: VideoOptions): PacingInfo {
     return { mode: 'tu_dong', note: "'Theo mô tả của tôi' để AI tự quyết định nhạc hay lưới ảo." };
   }
   // driver === 'music'
+  if (style.driver_if_speech === 'speech') {
+    const voice =
+      `Footage có lời nói thì '${style.name}' cắt theo câu nói, nhạc hạ xuống khi có người ` +
+      'nói (trừ video 3 phút); không có lời thì cắt theo phách nhạc.';
+    const noMusic =
+      o.nhac === 'khong_nhac' ? ' Không chọn nhạc mà footage không lời thì nhịp cắt sẽ không chính xác.' : '';
+    return { mode: 'nhac', note: voice + noMusic };
+  }
   if (o.nhac === 'khong_nhac') {
     if (style.driver_fallback === 'grid') {
       return { mode: 'luoi_ao', note: 'Không chọn nhạc — dùng lưới nhịp ảo (X11).' };

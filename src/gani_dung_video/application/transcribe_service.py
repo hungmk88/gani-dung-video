@@ -120,6 +120,17 @@ def transcribe_folder(
     return summary, path
 
 
+def read_speech_fact(folder: Path) -> bool | None:
+    """`co_loi_noi` from <folder>/edit/speech.json; None when not transcribed yet or unreadable."""
+    p = folder / EDIT_DIR / SPEECH_FILE
+    if not p.is_file():
+        return None
+    try:
+        return SpeechSummary.model_validate_json(p.read_text(encoding="utf-8")).co_loi_noi
+    except ValidationError:
+        return None
+
+
 class _LazyTranscriber:
     """Loads the model on first use only: a fully cached re-run never loads Whisper."""
 

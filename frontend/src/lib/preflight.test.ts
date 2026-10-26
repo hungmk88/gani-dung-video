@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { RULES } from '../data/rules.ts';
 import type { VideoOptions } from '../types/rules.ts';
-import { runPreflight } from './preflight.ts';
+import { derivePacing, runPreflight } from './preflight.ts';
 
 function opts(over: Partial<VideoOptions>): VideoOptions {
   return {
@@ -45,4 +45,15 @@ test('a "warn" duration cell outside X10 still gets the generic hint', () => {
   const [style, dur] = cells[0];
   const got = codes(opts({ phong_cach: style, do_dai_giay: dur }));
   assert.ok(got.includes('W_STYLE_DURATION') && !got.includes('X10'), got.join(', '));
+});
+
+test('styles with driver_if_speech say the voice cuts footage that speaks', () => {
+  for (const style of ['review_mon_an', 'ke_chuyen_nghe'] as const) {
+    const p = derivePacing(opts({ phong_cach: style }));
+    assert.equal(p.mode, 'nhac');
+    assert.match(p.note ?? '', /cắt theo câu nói/);
+    assert.match(derivePacing(opts({ phong_cach: style, nhac: 'khong_nhac' })).note ?? '', /không chính xác/);
+  }
+  assert.equal(derivePacing(opts({ phong_cach: 'sang_trong' })).note, null);
+  assert.equal(derivePacing(opts({ phong_cach: 'ban_hang_co_loi' })).mode, 'loi');
 });

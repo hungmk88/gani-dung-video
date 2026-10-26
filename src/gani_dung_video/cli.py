@@ -32,7 +32,7 @@ python -m gani_dung_video qc <thu_muc_footage> --ban A [--final] [--no-asr] [--n
 python -m gani_dung_video semantics <thu_muc_footage>
     exit 0 = đã thêm nhãn/điểm thẩm mỹ vào scenes.json, 2 = chưa chạy scenes / chưa cài [ai]
 python -m gani_dung_video phrases <yeu-cau.md|options.json> <thu_muc_footage>
-    exit 0 = đã ghi edit/phrases.json, 2 = phong cách không dẫn nhịp theo lời / chưa transcribe
+    exit 0 = đã ghi edit/phrases.json, 2 = video không cắt theo lời / chưa transcribe
 python -m gani_dung_video queue analyze <thu_muc_footage> [--force]
 python -m gani_dung_video queue draft <yeu-cau.md|options.json> <thu_muc_footage> [--after ID]
 python -m gani_dung_video queue approve ID --max-vnd SỐ_ĐỒNG --estimate SỐ_ĐỒNG

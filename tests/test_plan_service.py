@@ -170,6 +170,17 @@ def test_speech_style_compiles_when_the_footage_has_speech(folder: Path, tmp_pat
     assert plan.driver == "speech"
 
 
+@pytest.mark.parametrize(("speech", "driver"), [(True, "speech"), (False, "music"),
+                                                 (None, "music")])  # fmt: skip
+def test_storytelling_follows_the_voice_only_when_the_footage_speaks(
+    folder: Path, tmp_path: Path, speech: bool | None, driver: str
+) -> None:
+    # 26/10/2026: Kể chuyện nghề has driver_if_speech; speech.json decides (None = not run yet).
+    write_scenes(folder, speech=speech)
+    plan, _ = build_plan(write_options(tmp_path / "o.json"), folder, rules=RULES)
+    assert plan.driver == driver and plan_json(folder)["driver"] == driver
+
+
 def test_cli_plan_prints_a_summary(
     folder: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

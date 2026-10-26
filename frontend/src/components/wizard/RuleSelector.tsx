@@ -108,7 +108,9 @@ export function RuleSelector({
                   {s.driver === 'speech'
                     ? 'dẫn bằng lời nói'
                     : s.bpm_range
-                      ? `nhạc ${s.bpm_range[0]}–${s.bpm_range[1]} BPM`
+                      ? `nhạc ${s.bpm_range[0]}–${s.bpm_range[1]} BPM${
+                          s.driver_if_speech === 'speech' ? ' · có lời thì theo lời' : ''
+                        }`
                       : 'theo mô tả của bạn'}
                 </div>
               </button>

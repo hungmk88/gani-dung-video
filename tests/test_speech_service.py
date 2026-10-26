@@ -112,6 +112,27 @@ def test_non_speech_style_is_refused(folder: Path, tmp_path: Path) -> None:
         build_phrases(opt, folder, RULES, GLOSSARY)
 
 
+def write_speech_fact(folder: Path, spoken: bool) -> None:
+    summary = {"model": "small", "co_loi_noi": spoken, "clips": [], "failed": {}}
+    (folder / EDIT_DIR / "speech.json").write_text(json.dumps(summary), encoding="utf-8")
+
+
+@pytest.mark.parametrize("style", ["review_mon_an", "ke_chuyen_nghe"])
+def test_driver_if_speech_style_with_speech_gets_phrases(folder: Path, tmp_path: Path,
+                                                         style: str) -> None:  # fmt: skip
+    write_speech_fact(folder, True)
+    opt = write_options(tmp_path / "o.json", phong_cach=style, muc_dich="ban_hang")
+    result, _ = build_phrases(opt, folder, RULES, GLOSSARY)
+    assert result.style == style and result.phrases
+
+
+def test_driver_if_speech_style_without_speech_is_refused(folder: Path, tmp_path: Path) -> None:
+    write_speech_fact(folder, False)
+    opt = write_options(tmp_path / "o.json", phong_cach="review_mon_an", muc_dich="ban_hang")
+    with pytest.raises(ConfigError, match="Review món ăn"):
+        build_phrases(opt, folder, RULES, GLOSSARY)
+
+
 def test_missing_transcripts_dir_is_refused(tmp_path: Path) -> None:
     f = tmp_path / "no_transcripts"
     write_inventory(f, ["a.mp4"])
