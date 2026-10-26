@@ -428,6 +428,7 @@ def build_speech_edl(
                              style)  # fmt: skip
     zooms = speech_zooms(_spans(shots), [c.words for c in cuts], covered, style,
                          rules["effects"], _room(clips, rules),
+                         bool(se.get("jump_cut_zoom_enabled")),
                          reserve_for_slowmo(style, len(slow)))  # fmt: skip
     shots = _zoomed(shots, zooms)
     used = sum(z.punch_sec is not None for z in zooms.values())

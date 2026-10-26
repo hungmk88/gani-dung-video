@@ -198,7 +198,8 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   clip 720p hoặc clip quay ngang thì không. Quay review bằng điện thoại để **dọc, 1080p hoặc 4K**.
 - Số liệu và danh sách từ nằm trong `config/rules.json`: `styles.<phong cách>.punch_zoom`,
   `zoom_alternate`, `keyword_zoom`, `max_effects`; `effects.keywords`, `effects.max_upscale`,
-  `effects.keyword_min_hold_sec`. Muốn tắt một kiểu thì xóa khóa đó ở phong cách.
+  `effects.keyword_min_hold_sec`. Muốn tắt một kiểu thì xóa khóa đó ở phong cách; zoom so le
+  còn có công tắc chung `speech_edit.jump_cut_zoom_enabled`.
 
 ### Quay chậm (từ 26/10/2026)
 

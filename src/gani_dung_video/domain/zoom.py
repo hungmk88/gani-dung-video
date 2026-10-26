@@ -104,14 +104,15 @@ def _first_keyword(words: Sequence[SpokenWord], keywords: Sequence[str]) -> Spok
 def speech_zooms(
     spans: Sequence[Span], words: Sequence[Sequence[SpokenWord]],
     covered: Sequence[tuple[float, float]], style: Mapping[str, Any],
-    effects: Mapping[str, Any], room: Room, reserve: int = 0,
+    effects: Mapping[str, Any], room: Room, alternate: bool = True, reserve: int = 0,
 ) -> dict[int, Zoom]:  # fmt: skip
-    """Speech mode: alternate framing, then keyword punch-ins within `max_effects` less the
-    `reserve` slots kept for other effects (slow motion).
+    """Speech mode: alternate framing (when `alternate`, rules.json → speech_edit.
+    jump_cut_zoom_enabled), then keyword punch-ins within `max_effects` less the `reserve`
+    slots kept for other effects (slow motion).
 
     `words[i]` are the words of shot i in video time; `covered` are the B-roll windows (a
     punch-in under B-roll would not be seen)."""
-    alt = float(style.get("zoom_alternate") or 1.0)
+    alt = float(style.get("zoom_alternate") or 1.0) if alternate else 1.0
     out = {i: Zoom(alt, None, alt) for i, s in enumerate(spans)
            if alt > 1.0 and i % 2 == 1 and room(s.source) >= alt - _EPS}  # fmt: skip
     punch = style.get("keyword_zoom")
