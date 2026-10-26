@@ -36,7 +36,7 @@ def test_approving_moves_the_file_and_records_who_and_when(tmp_path: Path) -> No
 
 
 def test_a_platform_render_is_reviewed_from_its_own_folder(tmp_path: Path) -> None:
-    # 14/10/2026: the TikTok render of draft A lives in edit/render/A-tiktok; the plain "A"
+    # 16/10/2026: the TikTok render of draft A lives in edit/render/A-tiktok; the plain "A"
     # folder (another render) must not be what the review reads.
     t = build(tmp_path, platform="tiktok")
     assert t.working.parent.name == "A-tiktok"

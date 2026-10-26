@@ -255,7 +255,7 @@ def check_onscreen_claims(e: Edl, banned: Sequence[str]) -> tuple[E1Item, list[F
     return item, [Finding(code="C1", level="error", msg=detail)] if hits else []
 
 
-# ─────────────── platform risk words (14/10/2026) ───────────────
+# ─────────────── platform risk words (16/10/2026) ───────────────
 
 
 def check_platform_words(e: Edl, words: Sequence[str]) -> tuple[E1Item, list[Finding]]:

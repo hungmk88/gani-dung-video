@@ -840,7 +840,7 @@ def test_two_processes_opening_a_v2_file_upgrade_it_once(tmp_path: Path) -> None
     assert errors == [] and QueueDb(path).schema_version() == 5
 
 
-# ─────────────── 14/10/2026: schema v4 (platform of a render) ───────────────
+# ─────────────── 16/10/2026: schema v4 (platform of a render) ───────────────
 
 
 def make_v3(path: Path) -> None:

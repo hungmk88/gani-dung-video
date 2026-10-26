@@ -286,7 +286,7 @@ def retry_job(db: QueueDb, job_id: int, *, rules: Rules | None = None,
 
 def _platforms(platforms: Sequence[str] | None, rules: Rules) -> list[str]:
     """The platforms to render for, checked against rules.json; None or empty = [""] (one
-    render without a platform profile, the behaviour before 14/10/2026).
+    render without a platform profile, the behaviour before 16/10/2026).
 
     Raises:
         ConfigError: an unknown platform id, or one given twice.

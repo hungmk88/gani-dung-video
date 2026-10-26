@@ -94,7 +94,7 @@ export interface RulesBundle {
   bannedClaims: string[];
   /** delivery.naming.products: the product names a delivered file may carry. */
   deliveryProducts: readonly string[];
-  /** platforms.profiles + platforms.default (14/10/2026), in rules.json order. */
+  /** platforms.profiles + platforms.default (16/10/2026), in rules.json order. */
   platforms: readonly PlatformInfo[];
   /** block_names (17/10/2026): Vietnamese names of block and chapter ids. */
   blockNames: Readonly<Record<string, string>>;

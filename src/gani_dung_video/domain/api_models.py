@@ -63,7 +63,7 @@ class JobCreate(BaseModel):
     draft: str = "all"  # A | B | C | all
     final: bool = False
     no_asr: bool = False
-    # 14/10/2026: one render per platform (rules.json → platforms), e.g. ["tiktok", "facebook"];
+    # 16/10/2026: one render per platform (rules.json → platforms), e.g. ["tiktok", "facebook"];
     # empty = one render without a platform profile (the behaviour before).
     platforms: list[str] = []
     no_music: bool = False  # 16/10/2026: leave the plan's music out (added in the app)

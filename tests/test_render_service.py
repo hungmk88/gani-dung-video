@@ -130,7 +130,7 @@ def duration(path: Path) -> float:
 
 @needs_render_ffmpeg
 def test_the_tiktok_and_the_facebook_render_of_one_draft_live_side_by_side(folder: Path) -> None:
-    # 14/10/2026: one draft, two platforms; each its own folder, CTA, end card and file name.
+    # 16/10/2026: one draft, two platforms; each its own folder, CTA, end card and file name.
     [tiktok] = build_render(folder, preview=True, rules=RULES, platform="tiktok")
     [facebook] = build_render(folder, preview=True, rules=RULES, platform="facebook")
     t_out, f_out = (

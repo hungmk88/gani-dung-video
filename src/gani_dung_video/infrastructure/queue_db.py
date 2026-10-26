@@ -343,7 +343,7 @@ class QueueDb:
             con.close()
 
     def _migrate_3_to_4(self) -> None:
-        """14/10/2026: render jobs target a platform (TikTok / Facebook Reels). One ADD COLUMN
+        """16/10/2026: render jobs target a platform (TikTok / Facebook Reels). One ADD COLUMN
         with a default, so old rows read "" (no platform profile, the behaviour before)."""
         con = sqlite3.connect(self.path, timeout=self._busy_ms / 1000, isolation_level=None)
         try:
