@@ -137,6 +137,52 @@ def test_review_plays_clips_filmed_at_60_fps_slowly_and_silently_on_the_same_tim
     assert all(s.speed == 1.0 for s in build_edl(draft(segs), plan(), fast, RULES, True).shots)
 
 
+def with_transitions(on: bool = True) -> Any:
+    return {**RULES, "transitions": {**RULES["transitions"], "enabled": on}}
+
+
+def test_extra_transitions_are_off_by_default() -> None:
+    assert RULES["transitions"]["enabled"] is False
+    e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS, RULES,
+                  preview=True)  # fmt: skip
+    assert all(s.transition == "fade" and s.dissolve_out_sec == 0 for s in e.shots)
+    assert e.end_wipe is None and e.light_leaks == []
+
+
+def test_tvc_glitches_out_of_the_hook_and_closes_on_an_iris() -> None:
+    e = build_edl(draft(SEGS), plan("tvc_cat_nhanh", text_rules={"max_words": 4}), CLIPS,
+                  with_transitions(), preview=True)  # fmt: skip
+    hook = e.shots[0]  # the only hook shot: its cut into "main" is the one that glitches
+    assert hook.transition == "pixelize" and round(hook.dissolve_out_sec * FPS) == 8
+    assert hook.src_out - hook.src_in == pytest.approx(3.0 + 8 / FPS)  # extended like a dissolve
+    assert hook.t_end == 3.0  # the cut stays on its beat
+    assert all(s.dissolve_out_sec == 0 for s in e.shots[1:])
+    assert e.end_wipe == "circleclose" and round(e.end_wipe_sec * FPS) == 15
+
+
+def test_storytelling_whips_between_process_steps_only() -> None:
+    segs = [
+        cut("hook", "a.mp4", 0.0, 3.0, 5.0),
+        cut("quy_trinh", "a.mp4", 3.0, 6.0, 10.0),
+        cut("quy_trinh", "a.mp4", 6.0, 9.0, 20.0),
+        cut("cta", "a.mp4", 9.0, 12.0, 30.0),
+    ]
+    e = build_edl(draft(segs), plan(), CLIPS, with_transitions(), preview=True)
+    # hook→quy_trinh and quy_trinh→cta keep the style's block dissolve (7 frames)
+    assert [(s.transition, round(s.dissolve_out_sec * FPS)) for s in e.shots] == [
+        ("fade", 7),
+        ("slideleft", 6),
+        ("fade", 7),
+        ("fade", 0),
+    ]
+
+
+def test_luxury_sweeps_light_at_each_block_change() -> None:
+    e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, with_transitions(), preview=True)
+    assert e.light_leaks == pytest.approx([3.0 - 0.8, 12.0 - 0.8])  # hook→main, main→cta
+    assert (e.light_leak_sec, e.light_leak_opacity) == (1.6, 0.35) and e.light_leak_colors
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12
