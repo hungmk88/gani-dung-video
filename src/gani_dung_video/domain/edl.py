@@ -7,6 +7,7 @@ starts on its beat (xfade overlaps the two, it does not shift the timeline).
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -53,6 +54,7 @@ class Shot(BaseModel):
     punch_sec: float | None = None  # punch-in this many seconds into the shot
     punch_zoom: float = 1.0  # framing from punch_sec on
     speed: float = 1.0  # < 1 = slow motion, the source window is that much shorter (slowmo.py)
+    transition: str = "fade"  # xfade kind of dissolve_out_sec (rules.json → transitions)
 
 
 class MusicTrack(BaseModel):
@@ -102,6 +104,12 @@ class Edl(BaseModel):
     platform: str = ""  # tiktok | facebook (domain/platforms.apply_platform); "" = no profile
     end_card_zalo: bool = True  # the end card shows the Zalo line (TikTok: no, 16/10/2026)
     no_music: bool = False  # the plan's music was left out: music is added in the app (16/10/2026)
+    end_wipe: str | None = None  # xfade kind into the black end card (iris: circleclose)
+    end_wipe_sec: float = 0.0
+    light_leaks: list[float] = []  # start times of a warm light sweep (rules.json → transitions)
+    light_leak_sec: float = 0.0
+    light_leak_opacity: float = 0.0
+    light_leak_colors: list[str] = []
 
 
 def _finishing(r: Mapping[str, Any]) -> tuple[str | None, str | None]:
@@ -190,15 +198,68 @@ def _dissolves(segs: Sequence[Any], style: Mapping[str, Any], fps: int,
     return [between if i < n - 1 and key(i) != key(i + 1) else 0.0 for i in range(n)]
 
 
+def _style_transitions(rules: Rules, style_name: str) -> Mapping[str, Any]:
+    """The style's extra transitions, or {} unless it is in transitions.enabled_styles."""
+    t = rules.get("transitions", {})
+    on = style_name in t.get("enabled_styles", [])
+    return t.get("styles", {}).get(style_name, {}) if on else {}
+
+
+def _cuts(segs: Sequence[Any], style: Mapping[str, Any], extra: Mapping[str, Any], fps: int,
+          group_of: Mapping[str, str] | None = None) -> list[tuple[float, str]]:  # fmt: skip
+    """(seconds, xfade kind) out of each shot: the style's dissolves, then on the hard cuts left
+    the extra transitions: `hook_out` leaving the first block, `inside` within a named block."""
+    group = group_of or {}
+
+    def key(i: int) -> str:
+        return group.get(segs[i].block, segs[i].block)
+
+    out = [(d, "fade") for d in _dissolves(segs, style, fps, group_of)]
+    hook, inside = extra.get("hook_out"), extra.get("inside", {})
+    for i in range(len(segs) - 1):
+        if out[i][0] > 0:
+            continue
+        pick = None
+        if hook and key(i) == key(0) and key(i + 1) != key(0):
+            pick = hook
+        elif segs[i].block == segs[i + 1].block and segs[i].block in inside:
+            pick = inside[segs[i].block]
+        if pick:
+            out[i] = (int(pick["frames"]) / fps, str(pick["type"]))
+    return out
+
+
+def _light_leaks(shots: Sequence[Shot], extra: Mapping[str, Any]) -> list[float]:
+    """Start times of a light sweep centred on each change of block."""
+    leak = extra.get("light_leak")
+    if not leak:
+        return []
+    half = float(leak["sec"]) / 2
+    return [max(0.0, b.t_start - half) for a, b in itertools.pairwise(shots)
+            if a.block != b.block]  # fmt: skip
+
+
+def _ending(extra: Mapping[str, Any], rules: Rules, fps: int) -> dict[str, Any]:
+    """Edl fields of the style's end wipe and light sweep (empty while transitions are off)."""
+    out: dict[str, Any] = {}
+    if end := extra.get("end"):
+        out |= {"end_wipe": str(end["type"]), "end_wipe_sec": int(end["frames"]) / fps}
+    if leak := extra.get("light_leak"):
+        out |= {"light_leak_sec": float(leak["sec"]), "light_leak_opacity": float(leak["opacity"]),
+                "light_leak_colors": list(rules["transitions"]["light_leak_colors"])}  # fmt: skip
+    return out
+
+
 def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Clip], fps: int,
-           group_of: Mapping[str, str] | None = None) -> list[Shot]:  # fmt: skip
+           group_of: Mapping[str, str] | None = None,
+           extra: Mapping[str, Any] | None = None) -> list[Shot]:  # fmt: skip
     """Shots in whole frames. The source window is the cut's own length (+ its dissolve) counted
     from the rounded in-point, so source + freeze - dissolve is exactly t_end - t_start frames
     and the joined picture (concat/xfade only add lengths up) lands on every cut. A source too
     short for that ends on its last whole frame; the rest is frozen (pad)."""
     segs = draft.segments
     out: list[Shot] = []
-    for seg, d in zip(segs, _dissolves(segs, style, fps, group_of), strict=True):
+    for seg, (d, kind) in zip(segs, _cuts(segs, style, extra or {}, fps, group_of), strict=True):
         source = _source(seg, clips)
         clip = clips[source]
         f_in, f0, f1, fd = (round(x * fps) for x in (seg.src_in, seg.t_start, seg.t_end, d))
@@ -206,7 +267,8 @@ def _shots(draft: SnappedDraft, style: Mapping[str, Any], clips: Mapping[str, Cl
         f_out = max(f_in, min(want, math.floor(clip.duration_sec * fps + 1e-3)))
         out.append(Shot(source=source, src_in=f_in / fps, src_out=f_out / fps, t_start=f0 / fps,
                         t_end=f1 / fps, block=seg.block, hdr=clip.is_hdr,
-                        dissolve_out_sec=fd / fps, pad_sec=(want - f_out) / fps))  # fmt: skip
+                        dissolve_out_sec=fd / fps, pad_sec=(want - f_out) / fps,
+                        transition=kind))  # fmt: skip
     return out
 
 
@@ -271,7 +333,8 @@ def build_edl(
         draft = _trim_draft(draft, to, plan.trim_fade_sec, fps)
     else:
         to = None
-    shots = _shots(draft, style, clips, fps, group_of)
+    extra = _style_transitions(rules, style_name)
+    shots = _shots(draft, style, clips, fps, group_of, extra)
     room = _room(clips, rules)
     shots = _zoomed(shots, beat_punches(_spans(shots), style, plan.beat_sec, fps, room))
     usable = [s.pad_sec == 0 and s.punch_sec is None for s in shots]
@@ -295,6 +358,7 @@ def build_edl(
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
         captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
         trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
+        light_leaks=_light_leaks(shots, extra), **_ending(extra, rules, fps),
     )  # fmt: skip
 
 
@@ -389,6 +453,7 @@ def build_speech_edl(
         duck=duck_intervals(cuts, float(se["duck_merge_gap_sec"])),
         duck_db=float(style["duck_db"]), duck_fade_sec=float(se["duck_fade_sec"]),
         karaoke=_karaoke_groups(words, se), denoise=denoise, grade=grade,
+        **_ending(_style_transitions(rules, style_name), rules, fps),
     )  # fmt: skip
 
 

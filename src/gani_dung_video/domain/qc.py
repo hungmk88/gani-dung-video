@@ -146,8 +146,9 @@ def check_measures(m: Measures, e: Edl, cfg: Mapping[str, Any]) -> list[Finding]
                            msg=f"Âm lượng đạt ({m.lufs:g} LUFS) nhưng đỉnh thật {m.true_peak_db:g} "
                                f"dBTP > {peak_max:g} sau khi mã hóa — dựng lại với trần đỉnh thấp "
                                "hơn, hoặc tăng bitrate âm thanh trong rules.json."))  # fmt: skip
-    # A planned fade-out to black (music mode cut at the chosen length) is not a black frame bug.
-    end_card = [(e.content_end - e.trim_fade_sec, e.duration)]
+    # A planned fade-out to black (music mode cut at the chosen length) or a closing end wipe
+    # (iris, fade to black) is not a black frame bug.
+    end_card = [(e.content_end - max(e.trim_fade_sec, e.end_wipe_sec), e.duration)]
     for a, b in m.blacks:
         if _outside((a, b), end_card) >= float(cfg["black_min_sec"]):
             out.append(Finding(code="T4", level="error", at_sec=a,

@@ -111,6 +111,20 @@ def test_zoomed_shots_are_framed_closer_and_punch_in_at_their_moment() -> None:
     assert "[zc2][zd2]overlay=enable='gte(t,0.5)'[v2]" in g
 
 
+def test_extra_transitions_end_wipe_and_light_leak_are_drawn() -> None:
+    a = shot("a.mp4", 0, 1.0, d=0.2).model_copy(update={"transition": "pixelize"})
+    e = edl([a, shot("a.mp4", 1.0, 2.0)]).model_copy(update={
+        "end_wipe": "circleclose", "end_wipe_sec": 0.5, "light_leaks": [0.6],
+        "light_leak_sec": 0.8, "light_leak_opacity": 0.35,
+        "light_leak_colors": ["0xFFB04A", "0xFFF1C8"]})  # fmt: skip
+    g = build_graph(e, [True, True])
+    assert "[v0][v1]xfade=transition=pixelize:duration=0.2:offset=1[vjoin]" in g
+    assert "gradients=s=540x960:r=30:d=0.8:c0=0xFFB04A:c1=0xFFF1C8:nb_colors=2" in g
+    assert "[vjoin][lk0]overlay=eof_action=pass:enable='between(t,0.6,1.4)'[vlk0]" in g
+    assert "[vpre][vwipe]xfade=transition=circleclose:duration=0.5:offset=1.5[vwiped]" in g
+    assert "[vwiped][vend]concat=n=2" in g
+
+
 def test_a_slowed_shot_stretches_its_timestamps() -> None:
     slow = shot("a.mp4", 0, 1.0).model_copy(update={"src_out": 0.5, "speed": 0.5})
     g = build_graph(edl([slow, shot("a.mp4", 1.0, 2.0)]), [False, True])
@@ -505,3 +519,21 @@ def test_real_render_plays_a_60_fps_clip_at_half_speed_frame_exact(tmp_path: Pat
                         "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
                        capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
     assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s of shots + 1 s card at 30 fps
+
+
+@needs_render_ffmpeg
+def test_real_render_with_glitch_iris_and_light_leak(tmp_path: Path) -> None:
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
+    a = shot("a.mp4", 0, 1.0, d=0.2).model_copy(update={"transition": "pixelize"})
+    e = edl([a, shot("a.mp4", 1.0, 2.0, src_in=1.0)]).model_copy(update={
+        "end_wipe": "circleclose", "end_wipe_sec": 0.5, "light_leaks": [0.6],
+        "light_leak_sec": 0.8, "light_leak_opacity": 0.35,
+        "light_leak_colors": ["0xFFB04A", "0xFFF1C8"]})  # fmt: skip
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    r = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+                        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
+    assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s + 1 s end card, 30 fps

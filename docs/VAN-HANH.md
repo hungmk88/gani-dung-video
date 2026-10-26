@@ -214,6 +214,25 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   cận món. Clip 30 khung/giây không bao giờ bị quay chậm vì sẽ giật.
 - Số liệu: `styles.review_mon_an.slowmo_min_fps`, `effects.slowmo_speed` trong `config/rules.json`.
 
+### Chuyển cảnh thêm (có từ 26/10/2026, đang TẮT)
+
+Bốn kiểu chuyển cảnh mới, **mặc định tắt** cho tới khi chủ xem video mẫu và duyệt. Bật cho
+phong cách nào thì thêm mã phong cách đó vào `config/rules.json` → `transitions.enabled_styles`
+(ví dụ `["tvc_cat_nhanh", "review_mon_an"]`).
+
+| Phong cách | Chuyển cảnh |
+|---|---|
+| TVC cắt nhanh | Vỡ điểm ảnh kiểu glitch (8 khung) ở chỗ rời phần mở đầu; vòng tròn khép vào khung kết |
+| Review món ăn | Lia nhanh sang trái (6 khung) giữa các cảnh trong khối Sản phẩm; vòng tròn khép vào khung kết |
+| Kể chuyện nghề | Lia nhanh giữa các bước trong khối Quy trình; vòng tròn khép vào khung kết |
+| Sang trọng | Vệt sáng ấm lướt qua hình ở mỗi chỗ đổi khối (1,6 giây); vòng tròn khép vào khung kết |
+| Bán hàng có lời | Vòng tròn khép vào khung kết |
+
+- Điểm cắt vẫn trúng phách: cảnh trước được kéo dài thêm đúng số khung chuyển cảnh, như hòa tan.
+- Lia nhanh và glitch chỉ thay chỗ cắt thẳng, không đè hòa tan sẵn có, và chỉ ở video dựng theo
+  nhạc. Video bị cắt bớt cho vừa độ dài (đã mờ dần ở cuối) thì không khép vòng tròn.
+- Kiểu, số khung, màu vệt sáng chỉnh trong `transitions.styles` (xem `_ghi_chu_transitions`).
+
 ### Chi phí (số thật và trần)
 
 | | Số |

@@ -113,7 +113,8 @@ def _join_video(e: Edl) -> list[str]:
     for i in range(1, n):
         prev, nxt = e.shots[i - 1], f"j{i}" if i < n - 1 else "vjoin"
         if prev.dissolve_out_sec > 0:
-            out.append(f"[{cur}][v{i}]xfade=transition=fade:duration={_n(prev.dissolve_out_sec)}"
+            out.append(f"[{cur}][v{i}]xfade=transition={prev.transition}:"
+                       f"duration={_n(prev.dissolve_out_sec)}"
                        f":offset={_n(prev.t_end)}[{nxt}]")  # fmt: skip
         else:
             # concat outputs 1/1000000 timebase; a later xfade needs the inputs' 1/fps
@@ -298,6 +299,19 @@ def build_graph(
     if e.grade:  # T-D: tone the picture before the end card and captions are added
         lines.append(f"[vjoin]{e.grade}[vgrade]")
         pic = "vgrade"
+    for j, t0 in enumerate(e.light_leaks):  # a warm sweep over the picture at a block change
+        lines.append(_light_leak(e, j, t0))
+        t1 = t0 + e.light_leak_sec
+        lines.append(f"[{pic}][lk{j}]overlay=eof_action=pass:"
+                     f"enable='between(t,{_n(t0)},{_n(t1)})'[vlk{j}]")  # fmt: skip
+        pic = f"vlk{j}"
+    if e.end_wipe and e.trim_fade_sec == 0:  # e.g. an iris closing on black before the end card
+        d, at = e.end_wipe_sec, max(0.0, e.content_end - e.end_wipe_sec)
+        lines.append(f"color=c=black:s={e.width}x{e.height}:r={e.fps}:d={_n(d)},"
+                     f"format=yuv420p,setsar=1[vwipe]")  # fmt: skip
+        lines.append(f"[{pic}]settb=1/{e.fps}[vpre];[vpre][vwipe]xfade=transition={e.end_wipe}:"
+                     f"duration={_n(d)}:offset={_n(at)}[vwiped]")  # fmt: skip
+        pic = "vwiped"
     if e.trim_fade_sec > 0:  # cut at the chosen length: the last seconds fade to black
         start = max(0.0, e.content_end - e.trim_fade_sec)
         lines.append(f"[{pic}]fade=t=out:st={_n(start)}:d={_n(e.trim_fade_sec)}[vfade]")
@@ -308,6 +322,17 @@ def build_graph(
     lines.append(f"[{pic}][vend]concat=n=2:v=1:a=0{subs}[vout]")
     lines += _audio(e, has_audio, music_idx, measured=loudnorm)
     return ";\n".join(lines)
+
+
+def _light_leak(e: Edl, j: int, t0: float) -> str:
+    """A soft warm gradient that fades in and out over light_leak_sec, starting at t0."""
+    d, half = e.light_leak_sec, e.light_leak_sec / 2
+    cols = ":".join(f"c{k}={c}" for k, c in enumerate(e.light_leak_colors))
+    return (f"gradients=s={e.width}x{e.height}:r={e.fps}:d={_n(d)}:{cols}:"
+            f"nb_colors={len(e.light_leak_colors)}:type=radial:speed=0.03,format=yuva420p,"
+            f"colorchannelmixer=aa={_n(e.light_leak_opacity)},"
+            f"fade=t=in:st=0:d={_n(half)}:alpha=1,fade=t=out:st={_n(half)}:d={_n(half)}:alpha=1,"
+            f"setpts=PTS-STARTPTS+{_n(t0)}/TB[lk{j}]")  # fmt: skip
 
 
 def _has_audio(path: Path, timeout: float) -> bool:
