@@ -20,9 +20,17 @@ from gani_dung_video.domain.footage import Clip
 from gani_dung_video.domain.karaoke import group_words
 from gani_dung_video.domain.plan import Plan
 from gani_dung_video.domain.preflight import Rules
+from gani_dung_video.domain.slowmo import (
+    reserve_for_slowmo,
+    slowed_window,
+    slowmo_candidates,
+    slowmo_picks,
+)
 from gani_dung_video.domain.speech import SpokenWord
 from gani_dung_video.domain.speech_edit import Overlay, SpeechCut, duck_intervals
 from gani_dung_video.domain.zoom import Room, Span, Zoom, beat_punches, speech_zooms, zoom_room
+
+_PEAK = 0.35  # where a window puts its clip's peak (B-roll; scenes without a peak_ratio)
 
 
 class EdlError(ValueError):
@@ -44,6 +52,7 @@ class Shot(BaseModel):
     zoom: float = 1.0  # whole-shot framing (domain/zoom.py, 26/10/2026)
     punch_sec: float | None = None  # punch-in this many seconds into the shot
     punch_zoom: float = 1.0  # framing from punch_sec on
+    speed: float = 1.0  # < 1 = slow motion, the source window is that much shorter (slowmo.py)
 
 
 class MusicTrack(BaseModel):
@@ -265,6 +274,11 @@ def build_edl(
     shots = _shots(draft, style, clips, fps, group_of)
     room = _room(clips, rules)
     shots = _zoomed(shots, beat_punches(_spans(shots), style, plan.beat_sec, fps, room))
+    usable = [s.pad_sec == 0 and s.punch_sec is None for s in shots]
+    slow = slowmo_candidates([clips[s.source].fps for s in shots], usable, style)
+    used = sum(s.punch_sec is not None for s in shots)
+    peaks = [_PEAK if seg.peak_ratio is None else seg.peak_ratio for seg in draft.segments]
+    shots = _slowed(shots, slowmo_picks(slow, style, used), peaks, rules, fps)
     content_end = shots[-1].t_end if shots else 0.0
     end_card = float(r["end_card_sec"])
     m = plan.music
@@ -299,6 +313,17 @@ def _zoomed(shots: list[Shot], zooms: Mapping[int, Zoom]) -> list[Shot]:
             if (z := zooms.get(i)) else s for i, s in enumerate(shots)]  # fmt: skip
 
 
+def _slowed(shots: list[Shot], picks: Sequence[int], peaks: Sequence[float], rules: Rules,
+            fps: int) -> list[Shot]:  # fmt: skip
+    speed = float(rules["effects"]["slowmo_speed"])
+    out = list(shots)
+    for i in picks:
+        s = shots[i]
+        a, b = slowed_window(s.src_in, s.src_out, speed, peaks[i], fps)
+        out[i] = s.model_copy(update={"src_in": a, "src_out": b, "speed": speed})
+    return out
+
+
 def _broll_shot(b: BrollPlacement, clips: Mapping[str, Clip], fps: int) -> Shot:
     if b.clip not in clips:
         raise EdlError(f"B-roll dùng clip '{b.clip}' không có trong inventory.json.")
@@ -306,7 +331,7 @@ def _broll_shot(b: BrollPlacement, clips: Mapping[str, Clip], fps: int) -> Shot:
     if b.end - b.start + 1e-6 < d:  # would show other footage, or the speaker past clip end
         raise EdlError(f"B-roll '{b.clip}' ({b.start:.2f}–{b.end:.2f}s) ngắn hơn ô {d:.2f}s của "
                        f"câu '{b.overlay.phrase_id}' — chạy lại lệnh `draft`.")  # fmt: skip
-    src_in = min(max(b.peak - 0.35 * d, b.start), max(b.start, b.end - d))  # peak at 35 %
+    src_in = min(max(b.peak - _PEAK * d, b.start), max(b.start, b.end - d))
     return Shot(source=b.clip, src_in=_frame(src_in, fps), src_out=_frame(src_in + d, fps),
                 t_start=_frame(b.overlay.t_start, fps), t_end=_frame(b.overlay.t_end, fps),
                 block="broll", hdr=clips[b.clip].is_hdr, dissolve_out_sec=0.0,
@@ -335,9 +360,16 @@ def build_speech_edl(
                           t_end=c.t_end, block="speech", hdr=clips[c.clip].is_hdr,
                           dissolve_out_sec=0.0, pad_sec=0.0))  # fmt: skip
     covered = [(b.overlay.t_start, b.overlay.t_end) for b in broll]
+    overlays = [_broll_shot(b, clips, fps) for b in broll]
+    slow = slowmo_candidates([clips[o.source].fps for o in overlays], [True] * len(overlays),
+                             style)  # fmt: skip
     zooms = speech_zooms(_spans(shots), [c.words for c in cuts], covered, style,
-                         rules["effects"], _room(clips, rules))  # fmt: skip
+                         rules["effects"], _room(clips, rules),
+                         reserve_for_slowmo(style, len(slow)))  # fmt: skip
     shots = _zoomed(shots, zooms)
+    used = sum(z.punch_sec is not None for z in zooms.values())
+    overlays = _slowed(overlays, slowmo_picks(slow, style, used), [_PEAK] * len(overlays),
+                       rules, fps)  # fmt: skip
     end = shots[-1].t_end if shots else 0.0
     m = plan.music
     music = MusicTrack(track=m.track, audio_in_sec=m.audio_in_sec, loop_sec=m.loop_sec,
@@ -352,7 +384,7 @@ def build_speech_edl(
         music=music, ambient_db=0.0, lufs=float(r["lufs"]), true_peak_db=float(r["true_peak_db"]),
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
         captions=_cta(cuts, end, cta),
-        mode="speech", overlays=[_broll_shot(b, clips, fps) for b in broll],
+        mode="speech", overlays=overlays,
         duck=duck_intervals(cuts, float(se["duck_merge_gap_sec"])),
         duck_db=float(style["duck_db"]), duck_fade_sec=float(se["duck_fade_sec"]),
         karaoke=_karaoke_groups(words, se), denoise=denoise, grade=grade,

@@ -111,6 +111,13 @@ def test_zoomed_shots_are_framed_closer_and_punch_in_at_their_moment() -> None:
     assert "[zc2][zd2]overlay=enable='gte(t,0.5)'[v2]" in g
 
 
+def test_a_slowed_shot_stretches_its_timestamps() -> None:
+    slow = shot("a.mp4", 0, 1.0).model_copy(update={"src_out": 0.5, "speed": 0.5})
+    g = build_graph(edl([slow, shot("a.mp4", 1.0, 2.0)]), [False, True])
+    assert "[0:v]setpts=(PTS-STARTPTS)/0.5,scale=" in g
+    assert "[1:v]setpts=PTS-STARTPTS,scale=" in g
+
+
 def test_audio_is_placed_on_the_timeline_music_looped_and_loudness_normalised() -> None:
     m = MusicTrack(track="t.m4a", audio_in_sec=0.5, loop_sec=2.0, fade_out_sec=0.5)
     g = build_graph(edl([shot("a.mp4", 0, 1), shot("b.mp4", 1, 2)], music=m),
@@ -482,3 +489,19 @@ def test_real_render_with_a_punch_in_keeps_size_and_length(tmp_path: Path) -> No
     v = next(s for s in streams if s["codec_type"] == "video")
     assert (v["width"], v["height"], v["r_frame_rate"]) == (540, 960, "30/1")
     assert float(v["duration"]) == pytest.approx(3.0, abs=0.1)  # 2 s of shots + 1 s end card
+
+
+@needs_render_ffmpeg
+def test_real_render_plays_a_60_fps_clip_at_half_speed_frame_exact(tmp_path: Path) -> None:
+    ff(tmp_path / "f.mp4", "testsrc2=s=1080x1920:r=60:d=3", 3.0)
+    ff(tmp_path / "a.mp4", "testsrc2=s=720x1280:r=30:d=3", 3.0)
+    slow = shot("f.mp4", 0, 1.0, src_in=0.5).model_copy(update={"src_out": 1.0, "speed": 0.5})
+    e = edl([slow, shot("a.mp4", 1.0, 2.0)])
+    ass = tmp_path / "sub.ass"
+    ass.write_text(ass_document(e, RULES), encoding="utf-8")
+    out = tmp_path / "out.mp4"
+    render(e, tmp_path, None, ass, out, RULES)
+    r = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+                        "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(out)],
+                       capture_output=True, text=True, check=True, timeout=60)  # fmt: skip
+    assert int(r.stdout.strip()) == pytest.approx(90, abs=5)  # 2 s of shots + 1 s card at 30 fps

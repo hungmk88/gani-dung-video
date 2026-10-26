@@ -200,6 +200,19 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   `zoom_alternate`, `keyword_zoom`, `max_effects`; `effects.keywords`, `effects.max_upscale`,
   `effects.keyword_min_hold_sec`. Muốn tắt một kiểu thì xóa khóa đó ở phong cách.
 
+### Quay chậm (từ 26/10/2026)
+
+- **Review món ăn**: cảnh lấy từ clip quay **60 khung/giây trở lên** được phát chậm một nửa
+  (phô mai kéo sợi, khói, nước dùng rót). Video có lời: chỉ B-roll được quay chậm, mặt người nói
+  thì không. Video theo nhạc: mọi cảnh từ clip 60 khung/giây đều có thể được chọn.
+- Cảnh quay chậm vẫn đúng chỗ trên dòng thời gian (vẫn trúng phách). Tiếng của chính cảnh đó tắt,
+  nhạc vẫn chạy.
+- Quay chậm và zoom bật vào dùng chung trần `max_effects` (Review món ăn: 3 lần mỗi video). Có
+  cả hai thì quay chậm được giữ tối đa một nửa số lần.
+- Cần quay sẵn ở 60 khung/giây: trên điện thoại chọn **1080p 60fps** hoặc **4K 60fps** khi quay
+  cận món. Clip 30 khung/giây không bao giờ bị quay chậm vì sẽ giật.
+- Số liệu: `styles.review_mon_an.slowmo_min_fps`, `effects.slowmo_speed` trong `config/rules.json`.
+
 ### Chi phí (số thật và trần)
 
 | | Số |

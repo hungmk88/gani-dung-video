@@ -67,9 +67,10 @@ def spread(n: int, k: int) -> list[int]:
     return sorted({round(i * (n - 1) / (k - 1)) for i in range(k)})
 
 
-def _cap(style: Mapping[str, Any], n: int) -> int:
+def effect_cap(style: Mapping[str, Any], n: int, used: int = 0) -> int:
+    """How many of `n` candidates fit in the style's max_effects once `used` are taken."""
     cap = style.get("max_effects")
-    return n if cap is None else min(n, int(cap))
+    return n if cap is None else max(0, min(n, int(cap) - used))
 
 
 def beat_punches(spans: Sequence[Span], style: Mapping[str, Any], beat_sec: float, fps: int,
@@ -82,7 +83,7 @@ def beat_punches(spans: Sequence[Span], style: Mapping[str, Any], beat_sec: floa
     cands = [i for i, s in enumerate(spans)
              if s.t_end - s.t_start >= 2 * beat_sec - 0.5 / fps
              and room(s.source) >= scale - _EPS]  # fmt: skip
-    picked = spread(len(cands), _cap(style, len(cands)))
+    picked = spread(len(cands), effect_cap(style, len(cands)))
     return {cands[j]: Zoom(1.0, beat_sec, scale) for j in picked}
 
 
@@ -103,9 +104,10 @@ def _first_keyword(words: Sequence[SpokenWord], keywords: Sequence[str]) -> Spok
 def speech_zooms(
     spans: Sequence[Span], words: Sequence[Sequence[SpokenWord]],
     covered: Sequence[tuple[float, float]], style: Mapping[str, Any],
-    effects: Mapping[str, Any], room: Room,
+    effects: Mapping[str, Any], room: Room, reserve: int = 0,
 ) -> dict[int, Zoom]:  # fmt: skip
-    """Speech mode: alternate framing, then at most `max_effects` keyword punch-ins.
+    """Speech mode: alternate framing, then keyword punch-ins within `max_effects` less the
+    `reserve` slots kept for other effects (slow motion).
 
     `words[i]` are the words of shot i in video time; `covered` are the B-roll windows (a
     punch-in under B-roll would not be seen)."""
@@ -126,7 +128,7 @@ def speech_zooms(
         base = out[i].base if i in out else 1.0
         if room(s.source) >= base * (1.0 + float(punch)) - _EPS:
             hits.append((i, w.start - s.t_start))
-    for j in spread(len(hits), _cap(style, len(hits))):
+    for j in spread(len(hits), effect_cap(style, len(hits), reserve)):
         i, at = hits[j]
         base = out[i].base if i in out else 1.0
         out[i] = Zoom(base, at, base * (1.0 + float(punch)))

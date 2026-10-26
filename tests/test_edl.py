@@ -124,6 +124,19 @@ def test_tvc_punches_in_on_the_beat_and_other_styles_do_not() -> None:
     assert all(s.punch_sec is None and s.zoom == 1.0 for s in calm.shots)
 
 
+def test_review_plays_clips_filmed_at_60_fps_slowly_and_silently_on_the_same_timeline() -> None:
+    fast = {**CLIPS, "f.mp4": clip("f.mp4").model_copy(update={"fps": 60.0})}
+    segs = [cut("hook", "f.mp4", 0.0, 3.0, 5.0), cut("main", "a.mp4", 3.0, 6.0, 1.0),
+            cut("main", "f.mp4", 6.0, 9.0, 20.0), cut("cta", "f.mp4", 9.0, 12.0, 40.0)]  # fmt: skip
+    e = build_edl(draft(segs), plan("review_mon_an"), fast, RULES, preview=True)
+    assert [s.speed for s in e.shots] == [0.5, 1.0, 0.5, 0.5]  # a.mp4 is 30 fps
+    first = e.shots[0]
+    assert (first.t_start, first.t_end) == (0.0, 3.0)  # the cut points never move
+    assert first.src_out - first.src_in == pytest.approx(1.5)  # half the clip, played over 3 s
+    assert first.src_in == pytest.approx(5.0 + 0.35 * 1.5, abs=1 / FPS)  # around the same peak
+    assert all(s.speed == 1.0 for s in build_edl(draft(segs), plan(), fast, RULES, True).shots)
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12
@@ -315,6 +328,22 @@ def test_speech_edl_frames_every_other_phrase_closer_and_review_punches_on_taste
         (1.0, pytest.approx(0.9), pytest.approx(1.08)),
         (1.0, None, 1.0),
     ]
+
+
+def test_review_speech_mode_slows_fast_broll_and_shares_max_effects_with_punch_ins() -> None:
+    from gani_dung_video.domain.edl import BrollPlacement, build_speech_edl
+    from gani_dung_video.domain.speech_edit import Overlay
+
+    fast = {**CLIPS, "f.mp4": clip("f.mp4").model_copy(update={"fps": 60.0})}
+    p = speech_plan()
+    review = p.model_copy(update={"options": {**p.options, "style": "review_mon_an"}})
+    ov = BrollPlacement(overlay=Overlay(phrase_id="s_p3", t_start=2.4, t_end=3.6, beats=2),
+                        clip="f.mp4", start=5.0, end=10.0, peak=6.0)  # fmt: skip
+    e = build_speech_edl(speech_cuts(), [ov], review, fast, RULES, preview=True)
+    [o] = e.overlays
+    assert o.speed == 0.5 and o.src_out - o.src_in == pytest.approx(0.6)
+    assert (o.t_start, o.t_end) == (2.4, 3.6)
+    assert e.shots[0].punch_sec is not None  # "ngon." still punches in: 1 + 1 ≤ max_effects 3
 
 
 def test_speech_edl_refuses_broll_from_an_unknown_clip() -> None:
