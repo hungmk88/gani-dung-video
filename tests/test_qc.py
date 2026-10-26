@@ -232,6 +232,13 @@ def test_the_planned_fade_out_before_the_end_card_is_not_a_black_frame_bug() -> 
     assert codes(check_measures(m(blacks=[(5.5, 8.0)]), edl(), QC)) == ["T4"]
 
 
+def test_the_closing_end_wipe_is_not_a_black_frame_bug() -> None:
+    # An iris closing on black (transitions, 26/10/2026) darkens the last 0.5 s of the content.
+    iris = edl().model_copy(update={"end_wipe": "circleclose", "end_wipe_sec": 0.5})
+    assert check_measures(m(blacks=[(5.6, 8.0)]), iris, QC) == []
+    assert codes(check_measures(m(blacks=[(5.0, 8.0)]), iris, QC)) == ["T4"]
+
+
 def test_freeze_is_only_a_warning_and_planned_pads_are_ignored() -> None:
     e = edl(shots=[shot(0, 3), shot(3, 6, pad=1.2)])
     found = check_measures(m(freezes=[(0.5, 2.0), (4.7, 6.0), (6.0, 8.0)]), e, QC)
