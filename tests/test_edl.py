@@ -205,6 +205,26 @@ def test_luxury_sweeps_light_at_each_block_change() -> None:
     assert (e.light_leak_sec, e.light_leak_opacity) == (1.6, 0.35) and e.light_leak_colors
 
 
+def with_spotlight(*styles: str) -> Any:
+    fx = RULES["effects"]
+    return {**RULES, "effects": {**fx, "spotlight": {**fx["spotlight"], "enabled_styles": styles}}}
+
+
+def test_spotlight_is_off_by_default_and_lights_the_first_shot_of_a_chosen_block() -> None:
+    assert RULES["effects"]["spotlight"]["enabled_styles"] == []
+    assert build_edl(draft(SEGS), plan(), CLIPS, RULES, preview=True).spotlight is None
+    segs = [cut("hook", "a.mp4", 0.0, 3.0, 5.0), cut("main", "a.mp4", 3.0, 4.0, 10.0),
+            cut("bang_chung", "a.mp4", 4.0, 5.0, 20.0), cut("bang_chung", "a.mp4", 5.0, 8.0, 30.0),
+            cut("cta", "a.mp4", 8.0, 11.0, 40.0)]  # fmt: skip
+    e = build_edl(draft(segs), plan(), CLIPS, with_spotlight("ke_chuyen_nghe"), preview=True)
+    sp = e.spotlight
+    assert sp is not None and sp.t_start == 4.0  # the first "bằng chứng" shot
+    assert sp.sec == pytest.approx(1.0)  # 1.6 s asked, but that shot is 1 s long
+    other = build_edl(draft(segs), plan("sang_trong"), CLIPS, with_spotlight("ke_chuyen_nghe"),
+                      preview=True)  # fmt: skip
+    assert other.spotlight is None  # only the styles switched on
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12

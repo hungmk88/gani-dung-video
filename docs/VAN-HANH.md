@@ -214,6 +214,16 @@ dựng"**: máy chủ `serve` chưa chạy. Cạnh đó là ô "Thư viện nh�
   cận món. Clip 30 khung/giây không bao giờ bị quay chậm vì sẽ giật.
 - Số liệu: `styles.review_mon_an.slowmo_min_fps`, `effects.slowmo_speed` trong `config/rules.json`.
 
+### Spotlight (có từ 26/10/2026, đang TẮT)
+
+- Một lần mỗi video dựng theo nhạc: ở cảnh đầu của khối **Bằng chứng** (hay Giá trị, Chi tiết ưu
+  đãi, Sản phẩm, theo thứ tự trong `effects.spotlight.blocks`), mọi thứ ngoài một vòng tròn giữa
+  khung tối đi khoảng 1,6 giây, như đèn rọi vào tem chứng nhận hay món chính.
+- Vòng sáng **đứng yên giữa khung**, không chạy theo vật: quay cận để tem hay món nằm giữa hình.
+- Chữ và logo chồng lên sau nên vẫn rõ.
+- Bật cho phong cách nào thì thêm mã phong cách vào `effects.spotlight.enabled_styles`; độ tối
+  (`dim`), cỡ vòng (`radius`, `feather`), vị trí (`center_y`) và thời lượng (`sec`) chỉnh ở đó.
+
 ### Chuyển cảnh thêm (từ 26/10/2026)
 
 Bốn kiểu chuyển cảnh mới. **Đang bật cho TVC cắt nhanh và Review món ăn** (chủ duyệt
