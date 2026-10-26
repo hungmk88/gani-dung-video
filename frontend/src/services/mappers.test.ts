@@ -14,6 +14,7 @@ import {
   toMusicList,
   toPreflightResult,
   toPipelineCard,
+  toProjectInfo,
   toQaReport,
   toRenderJob,
 } from './mappers.ts';
@@ -299,4 +300,12 @@ test('the split screen pair is sent only for a style that has it and with both c
   } finally {
     styles.splice(0, styles.length, ...saved);
   }
+});
+
+test('a project carries its clips and its message screenshot, empty on older servers', () => {
+  const base = { id: '0/x', name: 'x', has_inventory: true, has_plan: true, has_drafts: true, ready_to_render: true };
+  const old = toProjectInfo(base);
+  assert.deepEqual([old.clips, old.phone_image], [[], null]);
+  const now = toProjectInfo({ ...base, clips: ['a.mp4', 'b.mp4'], phone_image: 'tin-nhan.png' });
+  assert.deepEqual([now.clips, now.phone_image], [['a.mp4', 'b.mp4'], 'tin-nhan.png']);
 });

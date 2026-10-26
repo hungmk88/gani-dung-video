@@ -83,6 +83,7 @@ from gani_dung_video.domain.api_models import (
     t8_status,
 )
 from gani_dung_video.domain.feasibility import footage_fit
+from gani_dung_video.domain.footage import Inventory
 from gani_dung_video.domain.jobs import ANALYZE_STAGES, STATUSES, Job
 from gani_dung_video.domain.pick import PickFile
 from gani_dung_video.domain.plan import Plan, planned_sec
@@ -90,7 +91,7 @@ from gani_dung_video.domain.platforms import render_dir_name
 from gani_dung_video.domain.preflight import Rules, preflight_check
 from gani_dung_video.domain.verify_report import RoundRecord, check_detail, check_rows
 from gani_dung_video.infrastructure.config_files import CONFIG_DIR, ConfigError
-from gani_dung_video.infrastructure.footage_fs import EDIT_DIR
+from gani_dung_video.infrastructure.footage_fs import EDIT_DIR, INVENTORY_FILE, first_picture
 from gani_dung_video.infrastructure.music_analysis import MusicError
 from gani_dung_video.infrastructure.music_index import get_index
 from gani_dung_video.infrastructure.queue_db import QueueDb
@@ -185,11 +186,25 @@ def _flags(folder: Path) -> tuple[bool, bool, bool]:
     return (edit / "inventory.json").is_file(), (edit / "plan.json").is_file(), drafts
 
 
-def _project_view(index: int, name: str, folder: Path) -> ProjectView:
+def _clip_names(folder: Path) -> list[str]:
+    """Clip file names of the project's inventory, [] when there is none or it is unreadable."""
+    try:
+        text = (folder / EDIT_DIR / INVENTORY_FILE).read_text(encoding="utf-8")
+        return [c.file for c in Inventory.model_validate_json(text).clips]
+    except (OSError, ValidationError):
+        return []
+
+
+def _project_view(index: int, name: str, folder: Path, rules: Rules) -> ProjectView:
     inv, plan, drafts = _flags(folder)
+    phone = rules["effects"].get("phone_mockup", {})
+    picture = (first_picture(folder, str(phone["folder"]), list(phone["image_extensions"]))
+               if phone else None)  # fmt: skip
     return ProjectView(id=make_project_id(index, name), name=folder.name if name == "." else name,
                        has_inventory=inv, has_plan=plan, has_drafts=drafts,
-                       ready_to_render=plan and drafts)  # fmt: skip
+                       ready_to_render=plan and drafts,
+                       clips=_clip_names(folder) if inv else [],
+                       phone_image=picture.split("/", 1)[-1] if picture else None)  # fmt: skip
 
 
 def list_projects(ctx: ApiContext) -> list[ProjectView]:
@@ -200,7 +215,7 @@ def list_projects(ctx: ApiContext) -> list[ProjectView]:
         if not root.is_dir():
             continue
         if (root / EDIT_DIR).is_dir():
-            out.append(_project_view(index, ".", root))
+            out.append(_project_view(index, ".", root, ctx.rules))
         try:
             children = sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name)
         except OSError:
@@ -209,7 +224,7 @@ def list_projects(ctx: ApiContext) -> list[ProjectView]:
             if child.name.startswith((".", "$")) or child.name == EDIT_DIR:
                 continue
             with contextlib.suppress(ValueError):  # a name the id format refuses is skipped
-                out.append(_project_view(index, child.name, child))
+                out.append(_project_view(index, child.name, child, ctx.rules))
     return out
 
 

@@ -12,12 +12,31 @@ const INPUT =
 export function CompareFields({
   options,
   onChange,
+  clips,
 }: {
   options: VideoOptions;
   onChange: (p: Partial<VideoOptions>) => void;
+  /** Clip file names of the chosen project; [] = not known yet, the name is typed instead. */
+  clips: readonly string[];
 }) {
   const s = options.so_sanh ?? EMPTY;
   const set = (k: keyof SoSanhFields, v: string) => onChange({ so_sanh: { ...s, [k]: v } });
+  const clip = (k: 'tren' | 'duoi', label: string, placeholder: string) =>
+    clips.length === 0 ? (
+      field(k, label, placeholder)
+    ) : (
+      <label className="space-y-1.5 text-xs text-slate-300">
+        <span className="block font-medium">{label}</span>
+        <select value={s[k]} onChange={(e) => set(k, e.target.value)} className={INPUT}>
+          <option value="">— chọn clip —</option>
+          {clips.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
   const field = (k: keyof SoSanhFields, label: string, placeholder: string, max?: number) => (
     <label className="space-y-1.5 text-xs text-slate-300">
       <span className="block font-medium">{label}</span>
@@ -34,13 +53,14 @@ export function CompareFields({
     <div className="space-y-3">
       <p className="text-xs text-slate-400">
         Tùy chọn. Cảnh đầu của phần Sản phẩm chia đôi: clip trên và clip dưới chạy cùng lúc, mỗi
-        nửa một nhãn. Ghi đúng tên file trong thư mục footage. So sánh với hàng hay thương hiệu khác
-        thì đưa NVH xem trước.
+        nửa một nhãn.{' '}
+        {clips.length === 0 ? 'Ghi đúng tên file trong thư mục footage (danh sách clip có sau bước phân tích). ' : ''}
+        So sánh với hàng hay thương hiệu khác thì đưa NVH xem trước.
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
-        {field('tren', 'Clip nửa trên', 'ví dụ tu-lam.mp4')}
+        {clip('tren', 'Clip nửa trên', 'ví dụ tu-lam.mp4')}
         {field('nhan_tren', 'Nhãn nửa trên', 'ví dụ Tự làm: 60 phút', 40)}
-        {field('duoi', 'Clip nửa dưới', 'ví dụ dung-gani.mp4')}
+        {clip('duoi', 'Clip nửa dưới', 'ví dụ dung-gani.mp4')}
         {field('nhan_duoi', 'Nhãn nửa dưới', 'ví dụ Dùng GANI: 5 phút', 40)}
       </div>
     </div>

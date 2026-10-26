@@ -37,8 +37,11 @@ export function ProjectPicker({
   value,
   draftLetters,
   onChange,
+  onProjects,
 }: {
   value: RealJobChoice;
+  /** The project list once loaded (the wizard reads the chosen project's clips from it). */
+  onProjects?: (projects: ProjectInfo[]) => void;
   /** Draft letters the chosen options produce (so_ban_nhap) — only these can be picked. */
   draftLetters: readonly string[];
   onChange: (patch: Partial<RealJobChoice>) => void;
@@ -51,7 +54,10 @@ export function ProjectPicker({
     api
       .listProjects()
       .then((p) => {
-        if (!cancelled) setProjects(p);
+        if (!cancelled) {
+          setProjects(p);
+          onProjects?.(p);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -59,7 +65,7 @@ export function ProjectPicker({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onProjects]);
 
   const pipeline = value.mode === 'pipeline';
   const draftValue = value.draft === 'all' || !pipeline || draftLetters.includes(value.draft) ? value.draft : 'all';

@@ -319,6 +319,9 @@ export const RULES: RulesBundle = {
   // the split screen fields. src/data/rules.test.ts fails when this copy drifts.
   splitScreenStyles: [],
 
+  // config/rules.json → effects.phone_mockup.enabled_styles (26/10/2026). Same check.
+  phoneMockupStyles: [],
+
   // config/rules.json → delivery.naming.products (the products a delivered file may be named
   // for). Same list, same order: src/data/rules.test.ts fails when this copy drifts.
   deliveryProducts: [
