@@ -128,6 +128,12 @@ def build_plan(
     if not first["valid"]:
         raise PreflightBlocked(first)
     o = VideoOptions.model_validate(facts)
+    if o.so_sanh:  # split screen: both clips must be in this footage folder
+        known = {s.clip for s in scenes.scenes}
+        missing = [c for c in (o.so_sanh.tren, o.so_sanh.duoi) if c not in known]
+        if missing:
+            msg = rules["input_msgs"]["PLAN_COMPARE_CLIP"]
+            raise ConfigError(msg.format(clips=", ".join(missing)))
     music = _music(o, options_file, folder, music_dir, rules)
     if music is not None:
         facts["nhac_bpm"], facts["nhac_giay"] = music.bpm, music.duration_sec

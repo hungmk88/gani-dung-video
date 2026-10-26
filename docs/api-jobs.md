@@ -264,6 +264,12 @@ và `render` (như cũ). Một lần bấm "Chạy" của Wizard tạo cả chu�
 `options` nhận thêm `san_pham` (mã trong `delivery.naming.products`) và `chien_dich` (chữ tự do),
 cả hai tùy chọn: job `render` của chuỗi đọc chúng từ `options.json` và đặt tên file giao theo đó.
 
+`options` còn nhận `so_sanh` (từ 26/10/2026, chia đôi màn hình, chỉ có tác dụng với phong cách trong
+`effects.split_screen.enabled_styles`): `{"tren": "tu-lam.mp4", "duoi": "dung-gani.mp4",
+"nhan_tren": "Tự làm: 60 phút", "nhan_duoi": "Dùng GANI: 5 phút"}`. Hai tên clip bắt buộc, phải có
+trong thư mục footage (bước `plan` báo lỗi nếu không); hai nhãn tùy chọn, tối đa 40 ký tự. Khóa lạ
+trong `so_sanh` bị từ chối (400).
+
 ### Luồng Wizard
 
 1. `POST /api/preflight` với các tùy chọn (như cũ) — hiện lỗi/cảnh báo ngay trên form.

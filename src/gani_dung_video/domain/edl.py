@@ -84,6 +84,11 @@ class Shot(BaseModel):
     punch_zoom: float = 1.0  # framing from punch_sec on
     speed: float = 1.0  # < 1 = slow motion, the source window is that much shorter (slowmo.py)
     transition: str = "fade"  # xfade kind of dissolve_out_sec (rules.json → transitions)
+    split_with: str | None = None  # split screen: this clip fills the bottom half (top = source)
+    split_in: float = 0.0
+    split_out: float = 0.0
+    split_pad_sec: float = 0.0
+    split_hdr: bool = False
 
 
 class MusicTrack(BaseModel):
@@ -101,7 +106,7 @@ class Caption(BaseModel):
     start: float
     end: float
     text: str
-    kind: str  # text | cta | title (chapter title, top of the frame)
+    kind: str  # text | cta | title (chapter title, top) | split_top | split_bottom (labels)
 
 
 class Edl(BaseModel):
@@ -303,6 +308,46 @@ def with_phone(e: Edl, image: str | None, rules: Rules) -> Edl:
         screen=(sx, sy, sw, sh))})  # fmt: skip
 
 
+def _window(clip: Clip, frames: int, fps: int) -> tuple[float, float, float]:
+    """(in, out, frozen tail) seconds for `frames` frames from the middle of a clip."""
+    have = math.floor(clip.duration_sec * fps + 1e-3)
+    if have >= frames:
+        f_in = (have - frames) // 2
+        return f_in / fps, (f_in + frames) / fps, 0.0
+    return 0.0, have / fps, (frames - have) / fps
+
+
+def _split(shots: list[Shot], plan: Plan, clips: Mapping[str, Clip], rules: Rules,
+           fps: int) -> tuple[list[Shot], list[Caption]]:  # fmt: skip
+    """The chosen pair (plan.options["compare"]) one above the other in the first shot of the
+    first block of effects.split_screen.blocks, for the styles switched on; plus its labels."""
+    cfg = rules["effects"].get("split_screen", {})
+    pair = plan.options.get("compare")
+    if not pair or str(plan.options["style"]) not in cfg.get("enabled_styles", []):
+        return shots, []
+    i = next((k for b in cfg["blocks"] for k, s in enumerate(shots) if s.block == b), None)
+    if i is None:
+        return shots, []
+    for name in (pair["tren"], pair["duoi"]):
+        if name not in clips:
+            raise EdlError(f"Clip so sánh '{name}' không có trong inventory.json.")
+    s = shots[i]
+    frames = round((s.src_out - s.src_in + s.pad_sec) * fps)  # what the shot plays, tail too
+    top_in, top_out, top_pad = _window(clips[pair["tren"]], frames, fps)
+    low_in, low_out, low_pad = _window(clips[pair["duoi"]], frames, fps)
+    shots = list(shots)
+    shots[i] = s.model_copy(update={
+        "source": pair["tren"], "src_in": top_in, "src_out": top_out, "pad_sec": top_pad,
+        "hdr": clips[pair["tren"]].is_hdr, "zoom": 1.0, "punch_sec": None, "punch_zoom": 1.0,
+        "speed": 1.0, "split_with": pair["duoi"], "split_in": low_in, "split_out": low_out,
+        "split_pad_sec": low_pad, "split_hdr": clips[pair["duoi"]].is_hdr})  # fmt: skip
+    labels = [Caption(start=s.t_start, end=s.t_end, text=str(text).strip(), kind=kind)
+              for text, kind in ((pair.get("nhan_tren", ""), "split_top"),
+                                 (pair.get("nhan_duoi", ""), "split_bottom"))
+              if str(text).strip()]  # fmt: skip
+    return shots, labels
+
+
 def _spotlight(shots: Sequence[Shot], style_name: str, rules: Rules) -> Spotlight | None:
     """The style's spotlight on the first shot of the first block in effects.spotlight.blocks."""
     cfg = rules["effects"].get("spotlight", {})
@@ -409,6 +454,7 @@ def build_edl(
     used = sum(s.punch_sec is not None for s in shots)
     peaks = [_PEAK if seg.peak_ratio is None else seg.peak_ratio for seg in draft.segments]
     shots = _slowed(shots, slowmo_picks(slow, style, used), peaks, rules, fps)
+    shots, labels = _split(shots, plan, clips, rules, fps)
     content_end = shots[-1].t_end if shots else 0.0
     end_card = float(r["end_card_sec"])
     m = plan.music
@@ -423,7 +469,7 @@ def build_edl(
         ambient_db=float(amb) if amb is not None else None, lufs=float(r["lufs"]),
         true_peak_db=float(r["true_peak_db"]),
         font=str(r["fonts"].get(style_name, r["fonts"]["default"])),
-        captions=_captions(draft, plan, fps), denoise=denoise, grade=grade,
+        captions=_captions(draft, plan, fps) + labels, denoise=denoise, grade=grade,
         trim_fade_sec=plan.trim_fade_sec if to is not None else 0.0,
         light_leaks=_light_leaks(shots, extra), **_ending(extra, style, rules, fps),
         spotlight=_spotlight(shots, style_name, rules),

@@ -242,6 +242,61 @@ def test_phone_mockup_needs_both_the_style_switched_on_and_a_picture() -> None:
     assert with_phone(short, "dien-thoai/a.png", on).phone.sec == pytest.approx(0.7)  # type: ignore[union-attr]
 
 
+def compare_plan(style: str = "ke_chuyen_nghe", **pair: str) -> Plan:
+    p = plan(style)
+    want = {"tren": "a.mp4", "duoi": "c.mp4", "nhan_tren": "Tự làm: 60 phút",
+            "nhan_duoi": "Dùng GANI: 5 phút", **pair}  # fmt: skip
+    return p.model_copy(update={"options": {**p.options, "compare": want}})
+
+
+def with_split(*styles: str) -> Any:
+    fx = RULES["effects"]
+    split = {**fx["split_screen"], "enabled_styles": list(styles)}
+    return {**RULES, "effects": {**fx, "split_screen": split}}
+
+
+SPLIT_SEGS = [
+    cut("hook", "b.mp4", 0.0, 3.0, 1.0),
+    cut("san_pham", "b.mp4", 3.0, 6.0, 2.0, "Nhanh hơn hẳn"),
+    cut("cta", "b.mp4", 6.0, 9.0, 3.0),
+]
+
+
+def test_split_screen_is_off_by_default() -> None:
+    assert RULES["effects"]["split_screen"]["enabled_styles"] == []
+    e = build_edl(draft(SPLIT_SEGS), compare_plan(), CLIPS, RULES, preview=True)
+    assert all(s.split_with is None for s in e.shots)
+    assert not [c for c in e.captions if c.kind.startswith("split_")]
+
+
+def test_split_screen_stacks_the_pair_in_the_first_product_shot_with_its_labels() -> None:
+    e = build_edl(draft(SPLIT_SEGS), compare_plan(), CLIPS, with_split("ke_chuyen_nghe"),
+                  preview=True)  # fmt: skip
+    s = e.shots[1]
+    assert (s.source, s.split_with, s.t_start, s.t_end) == ("a.mp4", "c.mp4", 3.0, 6.0)
+    plays = 3.0 + 7 / FPS  # the cut, plus the 7-frame dissolve into the CTA block
+    assert s.src_out - s.src_in + s.pad_sec == pytest.approx(plays)  # same length as before
+    assert s.src_in == pytest.approx((60.0 - plays) / 2, abs=1 / FPS)  # the middle of a.mp4
+    assert s.split_in == pytest.approx((10.0 - plays) / 2, abs=1 / FPS)  # the middle of c.mp4
+    assert s.split_out - s.split_in == pytest.approx(plays) and s.split_pad_sec == 0.0
+    labels = [(c.kind, c.text, c.start, c.end) for c in e.captions if c.kind.startswith("split")]
+    assert labels == [("split_top", "Tự làm: 60 phút", 3.0, 6.0),
+                      ("split_bottom", "Dùng GANI: 5 phút", 3.0, 6.0)]  # fmt: skip
+    assert all(x.split_with is None for i, x in enumerate(e.shots) if i != 1)
+
+
+def test_a_compare_clip_too_short_is_padded_and_an_unknown_one_refused() -> None:
+    short = {**CLIPS, "s.mp4": clip("s.mp4", dur=1.0)}
+    e = build_edl(draft(SPLIT_SEGS), compare_plan(duoi="s.mp4"), short,
+                  with_split("ke_chuyen_nghe"), preview=True)  # fmt: skip
+    s = e.shots[1]
+    assert (s.split_in, s.split_out) == (0.0, 1.0)  # all of the 1 s clip, the rest frozen
+    assert s.split_pad_sec == pytest.approx(2.0 + 7 / FPS)
+    with pytest.raises(EdlError, match=r"khong-co\.mp4"):
+        build_edl(draft(SPLIT_SEGS), compare_plan(duoi="khong-co.mp4"), CLIPS,
+                  with_split("ke_chuyen_nghe"), preview=True)  # fmt: skip
+
+
 def test_sang_trong_dissolves_everywhere_by_extending_the_outgoing_shot() -> None:
     e = build_edl(draft(SEGS), plan("sang_trong"), CLIPS, RULES, preview=False)
     d = 12 / FPS  # dissolve_frames = 12
