@@ -128,6 +128,7 @@ def test_sales_frames_every_other_phrase_closer_when_the_clip_allows() -> None:
     ss, ws = phrases()
     z = speech_zooms(ss, ws, [], SALES, EFFECTS, ROOM)
     assert z == {1: Zoom(1.12, None, 1.12), 3: Zoom(1.12, None, 1.12)}  # no keyword_zoom here
+    assert speech_zooms(ss, ws, [], SALES, EFFECTS, ROOM, alternate=False) == {}  # switched off
     low = [s._replace(source="720.mp4") for s in ss]
     assert speech_zooms(low, ws, [], SALES, EFFECTS, ROOM) == {}
 
