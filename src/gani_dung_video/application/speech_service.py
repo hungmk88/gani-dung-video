@@ -16,8 +16,9 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from gani_dung_video.application.transcribe_service import TRANSCRIPTS_DIR
+from gani_dung_video.application.transcribe_service import TRANSCRIPTS_DIR, read_speech_fact
 from gani_dung_video.domain.footage import Inventory, clip_stems
+from gani_dung_video.domain.plan import speech_driven
 from gani_dung_video.domain.preflight import Rules
 from gani_dung_video.domain.speech import Transcript
 from gani_dung_video.domain.speech_edit import Phrase, PhrasesFile, classify_phrases, split_phrases
@@ -68,8 +69,8 @@ def build_phrases(
     """Split every speech clip into usable phrases for <folder>/edit/phrases.json.
 
     Raises:
-        ConfigError: the option's style is not speech-driven, or inventory/transcripts
-            are missing/corrupt.
+        ConfigError: the video is not cut by the voice (style, or footage without speech for a
+            `driver_if_speech` style), or inventory/transcripts are missing/corrupt.
     """
     rules = rules if rules is not None else load_rules()
     glossary = glossary if glossary is not None else load_glossary()
@@ -79,9 +80,11 @@ def build_phrases(
     style_name = str(opts.get("phong_cach"))
     style = rules["styles"].get(style_name)
     msgs = rules["input_msgs"]
-    if style is None or style.get("driver") != "speech":
-        name = style.get("name", style_name) if style is not None else style_name
-        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=name))
+    if style is None:
+        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=style_name))
+    dur_cfg = rules["durations"].get(str(opts.get("do_dai_giay")), {})
+    if not speech_driven(style, read_speech_fact(folder), bool(dur_cfg.get("chapters"))):
+        raise ConfigError(msgs["PHRASES_NOT_SPEECH_STYLE"].format(style=style.get("name")))
     inv = _read_inventory(folder)
     if not (folder / EDIT_DIR / TRANSCRIPTS_DIR).is_dir():
         raise ConfigError(msgs["PHRASES_NO_TRANSCRIPTS"])

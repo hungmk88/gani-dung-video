@@ -422,6 +422,15 @@ def _pick_music_plan(
     return found[min(found, key=rank)]
 
 
+def speech_driven(style: Mapping[str, Any], co_loi_noi: bool | None, chapters: bool) -> bool:
+    """Whether the voice cuts the video: a speech-driven style (Bán hàng có lời), or a style
+    with `driver_if_speech` (Review món ăn, Kể chuyện nghề, 26/10/2026) on footage known to have
+    speech. A 3-minute video of such a style stays on music: speech chapters wait for 7f."""
+    if style["driver"] == "speech":
+        return True
+    return style.get("driver_if_speech") == "speech" and co_loi_noi is True and not chapters
+
+
 def _check_chapters_open(o: VideoOptions, rules: Rules, style: Mapping[str, Any],
                          dur_cfg: Mapping[str, Any]) -> None:  # fmt: skip
     """Raise PlanError while 3-minute videos are switched off or need the speech driver (7f)."""
@@ -453,7 +462,8 @@ def compile_plan(
     style, purpose = rules["styles"][o.phong_cach], rules["purposes"][o.muc_dich]
     dur_cfg = rules["durations"][str(o.do_dai_giay)]
     _check_chapters_open(o, rules, style, dur_cfg)
-    speech = style["driver"] == "speech"  # 5c: speech cuts; beats only place B-roll
+    # 5c: speech cuts; beats only place B-roll
+    speech = speech_driven(style, o.co_loi_noi, bool(dur_cfg.get("chapters")))
     allowed = [int(n) for n in style["broll_beats" if speech else "beats_allowed"]]
     driver, beat_sec, pm, warnings = _music_setup(o, rules, style, music, allowed)
     if speech:

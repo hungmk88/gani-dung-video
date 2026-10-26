@@ -46,6 +46,9 @@ export interface StyleDef {
   /** Only tvc_cat_nhanh sets this in rules.json: falls back to a virtual beat grid
    *  when no music is picked, instead of failing. */
   driver_fallback?: 'grid';
+  /** Review món ăn, Kể chuyện nghề (26/10/2026): footage with speech is cut on the voice, like
+   *  a speech-driven style; the server decides from `transcribe` (edit/speech.json). */
+  driver_if_speech?: 'speech';
   scene_avg_sec: number;
   bpm_range: [number, number] | null;
   max_duration?: number;

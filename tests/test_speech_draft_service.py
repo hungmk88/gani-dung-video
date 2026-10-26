@@ -325,7 +325,7 @@ def test_non_speech_style_is_refused(tmp_path: Path) -> None:
         update={"driver": "grid", "options": {**json.loads(plan_path.read_text(
             encoding="utf-8"))["options"], "style": "ke_chuyen_nghe"}})  # fmt: skip
     plan_path.write_text(music_plan.model_dump_json(), encoding="utf-8")
-    with pytest.raises(ConfigError, match="dẫn nhịp theo lời"):
+    with pytest.raises(ConfigError, match="không cắt theo lời nói"):
         run(tmp_path, FakeClaude())
     assert opt.is_file()  # options file itself untouched
 

@@ -13,6 +13,7 @@ from gani_dung_video.domain.plan import (
     allocate_blocks,
     compile_plan,
     snap_size,
+    speech_driven,
 )
 from gani_dung_video.infrastructure.config_files import load_rules
 
@@ -214,6 +215,31 @@ def test_speech_style_without_music_uses_a_grid_for_broll() -> None:
     o = opts(phong_cach="ban_hang_co_loi", muc_dich="ban_hang", nhac="khong_nhac", nhac_file=None)
     p = compile_plan(o, RULES, music=None, available_tags=ALL_TAGS)
     assert p.driver == "speech" and p.music is None and p.beat_sec == pytest.approx(1.25)
+
+
+@pytest.mark.parametrize("style", ["review_mon_an", "ke_chuyen_nghe"])
+def test_driver_if_speech_style_cuts_on_the_voice_when_the_footage_speaks(style: str) -> None:
+    # 26/10/2026: Review món ăn / Kể chuyện nghề with a speaker cut like Bán hàng có lời.
+    o = opts(phong_cach=style, muc_dich="ban_hang", co_loi_noi=True)
+    p = compile_plan(o, RULES, music=music(bpm=100.0), available_tags=ALL_TAGS)
+    assert p.driver == "speech" and p.beats_per_scene_allowed == [2, 4]
+    assert p.music is not None
+
+
+@pytest.mark.parametrize("spoken", [False, None])  # no speech, or not transcribed yet
+def test_driver_if_speech_style_keeps_music_without_known_speech(spoken: bool | None) -> None:
+    o = opts(phong_cach="review_mon_an", muc_dich="ban_hang", co_loi_noi=spoken)
+    p = compile_plan(o, RULES, music=music(bpm=100.0), available_tags=ALL_TAGS)
+    assert p.driver == "music" and p.beats_per_scene_allowed == [2, 4]
+
+
+def test_speech_driven_rules() -> None:
+    styles = RULES["styles"]
+    assert speech_driven(styles["ban_hang_co_loi"], None, chapters=False)
+    assert speech_driven(styles["review_mon_an"], True, chapters=False)
+    assert not speech_driven(styles["review_mon_an"], True, chapters=True)  # 3 min: waits for 7f
+    assert not speech_driven(styles["sang_trong"], True, chapters=False)  # no driver_if_speech
+    assert not speech_driven(styles["tvc_cat_nhanh"], True, chapters=False)
 
 
 def test_three_minute_video_is_not_supported_yet() -> None:
